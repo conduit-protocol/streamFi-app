@@ -1,29 +1,201 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
+import Link                              from 'next/link';
+import { Plus }                          from 'lucide-react';
+import { useWallet }                     from '@/contexts/WalletContext';
+import { StreamCard }                    from '@/components/stream/StreamCard';
+import { streamsBySender, streamsByRecipient } from '@/lib/factory';
+import { getStreamAddress, getStreamInfo }     from '@/lib/stream';
+import { fromStroops }                   from '@/lib/format';
+import type { StreamInfo }               from '@/lib/stream';
+
+type Tab = 'receiving' | 'sending';
+type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
+
+interface StreamRow {
+  id:       string;
+  info:     StreamInfo;
+  status:   StreamStatus;
+  progress: number;
+}
+
+function deriveStatus(info: StreamInfo): StreamStatus {
+  if (info.cancelled) return 'cancelled';
+  if (info.paused)    return 'paused';
+  const now = Math.floor(Date.now() / 1000);
+  if (info.endTime > 0 && now >= info.endTime) return 'ended';
+  return 'active';
+}
+
+function deriveProgress(info: StreamInfo): number {
+  if (info.endTime === 0) return 0;
+  const now = Math.floor(Date.now() / 1000);
+  if (now <= info.startTime) return 0;
+  if (now >= info.endTime)   return 1;
+  return (now - info.startTime) / (info.endTime - info.startTime);
+}
+
+async function loadRows(publicKey: string, role: 'sender' | 'recipient'): Promise<StreamRow[]> {
+  const ids = role === 'sender'
+    ? await streamsBySender(publicKey, publicKey, 0, 50)
+    : await streamsByRecipient(publicKey, publicKey, 0, 50);
+
+  const rows: StreamRow[] = [];
+  for (const id of ids) {
+    try {
+      const addr = await getStreamAddress(publicKey, id);
+      if (!addr) continue;
+      const info = await getStreamInfo(publicKey, addr);
+      rows.push({ id: id.toString(), info, status: deriveStatus(info), progress: deriveProgress(info) });
+    } catch { /* skip invalid streams */ }
+  }
+  return rows;
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function DashboardPage() {
-  // TODO: fetch aggregate stats from conduit SDK
+  const { publicKey, connected } = useWallet();
+
+  const [tab,       setTab]       = useState<Tab>('receiving');
+  const [receiving, setReceiving] = useState<StreamRow[]>([]);
+  const [sending,   setSending]   = useState<StreamRow[]>([]);
+  const [loading,   setLoading]   = useState(false);
+
+  useEffect(() => {
+    if (!publicKey) return;
+    setLoading(true);
+    Promise.all([
+      loadRows(publicKey, 'recipient'),
+      loadRows(publicKey, 'sender'),
+    ])
+      .then(([recv, sent]) => { setReceiving(recv); setSending(sent); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [publicKey]);
+
+  const activeCount    = useMemo(
+    () => [...receiving, ...sending].filter(s => s.status === 'active').length,
+    [receiving, sending],
+  );
+  const receivingRate  = useMemo(
+    () => receiving.filter(s => s.status === 'active').reduce((a, s) => a + s.info.ratePerSecond, 0n),
+    [receiving],
+  );
+  const totalWithdrawn = useMemo(
+    () => receiving.reduce((a, s) => a + s.info.withdrawn, 0n),
+    [receiving],
+  );
+  const senderCount    = useMemo(
+    () => new Set(receiving.map(s => s.info.sender)).size,
+    [receiving],
+  );
+
+  const displayed = tab === 'receiving' ? receiving : sending;
+
+  const STATS = [
+    { label: 'Active streams',  value: loading ? '…' : String(activeCount)              },
+    { label: 'Receiving /s',    value: loading ? '…' : fromStroops(receivingRate)        },
+    { label: 'Total received',  value: loading ? '…' : fromStroops(totalWithdrawn)       },
+    { label: 'Senders',         value: loading ? '…' : String(senderCount)               },
+  ];
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-black tracking-tight mb-8">Dashboard</h1>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-black tracking-tight">Dashboard</h1>
+        {connected && (
+          <Link href="/create" className="btn-primary text-sm">
+            <Plus className="w-4 h-4" /> New stream
+          </Link>
+        )}
+      </div>
 
+      {/* Aggregate stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
-        {[
-          { label: 'Active streams',   value: '—' },
-          { label: 'Total streamed',   value: '—' },
-          { label: 'Flow rate / sec',  value: '—' },
-          { label: 'Total recipients', value: '—' },
-        ].map(s => (
+        {STATS.map(s => (
           <div key={s.label} className="card">
             <p className="text-xs text-gray-400 mb-1">{s.label}</p>
-            <p className="text-2xl font-black font-mono">{s.value}</p>
+            <p className={[
+              'text-2xl font-black font-mono',
+              !connected || loading ? 'text-gray-300' : 'text-black',
+            ].join(' ')}>
+              {connected ? s.value : '—'}
+            </p>
           </div>
         ))}
       </div>
 
-      <div className="card text-center py-12 text-sm text-gray-400">
-        Connect your wallet to see aggregate stats.
-      </div>
+      {!connected ? (
+        <div className="card text-center py-12 text-sm text-gray-400">
+          Connect your wallet to see your streams.
+        </div>
+      ) : (
+        <>
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-gray-200 mb-6">
+            {(['receiving', 'sending'] as Tab[]).map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={[
+                  'px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors',
+                  tab === t
+                    ? 'border-black text-black'
+                    : 'border-transparent text-gray-400 hover:text-black',
+                ].join(' ')}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {!loading && (
+                  <span className="ml-1.5 text-xs font-normal text-gray-400">
+                    ({(t === 'receiving' ? receiving : sending).length})
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Stream list */}
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="card animate-pulse h-24 bg-gray-50" />
+              ))}
+            </div>
+          ) : displayed.length === 0 ? (
+            <div className="card text-center py-12 text-sm text-gray-400">
+              No {tab} streams yet.
+              {tab === 'sending' && (
+                <>
+                  {' '}
+                  <Link href="/create" className="underline hover:text-black">
+                    Create your first stream
+                  </Link>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {displayed.map(row => (
+                <StreamCard
+                  key={row.id}
+                  id={row.id}
+                  counterparty={
+                    tab === 'receiving' ? row.info.sender : row.info.recipient
+                  }
+                  role={tab === 'receiving' ? 'recipient' : 'sender'}
+                  token={row.info.token}
+                  ratePerSecond={row.info.ratePerSecond}
+                  progress={row.progress}
+                  status={row.status}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
