@@ -11,9 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@conduit-protocol/sdk": "workspace:*",
+    "@conduit-protocol/sdk": "github:conduit-protocol/conduit-sdk",
     "@stellar/stellar-sdk": "^12.0.0",
-    "@stellar/wallet-kit": "^0.9.0",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.417.0",
     "next": "15.0.0",
