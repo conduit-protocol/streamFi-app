@@ -76,10 +76,10 @@ export async function getStreamInfo(source: string, streamAddress: string): Prom
     startTime:       Number(scValToU64(getField('start_time'))),
     endTime:         Number(scValToU64(getField('end_time'))),
     withdrawn:       scValToI128(getField('withdrawn')),
-    paused:          getField('paused').bool()!,
+    paused:          getField('paused').b(),
     pausedAt:        Number(scValToU64(getField('paused_at'))),
-    clawbackEnabled: getField('clawback_enabled').bool()!,
-    cancelled:       getField('cancelled').bool()!,
+    clawbackEnabled: getField('clawback_enabled').b(),
+    cancelled:       getField('cancelled').b(),
   };
 }
 

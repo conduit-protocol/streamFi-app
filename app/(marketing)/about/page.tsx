@@ -50,7 +50,7 @@ export default function AboutPage() {
 
       <h2 className="text-lg font-black mb-3">Status</h2>
       <div className="space-y-1 text-sm text-gray-600 mb-8">
-        {[
+        {([
           ['DripStream contract',   '✓ Testnet'],
           ['DripFactory contract',  '✓ Testnet'],
           ['DripGovernor contract', '○ In progress'],
@@ -58,7 +58,7 @@ export default function AboutPage() {
           ['conduit-app',           '○ Beta'],
           ['Mainnet deployment',    '○ Planned Q3 2026'],
           ['Security audit',        '○ Not started'],
-        ].map(([label, value]) => (
+        ] as const).map(([label, value]) => (
           <div key={label} className="flex items-center justify-between border-b border-gray-100 py-1.5">
             <span>{label}</span>
             <span className={value.startsWith('✓') ? 'font-semibold' : 'text-gray-400'}>{value}</span>

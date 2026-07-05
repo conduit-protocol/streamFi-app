@@ -44,7 +44,7 @@ export function StreamActions({
   const isPaused = status === 'paused';
   const canAct   = isActive || isPaused;
 
-  async function run(name: string, fn: () => Promise<void>) {
+  async function run(name: string, fn: () => Promise<unknown>) {
     setPending(name);
     try {
       await fn();
@@ -56,7 +56,7 @@ export function StreamActions({
     }
   }
 
-  async function submitTopUp() {
+  const submitTopUp = async () => {
     const parsed = parseFloat(topUpAmt);
     if (!topUpAmt || isNaN(parsed) || parsed <= 0) {
       setTopUpErr('Enter a valid amount greater than 0.');
@@ -67,7 +67,7 @@ export function StreamActions({
     await run('topup', () => streamLib.topUp(publicKey, streamAddress, amount, signTx));
     setTopUpOpen(false);
     setTopUpAmt('');
-  }
+  };
 
   return (
     <>
@@ -156,7 +156,7 @@ export function StreamActions({
         <Modal title="Top up stream" onClose={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}>
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
-              Add more {token} to extend the stream's lifetime at the current rate.
+              Add more {token} to extend the stream&apos;s lifetime at the current rate.
             </p>
             <div>
               <label className="block text-xs font-semibold mb-1">

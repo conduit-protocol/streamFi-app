@@ -14,7 +14,7 @@ export function fromStroops(stroops: bigint, decimals = 7): string {
 
 /** Convert a display amount string to stroops bigint */
 export function toStroops(amount: string, decimals = 7): bigint {
-  const [whole, frac = ''] = amount.split('.');
+  const [whole = '0', frac = ''] = amount.split('.');
   const fracPadded = frac.slice(0, decimals).padEnd(decimals, '0');
   return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
 }

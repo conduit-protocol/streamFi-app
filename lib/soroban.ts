@@ -22,9 +22,19 @@ import {
 const RPC_URL      = process.env['NEXT_PUBLIC_SOROBAN_RPC_URL']!;
 const PASSPHRASE   = process.env['NEXT_PUBLIC_NETWORK_PASSPHRASE']!;
 
-export const server = new SorobanRpc.Server(RPC_URL, {
-  allowHttp: RPC_URL.startsWith('http://'),
-});
+// Lazily constructed: these pages are client-rendered and only ever call
+// Soroban RPC from the browser, but Next.js still evaluates this module
+// during the build's static-generation pass, before real env vars exist.
+let serverInstance: SorobanRpc.Server | undefined;
+
+function getServer(): SorobanRpc.Server {
+  if (!serverInstance) {
+    serverInstance = new SorobanRpc.Server(RPC_URL, {
+      allowHttp: RPC_URL.startsWith('http://'),
+    });
+  }
+  return serverInstance;
+}
 
 // ── Core pipeline ─────────────────────────────────────────────────────────────
 
@@ -46,7 +56,7 @@ export async function invokeContract(
   args:       xdr.ScVal[],
   signTx:     (xdrBase64: string) => Promise<string>,
 ): Promise<string> {
-  const account = await server.getAccount(source);
+  const account = await getServer().getAccount(source);
 
   const contract = new Contract(contractId);
   const tx = new TransactionBuilder(account, {
@@ -58,7 +68,7 @@ export async function invokeContract(
     .build();
 
   // Simulate to get auth + footprint
-  const simResult = await server.simulateTransaction(tx);
+  const simResult = await getServer().simulateTransaction(tx);
   if (SorobanRpc.Api.isSimulationError(simResult)) {
     throw new Error(`Simulation failed: ${simResult.error}`);
   }
@@ -72,7 +82,7 @@ export async function invokeContract(
   const signedTx  = TransactionBuilder.fromXDR(signedXdr, PASSPHRASE);
 
   // Submit
-  const sendResult = await server.sendTransaction(signedTx);
+  const sendResult = await getServer().sendTransaction(signedTx);
   if (sendResult.status === 'ERROR') {
     throw new Error(`Submission failed: ${JSON.stringify(sendResult.errorResult)}`);
   }
@@ -81,7 +91,7 @@ export async function invokeContract(
   const hash = sendResult.hash;
   for (let i = 0; i < 30; i++) {
     await sleep(1000);
-    const status = await server.getTransaction(hash);
+    const status = await getServer().getTransaction(hash);
     if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) return hash;
     if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
       throw new Error(`Transaction failed: ${hash}`);
@@ -105,7 +115,7 @@ export async function simulateReadOnly(
   method:     string,
   args:       xdr.ScVal[],
 ): Promise<xdr.ScVal> {
-  const account  = await server.getAccount(source);
+  const account  = await getServer().getAccount(source);
   const contract = new Contract(contractId);
   const tx = new TransactionBuilder(account, {
     fee:             BASE_FEE,
@@ -115,7 +125,7 @@ export async function simulateReadOnly(
     .setTimeout(60)
     .build();
 
-  const result = await server.simulateTransaction(tx);
+  const result = await getServer().simulateTransaction(tx);
   if (SorobanRpc.Api.isSimulationError(result)) {
     throw new Error(`Simulation error: ${result.error}`);
   }
