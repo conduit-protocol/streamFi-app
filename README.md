@@ -11,6 +11,7 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](
 | Route | Description |
 |-------|-------------|
 | `/` | Landing page — protocol overview and call to action |
+| `/about` | Protocol explainer — contract status, deployment info |
 | `/streams` | Your streams dashboard — active, ended, and created |
 | `/create` | Create a new stream — token, recipient, rate, duration |
 | `/stream/[id]` | Single stream view — progress, withdraw, top-up, cancel |
@@ -32,13 +33,32 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](
 | Layer | Library |
 |-------|---------|
 | Framework | Next.js 15 (App Router) |
-| Wallet | Stellar Wallets Kit |
+| Wallet | Stellar Wallets Kit — **not yet integrated, see below** |
 | Blockchain reads | `@stellar/stellar-sdk` |
 | Styling | Tailwind CSS 3 |
 | Icons | Lucide React |
 | Forms | React Hook Form + Zod |
 | Dates | `date-fns` |
-| State | React Context + `useReducer` |
+| State | React Context |
+
+---
+
+## ⚠️ Wallet integration is stubbed
+
+`contexts/WalletContext.tsx` does not talk to a real wallet yet:
+
+- `connect()` sets a **hardcoded fake public key** and fake wallet name — it doesn't open
+  Stellar Wallets Kit's modal or talk to Freighter/xBull/Albedo.
+- `signTx()` doesn't sign anything — it logs the XDR and returns it **unsigned**.
+- `@stellar/wallet-kit` isn't even in `package.json` yet; the real integration is written as a
+  commented-out TODO block inside `connect()`.
+
+Every mutating flow (withdraw, cancel, pause, top-up, create) will build and simulate a real
+transaction against the configured RPC, but submission will fail once the network actually
+verifies the signature — because there isn't one. Read-only flows (balances, stream lists) work
+end-to-end today. Wiring up the real wallet kit (uncommenting and completing the TODO in
+`WalletContext.tsx`) is the single biggest gap between this app and something demoable against
+testnet with a real wallet.
 
 ---
 
@@ -132,19 +152,19 @@ conduit-app/
 │   │   └── Modal.tsx           # Dialog wrapper
 │   ├── stream/
 │   │   ├── StreamCard.tsx      # Summary card used in /streams list
-│   │   ├── StreamDetail.tsx    # Full detail view with withdraw / cancel
-│   │   ├── CreateForm.tsx      # Multi-step create wizard
+│   │   ├── StreamActions.tsx   # Withdraw / pause / resume / cancel / top-up / clawback buttons
+│   │   ├── StreamTimeline.tsx  # Visual progress + start/end markers
 │   │   ├── WithdrawButton.tsx  # Withdraw with pending state
-│   │   └── RateTicker.tsx      # Live per-second counter
+│   │   └── RateTicker.tsx      # Live per-second counter (client-side math, no contract calls)
 │   ├── Navbar.tsx              # Top navigation
 │   ├── ConnectButton.tsx       # Stellar Wallets Kit connect trigger
 │   └── Providers.tsx           # Context providers tree
 ├── lib/
-│   ├── soroban.ts              # Soroban client + contract helpers
-│   ├── factory.ts              # DripFactory call wrappers
-│   ├── stream.ts               # DripStream call wrappers
+│   ├── soroban.ts              # Low-level Soroban RPC: invokeContract, simulateReadOnly, ScVal decoding
+│   ├── factory.ts              # DripFactory call wrappers (createStream, streamCount, ...)
+│   ├── stream.ts               # DripStream call wrappers (withdraw, cancel, pause, ...)
 │   ├── tokens.ts               # Known Stellar asset list
-│   └── format.ts               # Amount formatting, time helpers
+│   └── format.ts               # Amount formatting, time helpers (tested — see format.test.ts)
 ├── contexts/
 │   └── WalletContext.tsx       # Wallet state + sign helpers
 ├── tailwind.config.ts          # B&W-only token config
@@ -153,30 +173,48 @@ conduit-app/
 ├── .env.example
 └── .github/
     └── workflows/
-        └── ci.yml              # lint + typecheck + test on PR
+        └── ci.yml              # lint + typecheck + test + build on PR
 ```
+
+Note: `/create` and `/stream/[id]` don't have separate form/detail components — the form logic
+lives directly in `app/create/page.tsx`, and the detail page composes `StreamTimeline` +
+`StreamActions` + `WithdrawButton` directly in `app/stream/[id]/page.tsx`.
 
 ---
 
 ## Contract Integration
 
-All contract calls go through `lib/soroban.ts`:
+`lib/soroban.ts` is the thin RPC layer — it builds, simulates, signs (via the connected wallet),
+and submits transactions, and decodes raw `ScVal` results:
 
 ```typescript
-import { buildInvokeContractOp, SorobanRpc } from '@stellar/stellar-sdk';
+// Mutating: builds → simulates → hands to the wallet to sign → submits → polls for the receipt
+export async function invokeContract(
+  source: string, contractId: string, method: string,
+  args: xdr.ScVal[], signTx: (xdrBase64: string) => Promise<string>,
+): Promise<string>   // returns the transaction hash
 
-// Read-only (simulation only)
-export async function getWithdrawable(streamId: string): Promise<bigint>
+// Read-only: builds → simulates only, no signing or submission
+export async function simulateReadOnly(
+  source: string, contractId: string, method: string, args: xdr.ScVal[],
+): Promise<xdr.ScVal>
 
-// Mutating (simulation → assemble → sign → submit)
-export async function withdraw(streamId: string, amount: bigint): Promise<string>
-export async function cancel(streamId: string): Promise<string>
-export async function pause(streamId: string): Promise<string>
-export async function resume(streamId: string): Promise<string>
-export async function topUp(streamId: string, amount: bigint): Promise<string>
+export function scValToI128(val: xdr.ScVal): bigint
+export function scValToU64(val: xdr.ScVal): bigint
 ```
 
-Transactions are assembled on the client via Soroban simulation, signed by the connected wallet (Stellar Wallets Kit `signTransaction`), then submitted to the configured RPC.
+`lib/factory.ts` and `lib/stream.ts` are per-contract wrappers built on top of those two
+primitives — e.g. `stream.ts` exports `withdraw`, `cancel`, `pause`, `resume`, `topUp`,
+`clawback`, `getWithdrawable`, and `getStreamInfo`, each encoding its own `ScVal` args and
+calling `invokeContract`/`simulateReadOnly` with the right method name.
+
+The RPC client itself (`lib/soroban.ts`'s `getServer()`) is a lazy singleton — these pages are
+all client components, but Next still evaluates the module during static generation at build
+time, before `NEXT_PUBLIC_SOROBAN_RPC_URL` is meaningful, so the client can't be constructed
+eagerly at module scope.
+
+Three DripStream functions — `forceCancel`, `transferRecipient`, `streamedTotal` — exist on the
+contract but aren't wrapped in `lib/stream.ts` yet.
 
 ---
 
@@ -213,7 +251,7 @@ The only exception is `text-green-600` and `text-red-600` for positive/negative 
 
 ## Contributing
 
-See the root [`CONTRIBUTING.md`](../CONTRIBUTING.md). For UI-specific conventions, read [`components/ui/README.md`](./components/ui/README.md) before adding new components.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md). For UI-specific conventions, read [`components/ui/README.md`](./components/ui/README.md) before adding new components. For how data and transactions actually flow through the app (including the wallet-stub caveat above), see [`docs/architecture.md`](./docs/architecture.md).
 
 ---
 
