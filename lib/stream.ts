@@ -83,6 +83,33 @@ export async function getStreamInfo(source: string, streamAddress: string): Prom
   };
 }
 
+/**
+ * Derive the currently withdrawable amount from a `StreamInfo` snapshot and
+ * a point in time, without hitting the network.
+ *
+ * This lets UI components (e.g. a `RateTicker`) recompute the withdrawable
+ * balance on a fast local interval for a real-time display, while only
+ * periodically resyncing `StreamInfo` (withdrawn/paused/cancelled) from chain.
+ *
+ * @param info      Last known stream info snapshot from `getStreamInfo`
+ * @param nowSecs   Current unix timestamp in seconds (defaults to Date.now())
+ */
+export function computeWithdrawable(info: StreamInfo, nowSecs: number = Math.floor(Date.now() / 1000)): bigint {
+  if (info.cancelled) return 0n;
+
+  // Time accrual stops at pausedAt while paused, and never exceeds endTime.
+  const effectiveNow = info.paused ? info.pausedAt : nowSecs;
+  const clampedNow   = Math.min(Math.max(effectiveNow, info.startTime), info.endTime);
+
+  if (clampedNow <= info.startTime) return 0n;
+
+  const elapsed  = BigInt(clampedNow - info.startTime);
+  const streamed = elapsed * info.ratePerSecond;
+  const available = streamed - info.withdrawn;
+
+  return available > 0n ? available : 0n;
+}
+
 // ── Mutating ──────────────────────────────────────────────────────────────────
 
 export async function withdraw(
