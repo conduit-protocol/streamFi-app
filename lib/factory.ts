@@ -4,14 +4,18 @@
 
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToU64 } from './soroban';
+import { getFactoryContractId } from './env';
 
-const FACTORY = process.env['NEXT_PUBLIC_FACTORY_CONTRACT_ID']!;
+let _factory: string | undefined;
+function FACTORY(): string {
+  return _factory ??= getFactoryContractId();
+}
 
 // ── Read-only ─────────────────────────────────────────────────────────────────
 
 /** Total number of streams ever created */
 export async function streamCount(source: string): Promise<bigint> {
-  const result = await simulateReadOnly(source, FACTORY, 'stream_count', []);
+  const result = await simulateReadOnly(source, FACTORY(), 'stream_count', []);
   return scValToU64(result);
 }
 
@@ -22,7 +26,7 @@ export async function streamsBySender(
   offset:  number,
   limit:   number,
 ): Promise<bigint[]> {
-  const result = await simulateReadOnly(source, FACTORY, 'streams_by_sender', [
+  const result = await simulateReadOnly(source, FACTORY(), 'streams_by_sender', [
     new Address(sender).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
@@ -37,7 +41,7 @@ export async function streamsByRecipient(
   offset:    number,
   limit:     number,
 ): Promise<bigint[]> {
-  const result = await simulateReadOnly(source, FACTORY, 'streams_by_recipient', [
+  const result = await simulateReadOnly(source, FACTORY(), 'streams_by_recipient', [
     new Address(recipient).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
@@ -60,7 +64,12 @@ export interface CreateStreamArgs {
 
 /**
  * Create a new stream via the factory.
- * Returns the transaction hash; the stream ID can be recovered from events.
+ *
+ * Returns only the transaction hash — DripFactory::create_stream emits no
+ * event carrying the assigned stream_id (see streamFi-contracts issue #39),
+ * and invokeContract() doesn't currently surface the confirmed transaction's
+ * actual return value either. Callers needing the new stream's ID must
+ * re-query the factory (e.g. streamsBySender) after this resolves.
  */
 export async function createStream(
   args:   CreateStreamArgs,
@@ -68,7 +77,7 @@ export async function createStream(
 ): Promise<string> {
   return invokeContract(
     args.sender,
-    FACTORY,
+    FACTORY(),
     'create_stream',
     [
       new Address(args.sender).toScVal(),

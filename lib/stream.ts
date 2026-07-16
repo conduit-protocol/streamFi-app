@@ -7,8 +7,12 @@
 
 import { xdr, Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128, scValToU64 } from './soroban';
+import { getFactoryContractId } from './env';
 
-const FACTORY = process.env['NEXT_PUBLIC_FACTORY_CONTRACT_ID']!;
+let _factory: string | undefined;
+function FACTORY(): string {
+  return _factory ??= getFactoryContractId();
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,7 +39,7 @@ export async function getStreamAddress(source: string, streamId: bigint): Promis
   try {
     const result = await simulateReadOnly(
       source,
-      FACTORY,
+      FACTORY(),
       'stream_address',
       [nativeToScVal(streamId, { type: 'u64' })],
     );
