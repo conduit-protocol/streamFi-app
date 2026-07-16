@@ -32,7 +32,13 @@ export const TOKENS_TESTNET: TokenMeta[] = [
     symbol:   'EURC',
     name:     'Euro Coin',
     decimals: 7,
-    address:  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    // Derived from Circle's published testnet issuer
+    // (EURC-GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO, see
+    // https://developers.circle.com/stablecoins/eurc-contract-addresses)
+    // via `new Asset('EURC', issuer).contractId(Networks.TESTNET)`. The
+    // previous value here was USDC's issuer G-address (not even a contract
+    // address) pasted in by mistake.
+    address:  'CCUUDM434BMZMYWYDITHFXHDMIVTGGD6T2I5UKNX5BSLXLW7HVR4MCGZ',
   },
 ];
 

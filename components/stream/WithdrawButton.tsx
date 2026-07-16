@@ -3,17 +3,20 @@
 import { useState }             from 'react';
 import { ArrowDownToLine, CheckCircle, AlertCircle } from 'lucide-react';
 import { fromStroops }          from '@/lib/format';
+import { useWallet }            from '@/contexts/WalletContext';
+import { withdraw }             from '@/lib/stream';
 
 type Step = 'idle' | 'signing' | 'submitting' | 'done' | 'error';
 
 interface WithdrawButtonProps {
-  streamId:    string;
-  withdrawable: bigint;
-  token:       string;
-  onSuccess?:  () => void;
+  streamAddress: string;
+  withdrawable:  bigint;
+  token:         string;
+  onSuccess?:    () => void;
 }
 
-export function WithdrawButton({ streamId, withdrawable, token, onSuccess }: WithdrawButtonProps) {
+export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }: WithdrawButtonProps) {
+  const { publicKey, signTx } = useWallet();
   const [step, setStep]     = useState<Step>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError]   = useState<string | null>(null);
@@ -22,14 +25,21 @@ export function WithdrawButton({ streamId, withdrawable, token, onSuccess }: Wit
   const isEmpty = withdrawable === 0n;
 
   async function handleWithdraw() {
+    if (!publicKey) {
+      setError('Connect your wallet first.');
+      setStep('error');
+      return;
+    }
     setStep('signing');
     setError(null);
     try {
-      // TODO: call conduit SDK
-      // const hash = await conduit.streams.withdraw(streamId, withdrawable);
+      // withdraw() internally simulates, hands the assembled XDR to signTx
+      // (which prompts Freighter), then submits and polls — 'submitting' is
+      // shown for the whole call since there's no intermediate callback to
+      // distinguish "waiting on the signature popup" from "waiting on chain".
       setStep('submitting');
-      await new Promise(r => setTimeout(r, 1200)); // simulate tx time
-      setTxHash('TXHASH_PLACEHOLDER');
+      const hash = await withdraw(publicKey, streamAddress, withdrawable, signTx);
+      setTxHash(hash);
       setStep('done');
       onSuccess?.();
     } catch (e) {

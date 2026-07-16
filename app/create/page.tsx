@@ -39,8 +39,13 @@ export default function CreatePage() {
   const duration = watch('durationSeconds');
   const token    = watch('token');
 
+  // Tokens aren't all 7 decimals (the native XLM/SAC convention) — this app
+  // supports arbitrary TOKENS_TESTNET entries, so the preview must use each
+  // token's own decimals rather than assume one for all of them.
+  const tokenDecimals = TOKENS_TESTNET.find(t => t.symbol === token)?.decimals ?? 7;
+
   const rate = deposit && duration
-    ? (parseFloat(deposit) * 1e7 / duration).toFixed(2)
+    ? (parseFloat(deposit) * 10 ** tokenDecimals / duration).toFixed(2)
     : '—';
 
   const ratePerDay = deposit && duration
@@ -60,7 +65,10 @@ export default function CreatePage() {
       const tokenAddr = tokenMeta?.address;
       if (!tokenAddr) throw new Error(`Unknown token: ${data.token}`);
 
-      const depositStroops = toStroops(data.depositAmount);
+      // Must use this token's own decimals, not the default — toStroops()
+      // silently produces a value wrong by orders of magnitude for any
+      // non-7-decimal token if the decimals argument is omitted.
+      const depositStroops = toStroops(data.depositAmount, tokenMeta.decimals);
       const rateStroops    = depositStroops / BigInt(data.durationSeconds);
       const startTime      = Math.floor(Date.now() / 1000) + 60; // 60s buffer
       const endTime        = startTime + data.durationSeconds;

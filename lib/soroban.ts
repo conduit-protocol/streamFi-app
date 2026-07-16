@@ -16,11 +16,9 @@ import {
   BASE_FEE,
   xdr,
 } from '@stellar/stellar-sdk';
+import { getRpcUrl, getNetworkPassphrase } from './env';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-
-const RPC_URL      = process.env['NEXT_PUBLIC_SOROBAN_RPC_URL']!;
-const PASSPHRASE   = process.env['NEXT_PUBLIC_NETWORK_PASSPHRASE']!;
 
 // Lazily constructed: these pages are client-rendered and only ever call
 // Soroban RPC from the browser, but Next.js still evaluates this module
@@ -29,8 +27,9 @@ let serverInstance: SorobanRpc.Server | undefined;
 
 function getServer(): SorobanRpc.Server {
   if (!serverInstance) {
-    serverInstance = new SorobanRpc.Server(RPC_URL, {
-      allowHttp: RPC_URL.startsWith('http://'),
+    const rpcUrl = getRpcUrl();
+    serverInstance = new SorobanRpc.Server(rpcUrl, {
+      allowHttp: rpcUrl.startsWith('http://'),
     });
   }
   return serverInstance;
@@ -56,12 +55,13 @@ export async function invokeContract(
   args:       xdr.ScVal[],
   signTx:     (xdrBase64: string) => Promise<string>,
 ): Promise<string> {
+  const passphrase = getNetworkPassphrase();
   const account = await getServer().getAccount(source);
 
   const contract = new Contract(contractId);
   const tx = new TransactionBuilder(account, {
     fee:             BASE_FEE,
-    networkPassphrase: PASSPHRASE,
+    networkPassphrase: passphrase,
   })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
@@ -79,7 +79,7 @@ export async function invokeContract(
 
   // Sign via wallet
   const signedXdr = await signTx(xdrBase64);
-  const signedTx  = TransactionBuilder.fromXDR(signedXdr, PASSPHRASE);
+  const signedTx  = TransactionBuilder.fromXDR(signedXdr, passphrase);
 
   // Submit
   const sendResult = await getServer().sendTransaction(signedTx);
@@ -119,7 +119,7 @@ export async function simulateReadOnly(
   const contract = new Contract(contractId);
   const tx = new TransactionBuilder(account, {
     fee:             BASE_FEE,
-    networkPassphrase: PASSPHRASE,
+    networkPassphrase: getNetworkPassphrase(),
   })
     .addOperation(contract.call(method, ...args))
     .setTimeout(60)
