@@ -3,11 +3,11 @@
 /**
  * WalletContext — Stellar wallet connection state.
  *
- * Wraps @stellar/wallet-kit StellarWalletsKit.
- * The full wallet-kit integration is left as a TODO; this context provides
- * the shape that the rest of the app depends on.
- *
- * See: https://stellarwalletskit.dev
+ * Wraps @stellar/freighter-api. Freighter-only (not a multi-wallet kit) —
+ * @creit.tech/stellar-wallets-kit was considered but its `dependencies`
+ * unconditionally pull in Ledger/Trezor/WalletConnect/a NEAR Protocol SDK,
+ * ~300 extra packages and 36 vulnerabilities for functionality this app
+ * doesn't need.
  */
 
 import {
@@ -17,6 +17,12 @@ import {
   useEffect,
   useState,
 } from 'react';
+import {
+  isConnected as freighterIsConnected,
+  requestAccess,
+  signTransaction,
+} from '@stellar/freighter-api';
+import { getNetworkPassphrase } from '@/lib/env';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,23 +73,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const connect = useCallback(async () => {
     setConnecting(true);
     try {
-      // TODO: instantiate StellarWalletsKit and open the modal
-      //
-      // import { StellarWalletsKit, WalletNetwork, FREIGHTER_ID } from '@stellar/wallet-kit';
-      // const kit = new StellarWalletsKit({ network: WalletNetwork.TESTNET, selectedWalletId: FREIGHTER_ID });
-      // await kit.openModal({ onWalletSelected: async (option) => {
-      //   kit.setWallet(option.id);
-      //   const { address } = await kit.getAddress();
-      //   setPublicKey(address);
-      //   setWalletName(option.name);
-      //   localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: option.name }));
-      // }});
+      const { isConnected: hasFreighter } = await freighterIsConnected();
+      if (!hasFreighter) {
+        throw new Error(
+          'Freighter wallet extension not detected. Install it from https://www.freighter.app/ and reload.',
+        );
+      }
 
-      // Stub for now — simulates a connected wallet
-      const stub = 'GABC1234STUBWALLET000000000000000000000000000000000000';
-      setPublicKey(stub);
-      setWalletName('Freighter (stub)');
-      localStorage.setItem('conduit:wallet', JSON.stringify({ key: stub, name: 'Freighter (stub)' }));
+      // Prompts the user for permission if not already granted, then
+      // returns the currently-selected address.
+      const { address, error } = await requestAccess();
+      if (error || !address) {
+        throw new Error(error?.message ?? 'Failed to connect to Freighter.');
+      }
+
+      setPublicKey(address);
+      setWalletName('Freighter');
+      localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: 'Freighter' }));
     } finally {
       setConnecting(false);
     }
@@ -97,9 +103,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const signTx = useCallback(async (xdr: string): Promise<string> => {
     if (!publicKey) throw new Error('Wallet not connected');
-    // TODO: kit.signTransaction(xdr, { networkPassphrase: NETWORK_PASSPHRASE })
-    console.log('signTx (stub):', xdr.slice(0, 32) + '…');
-    return xdr; // stub: return unsigned XDR
+    const { signedTxXdr, error } = await signTransaction(xdr, {
+      networkPassphrase: getNetworkPassphrase(),
+      address:           publicKey,
+    });
+    if (error || !signedTxXdr) {
+      throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
+    }
+    return signedTxXdr;
   }, [publicKey]);
 
   return (

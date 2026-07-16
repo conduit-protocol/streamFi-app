@@ -177,7 +177,6 @@ export default function StreamPage() {
       {/* Actions */}
       {(isSender || isRecipient) && (
         <StreamActions
-          streamId={id}
           streamAddress={streamAddress}
           status={status}
           clawbackEnabled={info.clawbackEnabled}

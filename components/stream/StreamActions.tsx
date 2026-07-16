@@ -12,7 +12,6 @@ import { toStroops }         from '@/lib/format';
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
 interface StreamActionsProps {
-  streamId:        string;
   streamAddress:   string;
   status:          StreamStatus;
   clawbackEnabled: boolean;
@@ -28,12 +27,13 @@ interface StreamActionsProps {
  * Guards all mutating calls behind wallet auth via WalletContext.
  */
 export function StreamActions({
-  streamId, streamAddress, status, clawbackEnabled,
+  streamAddress, status, clawbackEnabled,
   isSender, isRecipient, withdrawable, token, onSuccess,
 }: StreamActionsProps) {
   const { publicKey, signTx } = useWallet();
 
-  const [pending,  setPending]  = useState<string | null>(null);
+  const [pending,     setPending]     = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmt, setTopUpAmt]   = useState('');
   const [topUpErr, setTopUpErr]   = useState('');
@@ -46,11 +46,13 @@ export function StreamActions({
 
   async function run(name: string, fn: () => Promise<unknown>) {
     setPending(name);
+    setActionError(null);
     try {
       await fn();
       onSuccess?.();
     } catch (e) {
       console.error(`[${name}] error:`, e);
+      setActionError(e instanceof Error ? e.message : `Failed to ${name}.`);
     } finally {
       setPending(null);
     }
@@ -72,10 +74,14 @@ export function StreamActions({
   return (
     <>
       <div className="space-y-3">
+        {actionError && (
+          <p className="text-xs text-red-600">{actionError}</p>
+        )}
+
         {/* Withdraw — recipient only, when there's something to withdraw */}
         {isRecipient && canAct && (
           <WithdrawButton
-            streamId={streamId}
+            streamAddress={streamAddress}
             withdrawable={withdrawable}
             token={token}
             onSuccess={onSuccess}
