@@ -5,6 +5,7 @@ import Link                              from 'next/link';
 import { Plus }                          from 'lucide-react';
 import { useWallet }                     from '@/contexts/WalletContext';
 import { StreamCard }                    from '@/components/stream/StreamCard';
+import { BulkWithdrawButton }            from '@/components/stream/BulkWithdrawButton';
 import { streamsBySender, streamsByRecipient } from '@/lib/factory';
 import { getStreamAddress, getStreamInfo }     from '@/lib/stream';
 import { fromStroops }                   from '@/lib/format';
@@ -156,6 +157,15 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
+
+          {tab === 'receiving' && receiving.filter(s => s.status === 'active').length > 0 && (
+            <div className="mb-6">
+              <BulkWithdrawButton 
+                activeStreams={receiving.filter(s => s.status === 'active')}
+                onComplete={() => window.location.reload()}
+              />
+            </div>
+          )}
 
           {/* Stream list */}
           {loading ? (
