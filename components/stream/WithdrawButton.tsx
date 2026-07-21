@@ -5,6 +5,7 @@ import { ArrowDownToLine, CheckCircle, AlertCircle } from 'lucide-react';
 import { fromStroops }          from '@/lib/format';
 import { useWallet }            from '@/contexts/WalletContext';
 import { withdraw }             from '@/lib/stream';
+import { CopyHashButton }       from '@/components/ui/CopyHashButton';
 
 type Step = 'idle' | 'signing' | 'submitting' | 'done' | 'error';
 
@@ -55,7 +56,10 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
         <span>
           <strong>Withdrawn {amount} {token}</strong>
           {txHash && (
-            <span className="text-gray-400 font-mono text-xs ml-2">{txHash.slice(0, 12)}…</span>
+            <span className="flex items-center gap-1 mt-0.5">
+              <span className="text-gray-400 font-mono text-xs break-all">{txHash}</span>
+              <CopyHashButton hash={txHash} className="shrink-0" />
+            </span>
           )}
         </span>
         <button onClick={() => setStep('idle')} className="ml-auto text-xs text-gray-400 hover:text-black">

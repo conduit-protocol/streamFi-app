@@ -10,6 +10,7 @@ import { useWallet }        from '@/contexts/WalletContext';
 import { createStream }     from '@/lib/factory';
 import { toStroops }        from '@/lib/format';
 import { TOKENS_TESTNET }   from '@/lib/tokens';
+import { CopyHashButton }   from '@/components/ui/CopyHashButton';
 
 const schema = z.object({
   recipient:       z.string().min(56, 'Must be a valid Stellar address').max(56),
@@ -102,7 +103,10 @@ export default function CreatePage() {
           <p className="text-sm text-gray-500 mb-4">
             Transaction confirmed. Redirecting to your streams…
           </p>
-          <p className="font-mono text-xs text-gray-400 break-all">{txHash}</p>
+          <div className="inline-flex items-center gap-1.5 max-w-full">
+            <p className="font-mono text-xs text-gray-400 break-all">{txHash}</p>
+            <CopyHashButton hash={txHash} className="shrink-0" />
+          </div>
         </div>
       </div>
     );
