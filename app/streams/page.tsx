@@ -62,6 +62,8 @@ export default function StreamsPage() {
   const [sending,   setSending]   = useState<StreamRow[]>([]);
   const [loading,   setLoading]   = useState(false);
 
+  const [statusFilter, setStatusFilter] = useState<'ALL' | StreamStatus>('ALL');
+
   useEffect(() => {
     if (!publicKey) return;
     setLoading(true);
@@ -74,7 +76,9 @@ export default function StreamsPage() {
       .finally(() => setLoading(false));
   }, [publicKey]);
 
-  const displayed = tab === 'receiving' ? receiving : sending;
+  const displayed = (tab === 'receiving' ? receiving : sending).filter(
+    row => statusFilter === 'ALL' || row.status === statusFilter
+  );
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
@@ -86,22 +90,37 @@ export default function StreamsPage() {
         </Link>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {(['receiving', 'sending'] as Tab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={[
-              'px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors',
-              tab === t
-                ? 'border-black text-black'
-                : 'border-transparent text-gray-400 hover:text-black',
-            ].join(' ')}
+      {/* Tabs and Filter */}
+      <div className="flex justify-between items-end border-b border-gray-200 mb-6">
+        <div className="flex gap-1">
+          {(['receiving', 'sending'] as Tab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={[
+                'px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors',
+                tab === t
+                  ? 'border-black text-black'
+                  : 'border-transparent text-gray-400 hover:text-black',
+              ].join(' ')}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="pb-2">
+          <select 
+            value={statusFilter} 
+            onChange={(e) => setStatusFilter(e.target.value as any)}
+            className="border-gray-300 border py-1 px-2 text-sm rounded bg-white text-gray-900 shadow-sm"
           >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+            <option value="ALL">All Streams</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="ended">Ended</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
       </div>
 
       {/* Content */}
@@ -117,8 +136,8 @@ export default function StreamsPage() {
         </div>
       ) : displayed.length === 0 ? (
         <div className="card text-center py-12 text-sm text-gray-400">
-          No {tab} streams yet.
-          {tab === 'sending' && (
+          No streams match your filter.
+          {tab === 'sending' && statusFilter === 'ALL' && (
             <>
               {' '}
               <Link href="/create" className="underline hover:text-black">
