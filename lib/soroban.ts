@@ -129,9 +129,10 @@ export async function simulateReadOnly(
   if (SorobanRpc.Api.isSimulationError(result)) {
     throw new Error(`Simulation error: ${result.error}`);
   }
-  if (!result.result) throw new Error('No result returned from simulation');
+  const retval = result.result?.retval;
+  if (!retval) throw new Error('No result returned from simulation');
 
-  return xdr.ScVal.fromXDR(result.result.retval.toXDR());
+  return xdr.ScVal.fromXDR(retval.toXDR());
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
