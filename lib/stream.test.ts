@@ -122,6 +122,30 @@ describe('getStreamInfo', () => {
     const { getStreamInfo } = await import('./stream.js');
     await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/Missing field: recipient/);
   });
+
+  it('throws a clear error when the info result is not a map', async () => {
+    mockSimulateReadOnly.mockResolvedValue(xdr.ScVal.scvVoid());
+    const { getStreamInfo } = await import('./stream.js');
+    await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/expected map/i);
+  });
+
+  it('throws a clear error when a field has the wrong ScVal type', async () => {
+    mockSimulateReadOnly.mockResolvedValue(scvMap({
+      sender:            new Address(SENDER).toScVal(),
+      recipient:         new Address(RECIPIENT).toScVal(),
+      token:             new Address(TOKEN).toScVal(),
+      rate_per_second:   xdr.ScVal.scvBool(true),
+      start_time:        u64(1_700_000_000n),
+      end_time:          u64(1_700_003_600n),
+      withdrawn:         i128(1_000n),
+      paused:            xdr.ScVal.scvBool(false),
+      paused_at:         u64(0n),
+      clawback_enabled:  xdr.ScVal.scvBool(true),
+      cancelled:         xdr.ScVal.scvBool(false),
+    }));
+    const { getStreamInfo } = await import('./stream.js');
+    await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/rate_per_second.*i128/i);
+  });
 });
 
 describe('mutating calls', () => {

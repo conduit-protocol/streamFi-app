@@ -1,6 +1,6 @@
 'use client';
 
-import { useState }             from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { fromStroops }          from '@/lib/format';
@@ -19,12 +19,17 @@ interface WithdrawButtonProps {
 
 export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }: WithdrawButtonProps) {
   const { publicKey, signTx } = useWallet();
+  const mounted = useRef(true);
   const [step, setStep]     = useState<Step>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError]   = useState<string | null>(null);
 
   const amount = fromStroops(withdrawable);
   const isEmpty = withdrawable === 0n;
+
+  useEffect(() => {
+    return () => { mounted.current = false; };
+  }, []);
 
   async function handleWithdraw() {
     if (!publicKey) {
@@ -41,10 +46,12 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
       // distinguish "waiting on the signature popup" from "waiting on chain".
       setStep('submitting');
       const hash = await withdraw(publicKey, streamAddress, withdrawable, signTx);
+      if (!mounted.current) return;
       setTxHash(hash);
       setStep('done');
       onSuccess?.();
     } catch (e) {
+      if (!mounted.current) return;
       setError(e instanceof Error ? e.message : 'Transaction failed');
       setStep('error');
     }

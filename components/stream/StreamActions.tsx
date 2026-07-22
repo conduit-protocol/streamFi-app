@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Play, Pause, X, Plus, RotateCcw } from 'lucide-react';
 import { WithdrawButton }    from './WithdrawButton';
 import { Modal }             from '@/components/ui/Modal';
@@ -31,12 +31,17 @@ export function StreamActions({
   isSender, isRecipient, withdrawable, token, onSuccess,
 }: StreamActionsProps) {
   const { publicKey, signTx } = useWallet();
+  const mounted = useRef(true);
 
   const [pending,     setPending]     = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmt, setTopUpAmt]   = useState('');
   const [topUpErr, setTopUpErr]   = useState('');
+
+  useEffect(() => {
+    return () => { mounted.current = false; };
+  }, []);
 
   if (!publicKey) return null;
 
@@ -49,12 +54,14 @@ export function StreamActions({
     setActionError(null);
     try {
       await fn();
+      if (!mounted.current) return;
       onSuccess?.();
     } catch (e) {
+      if (!mounted.current) return;
       console.error(`[${name}] error:`, e);
       setActionError(e instanceof Error ? e.message : `Failed to ${name}.`);
     } finally {
-      setPending(null);
+      if (mounted.current) setPending(null);
     }
   }
 
@@ -67,6 +74,7 @@ export function StreamActions({
     setTopUpErr('');
     const amount = toStroops(parsed.toString());
     await run('topup', () => streamLib.topUp(publicKey, streamAddress, amount, signTx));
+    if (!mounted.current) return;
     setTopUpOpen(false);
     setTopUpAmt('');
   };
