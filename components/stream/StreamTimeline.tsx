@@ -1,24 +1,52 @@
-'use client';
+"use client";
 
-import { formatTimestamp } from '@/lib/format';
+import { useEffect, useState } from "react";
+import { formatTimestamp } from "@/lib/format";
 
 interface StreamTimelineProps {
   startTime: number;
-  endTime:   number;
-  paused:    boolean;
-  pausedAt:  number;
+  endTime: number;
+  paused: boolean;
+  pausedAt: number;
 }
 
 /**
  * Horizontal progress timeline for a bounded stream.
  * Returns null for open-ended streams (endTime === 0).
+ *
+ * Uses client-only state for the current time so that SSR renders a
+ * consistent initial snapshot that matches client hydration — the
+ * progress bar updates only after mount via a 10-second interval.
  */
-export function StreamTimeline({ startTime, endTime, paused, pausedAt }: StreamTimelineProps) {
+export function StreamTimeline({
+  startTime,
+  endTime,
+  paused,
+  pausedAt,
+}: StreamTimelineProps) {
+  // ⚠ Hooks must be called unconditionally — before any early return.
+  // Defer time-dependent computation to client-only state to prevent
+  // React hydration mismatch (server vs client Date.now() values differ).
+  // Use startTime as the SSR-safe default (0% progress) so the server and
+  // first client render match exactly. The real current time is set in
+  // useEffect after hydration.
+  const [now, setNow] = useState<number>(startTime);
+
+  useEffect(() => {
+    setNow(Math.floor(Date.now() / 1000));
+
+    const id = setInterval(() => {
+      setNow(Math.floor(Date.now() / 1000));
+    }, 10_000);
+
+    return () => clearInterval(id);
+  }, [startTime, endTime]);
+
+  // Early return for open-ended streams — must come after hooks.
   if (endTime === 0) return null;
 
-  const now      = Math.floor(Date.now() / 1000);
-  const total    = endTime - startTime;
-  const elapsed  = Math.max(Math.min(now - startTime, total), 0);
+  const total = endTime - startTime;
+  const elapsed = Math.max(Math.min(now - startTime, total), 0);
   const progress = elapsed / total;
 
   const pausePct = paused
@@ -58,7 +86,9 @@ export function StreamTimeline({ startTime, endTime, paused, pausedAt }: StreamT
       {/* Labels */}
       <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
         <span>{formatTimestamp(startTime)}</span>
-        <span className="font-semibold text-black dark:text-white">{progressPct}% complete</span>
+        <span className="font-semibold text-black dark:text-white">
+          {progressPct}% complete
+        </span>
         <span>{formatTimestamp(endTime)}</span>
       </div>
     </div>
