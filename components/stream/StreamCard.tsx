@@ -17,19 +17,19 @@ export function StreamCard({ id, counterparty, role, token, ratePerSecond, progr
   const rateFormatted = (Number(ratePerSecond) / 1e7).toFixed(4);
 
   return (
-    <Link href={`/stream/${id}`} className="card block hover:border-black transition-colors group">
+    <Link href={`/stream/${id}`} className="card block hover:border-black dark:hover:border-white transition-colors group">
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="min-w-0">
-          <p className="text-xs text-gray-400 mb-0.5">
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">
             {role === 'recipient' ? 'From' : 'To'}
           </p>
-          <p className="font-mono text-xs text-black truncate max-w-[110px] sm:max-w-[180px]">
+          <p className="font-mono text-xs text-black dark:text-white truncate max-w-[110px] sm:max-w-[180px]">
             {truncateAddress(counterparty)}
           </p>
         </div>
 
         {/* Rate number centered, green text */}
-        <div className="amount text-xs sm:text-sm font-bold text-green-600 truncate text-center px-1">
+        <div className="amount text-xs sm:text-sm font-bold text-green-600 dark:text-green-400 truncate text-center px-1">
           {rateFormatted}/s
         </div>
 
@@ -41,10 +41,10 @@ export function StreamCard({ id, counterparty, role, token, ratePerSecond, progr
       <ProgressBar value={progress} />
 
       <div className="flex items-center justify-between mt-3 text-xs">
-        <span className="text-gray-500 font-mono truncate max-w-[200px] sm:max-w-[300px]">
+        <span className="text-gray-500 dark:text-gray-400 font-mono truncate max-w-[200px] sm:max-w-[300px]">
           {truncateAddress(token)}
         </span>
-        <span className="text-[10px] text-gray-400 font-medium font-mono">
+        <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium font-mono">
           {Math.round(progress * 100)}%
         </span>
       </div>

@@ -4,7 +4,7 @@ import { withdraw } from '@/lib/stream';
 import { Button } from '@/components/ui/Button';
 
 export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStreams: any[], onComplete?: (count: number) => void }) {
-  const { publicKey } = useWallet();
+  const { publicKey, signTx } = useWallet();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleBulkWithdraw = async () => {
@@ -16,7 +16,7 @@ export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStream
       for (const stream of activeStreams) {
         if (stream.info.withdrawable > 0n) {
           // Process withdrawal for each stream sequentially to avoid nonce collisions
-          await withdraw(publicKey, stream.id, stream.info.withdrawable);
+          await withdraw(publicKey, stream.id, stream.info.withdrawable, signTx);
           successCount++;
           // A small delay to avoid rate limiting
           await new Promise(r => setTimeout(r, 2000));

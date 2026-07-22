@@ -29,7 +29,7 @@ export function ConnectButton() {
   if (connected && publicKey) {
     return (
       <div className="flex items-center gap-2">
-        <span className="hidden sm:block text-xs text-gray-500 font-mono">
+        <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 font-mono">
           {truncateAddress(publicKey)}
         </span>
         <button

@@ -118,10 +118,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
         {STATS.map(s => (
           <div key={s.label} className="card">
-            <p className="text-xs text-gray-400 mb-1">{s.label}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{s.label}</p>
             <p className={[
               'text-2xl font-black font-mono',
-              !connected || loading ? 'text-gray-300' : 'text-black',
+              !connected || loading ? 'text-gray-300 dark:text-gray-600' : 'text-black dark:text-white',
             ].join(' ')}>
               {connected ? s.value : '—'}
             </p>
@@ -130,13 +130,13 @@ export default function DashboardPage() {
       </div>
 
       {!connected ? (
-        <div className="card text-center py-12 text-sm text-gray-400">
+        <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
           Connect your wallet to see your streams.
         </div>
       ) : (
         <>
           {/* Tabs */}
-          <div className="flex gap-1 border-b border-gray-200 mb-6">
+          <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800 mb-6">
             {(['receiving', 'sending'] as Tab[]).map(t => (
               <button
                 key={t}
@@ -144,13 +144,13 @@ export default function DashboardPage() {
                 className={[
                   'px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors',
                   tab === t
-                    ? 'border-black text-black'
-                    : 'border-transparent text-gray-400 hover:text-black',
+                    ? 'border-black text-black dark:border-white dark:text-white'
+                    : 'border-transparent text-gray-400 hover:text-black dark:hover:text-white',
                 ].join(' ')}
               >
                 {t.charAt(0).toUpperCase() + t.slice(1)}
                 {!loading && (
-                  <span className="ml-1.5 text-xs font-normal text-gray-400">
+                  <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-gray-500">
                     ({(t === 'receiving' ? receiving : sending).length})
                   </span>
                 )}
@@ -171,16 +171,16 @@ export default function DashboardPage() {
           {loading ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => (
-                <div key={i} className="card animate-pulse h-24 bg-gray-50" />
+                <div key={i} className="card animate-pulse h-24 bg-gray-50 dark:bg-gray-800" />
               ))}
             </div>
           ) : displayed.length === 0 ? (
-            <div className="card text-center py-12 text-sm text-gray-400">
+            <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
               No {tab} streams yet.
               {tab === 'sending' && (
                 <>
                   {' '}
-                  <Link href="/create" className="underline hover:text-black">
+                  <Link href="/create" className="underline hover:text-black dark:hover:text-white">
                     Create your first stream
                   </Link>
                 </>
