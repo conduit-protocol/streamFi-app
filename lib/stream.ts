@@ -91,26 +91,53 @@ export async function getStreamInfo(source: string, streamAddress: string): Prom
     return entry ? (MOCK_STREAMS[entry[0]] ?? fallback) : fallback;
   }
   const result = await simulateReadOnly(source, streamAddress, 'info', []);
-  const map    = result.map()!;
+  const entries = result.map();
+
+  if (!entries) throw new Error('Malformed stream info: expected map result');
+  const fields = entries;
 
   function getField(name: string): xdr.ScVal {
-    const entry = map.find(e => e.key().sym()?.toString() === name);
+    const entry = fields.find(e => e.key().sym()?.toString() === name);
     if (!entry) throw new Error(`Missing field: ${name}`);
     return entry.val();
   }
 
+  function requireType(name: string, expected: string, label: string): xdr.ScVal {
+    const field = getField(name);
+    if (field.switch().name !== expected) {
+      throw new Error(`Malformed stream info: ${name} must be ${label}`);
+    }
+    return field;
+  }
+
+  function readAddress(name: string): string {
+    return Address.fromScVal(requireType(name, 'scvAddress', 'an address')).toString();
+  }
+
+  function readI128(name: string): bigint {
+    return scValToI128(requireType(name, 'scvI128', 'i128'));
+  }
+
+  function readU64(name: string): number {
+    return Number(scValToU64(requireType(name, 'scvU64', 'u64')));
+  }
+
+  function readBool(name: string): boolean {
+    return requireType(name, 'scvBool', 'boolean').b();
+  }
+
   return {
-    sender:          Address.fromScVal(getField('sender')).toString(),
-    recipient:       Address.fromScVal(getField('recipient')).toString(),
-    token:           Address.fromScVal(getField('token')).toString(),
-    ratePerSecond:   scValToI128(getField('rate_per_second')),
-    startTime:       Number(scValToU64(getField('start_time'))),
-    endTime:         Number(scValToU64(getField('end_time'))),
-    withdrawn:       scValToI128(getField('withdrawn')),
-    paused:          getField('paused').b(),
-    pausedAt:        Number(scValToU64(getField('paused_at'))),
-    clawbackEnabled: getField('clawback_enabled').b(),
-    cancelled:       getField('cancelled').b(),
+    sender:          readAddress('sender'),
+    recipient:       readAddress('recipient'),
+    token:           readAddress('token'),
+    ratePerSecond:   readI128('rate_per_second'),
+    startTime:       readU64('start_time'),
+    endTime:         readU64('end_time'),
+    withdrawn:       readI128('withdrawn'),
+    paused:          readBool('paused'),
+    pausedAt:        readU64('paused_at'),
+    clawbackEnabled: readBool('clawback_enabled'),
+    cancelled:       readBool('cancelled'),
   };
 }
 
