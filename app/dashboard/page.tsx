@@ -18,7 +18,6 @@ interface StreamRow {
   id: string;
   info: StreamInfo;
   status: StreamStatus;
-  progress: number;
 }
 
 function deriveStatus(info: StreamInfo, now: number): StreamStatus {
@@ -26,13 +25,6 @@ function deriveStatus(info: StreamInfo, now: number): StreamStatus {
   if (info.paused) return "paused";
   if (info.endTime > 0 && now >= info.endTime) return "ended";
   return "active";
-}
-
-function deriveProgress(info: StreamInfo, now: number): number {
-  if (info.endTime === 0) return 0;
-  if (now <= info.startTime) return 0;
-  if (now >= info.endTime) return 1;
-  return (now - info.startTime) / (info.endTime - info.startTime);
 }
 
 async function loadRows(
@@ -55,7 +47,6 @@ async function loadRows(
         id: id.toString(),
         info,
         status: deriveStatus(info, now),
-        progress: deriveProgress(info, now),
       });
     } catch {
       /* skip invalid streams */
@@ -240,7 +231,8 @@ export default function DashboardPage() {
                   role={tab === "receiving" ? "recipient" : "sender"}
                   token={row.info.token}
                   ratePerSecond={row.info.ratePerSecond}
-                  progress={row.progress}
+                  startTime={row.info.startTime}
+                  endTime={row.info.endTime}
                   status={row.status}
                 />
               ))}

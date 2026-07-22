@@ -1,7 +1,7 @@
-import Link            from 'next/link';
-import { Badge }       from '@/components/ui/Badge';
-import { ProgressBar } from '@/components/ui/ProgressBar';
-import { truncateAddress } from '@/lib/format';
+import Link                    from 'next/link';
+import { Badge }               from '@/components/ui/Badge';
+import { StreamProgressBar }   from '@/components/stream/StreamProgressBar';
+import { truncateAddress }     from '@/lib/format';
 
 interface StreamCardProps {
   id:            string;
@@ -9,12 +9,33 @@ interface StreamCardProps {
   role:          'sender' | 'recipient';
   token:         string;
   ratePerSecond: bigint;
-  progress:      number;   // 0–1
+  /** Unix timestamp (seconds) when the stream started */
+  startTime:     number;
+  /** Unix timestamp (seconds) when the stream ends (0 = open-ended) */
+  endTime:       number;
   status:        'active' | 'paused' | 'ended' | 'cancelled';
 }
 
-export function StreamCard({ id, counterparty, role, token, ratePerSecond, progress, status }: StreamCardProps) {
+export function StreamCard({
+  id,
+  counterparty,
+  role,
+  token,
+  ratePerSecond,
+  startTime,
+  endTime,
+  status,
+}: StreamCardProps) {
   const rateFormatted = (Number(ratePerSecond) / 1e7).toFixed(4);
+
+  // Derive a snapshot percentage for the text label only (no state, no timer)
+  const pctSnapshot = (() => {
+    if (endTime === 0) return 0;
+    const now   = Date.now() / 1_000;
+    const total = endTime - startTime;
+    if (total <= 0) return 0;
+    return Math.min(100, Math.max(0, ((now - startTime) / total) * 100));
+  })();
 
   return (
     <Link href={`/stream/${id}`} className="card block hover:border-black dark:hover:border-white transition-colors group">
@@ -38,14 +59,19 @@ export function StreamCard({ id, counterparty, role, token, ratePerSecond, progr
         </div>
       </div>
 
-      <ProgressBar value={progress} />
+      {/* CSS-animated progress bar — zero React state updates */}
+      <StreamProgressBar
+        startTime={startTime}
+        endTime={endTime}
+        status={status}
+      />
 
       <div className="flex items-center justify-between mt-3 text-xs">
         <span className="text-gray-500 dark:text-gray-400 font-mono truncate max-w-[200px] sm:max-w-[300px]">
           {truncateAddress(token)}
         </span>
         <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium font-mono">
-          {Math.round(progress * 100)}%
+          {Math.round(pctSnapshot)}%
         </span>
       </div>
     </Link>
