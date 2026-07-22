@@ -4,7 +4,12 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 
 ## [Unreleased]
 
-### Planned
+### Added
+- `/transactions` — responsive transaction history page (card layout on mobile, table on desktop)
+- Demo data layer — pages render without deployed contracts when env vars are empty
+
+### Changed
+- Stream cards responsive layout with truncated addresses and progress indicator
 - `/stream/[id]/history` — event log tab showing all past withdrawals, pauses, and top-ups
 - Mobile layout improvements for stream detail page
 - `force_cancel()` action in `StreamActions` for recipients (once contract support is merged)
