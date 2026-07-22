@@ -91,7 +91,7 @@ export default function StreamsPage() {
       </div>
 
       {/* Tabs and Filter */}
-      <div className="flex justify-between items-end border-b border-gray-200 mb-6">
+      <div className="flex justify-between items-end border-b border-gray-200 dark:border-gray-800 mb-6">
         <div className="flex gap-1">
           {(['receiving', 'sending'] as Tab[]).map(t => (
             <button
@@ -100,8 +100,8 @@ export default function StreamsPage() {
               className={[
                 'px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors',
                 tab === t
-                  ? 'border-black text-black'
-                  : 'border-transparent text-gray-400 hover:text-black',
+                  ? 'border-black text-black dark:border-white dark:text-white'
+                  : 'border-transparent text-gray-400 hover:text-black dark:hover:text-white',
               ].join(' ')}
             >
               {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -112,7 +112,7 @@ export default function StreamsPage() {
           <select 
             value={statusFilter} 
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="border-gray-300 border py-1 px-2 text-sm rounded bg-white text-gray-900 shadow-sm"
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
           >
             <option value="ALL">All Streams</option>
             <option value="active">Active</option>
@@ -125,22 +125,22 @@ export default function StreamsPage() {
 
       {/* Content */}
       {!connected ? (
-        <div className="card text-center py-12 text-sm text-gray-400">
+        <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
           Connect your wallet to see your streams.
         </div>
       ) : loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
-            <div key={i} className="card animate-pulse h-20 bg-gray-50" />
+            <div key={i} className="card animate-pulse h-20 bg-gray-50 dark:bg-gray-800" />
           ))}
         </div>
       ) : displayed.length === 0 ? (
-        <div className="card text-center py-12 text-sm text-gray-400">
+        <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
           No streams match your filter.
           {tab === 'sending' && statusFilter === 'ALL' && (
             <>
               {' '}
-              <Link href="/create" className="underline hover:text-black">
+              <Link href="/create" className="underline hover:text-black dark:hover:text-white">
                 Create your first stream
               </Link>
             </>

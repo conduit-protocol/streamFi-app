@@ -51,18 +51,18 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
 
   if (step === 'done') {
     return (
-      <div className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded text-sm">
+      <div className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-sm">
         <CheckCircle className="w-4 h-4 text-green-600 shrink-0" aria-hidden="true" />
         <span>
           <strong>Withdrawn {amount} {token}</strong>
           {txHash && (
             <span className="flex items-center gap-1 mt-0.5">
-              <span className="text-gray-400 font-mono text-xs break-all">{txHash}</span>
+              <span className="text-gray-400 dark:text-gray-500 font-mono text-xs break-all">{txHash}</span>
               <CopyHashButton hash={txHash} className="shrink-0" />
             </span>
           )}
         </span>
-        <button onClick={() => setStep('idle')} className="ml-auto text-xs text-gray-400 hover:text-black">
+        <button onClick={() => setStep('idle')} className="ml-auto text-xs text-gray-400 hover:text-black dark:hover:text-white">
           Dismiss
         </button>
       </div>
@@ -71,13 +71,13 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
 
   if (step === 'error') {
     return (
-      <div className="flex items-start gap-2 px-4 py-3 bg-white border border-gray-200 rounded text-sm">
+      <div className="flex items-start gap-2 px-4 py-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-sm">
         <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />
         <div className="flex-1">
-          <p className="font-semibold text-black">Transaction failed</p>
-          <p className="text-xs text-gray-500 mt-0.5">{error}</p>
+          <p className="font-semibold text-black dark:text-white">Transaction failed</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{error}</p>
         </div>
-        <button onClick={() => setStep('idle')} className="text-xs text-gray-400 hover:text-black shrink-0">
+        <button onClick={() => setStep('idle')} className="text-xs text-gray-400 hover:text-black dark:hover:text-white shrink-0">
           Retry
         </button>
       </div>

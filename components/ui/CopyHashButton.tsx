@@ -37,9 +37,9 @@ export function CopyHashButton({ hash, className = '' }: CopyHashButtonProps) {
       className={[
         'inline-flex items-center justify-center',
         'w-6 h-6 rounded',
-        'text-gray-400 hover:text-black hover:bg-gray-100',
+        'text-gray-400 hover:text-black hover:bg-gray-100 dark:hover:text-white dark:hover:bg-gray-800',
         'transition-colors duration-100',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
         className,
       ].join(' ')}
     >

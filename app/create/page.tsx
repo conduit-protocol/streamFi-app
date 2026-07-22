@@ -104,7 +104,7 @@ export default function CreatePage() {
             Transaction confirmed. Redirecting to your streams…
           </p>
           <div className="inline-flex items-center gap-1.5 max-w-full">
-            <p className="font-mono text-xs text-gray-400 break-all">{txHash}</p>
+            <p className="font-mono text-xs text-gray-400 dark:text-gray-500 break-all">{txHash}</p>
             <CopyHashButton hash={txHash} className="shrink-0" />
           </div>
         </div>
@@ -115,12 +115,12 @@ export default function CreatePage() {
   return (
     <div className="max-w-lg mx-auto px-4 py-10">
       <h1 className="text-2xl font-black tracking-tight mb-2">Create a stream</h1>
-      <p className="text-sm text-gray-500 mb-8">
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
         Tokens will be deployed into a new DripStream contract and released continuously.
       </p>
 
       {!connected && (
-        <div className="card border-gray-200 bg-gray-50 text-sm text-gray-600 mb-6 py-3 px-4">
+        <div className="card border-gray-200 bg-gray-50 dark:bg-gray-800 dark:border-gray-700 text-sm text-gray-600 dark:text-gray-400 mb-6 py-3 px-4">
           Connect your wallet before creating a stream.
         </div>
       )}
@@ -129,7 +129,7 @@ export default function CreatePage() {
 
         {/* Recipient */}
         <div>
-          <label className="block text-xs font-semibold mb-1">Recipient address</label>
+          <label className="block text-xs font-semibold mb-1 dark:text-white">Recipient address</label>
           <input
             {...register('recipient')}
             placeholder="G…"
@@ -142,7 +142,7 @@ export default function CreatePage() {
 
         {/* Token */}
         <div>
-          <label className="block text-xs font-semibold mb-1">Token</label>
+          <label className="block text-xs font-semibold mb-1 dark:text-white">Token</label>
           <select {...register('token')} className="input">
             {TOKENS_TESTNET.map(t => (
               <option key={t.symbol} value={t.symbol}>{t.symbol} — {t.name}</option>
@@ -152,7 +152,7 @@ export default function CreatePage() {
 
         {/* Deposit */}
         <div>
-          <label className="block text-xs font-semibold mb-1">Total deposit</label>
+          <label className="block text-xs font-semibold mb-1 dark:text-white">Total deposit</label>
           <input
             {...register('depositAmount')}
             placeholder="1000"
@@ -167,14 +167,14 @@ export default function CreatePage() {
 
         {/* Duration */}
         <div>
-          <label className="block text-xs font-semibold mb-1">Duration (seconds)</label>
+          <label className="block text-xs font-semibold mb-1 dark:text-white">Duration (seconds)</label>
           <input
             {...register('durationSeconds')}
             placeholder="2592000"
             className="input"
             type="number"
           />
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
             {duration ? `${Math.floor(duration / 86400)}d ${Math.floor((duration % 86400) / 3600)}h` : ''}
           </p>
           {errors.durationSeconds && (
@@ -184,16 +184,16 @@ export default function CreatePage() {
 
         {/* Rate preview */}
         {deposit && duration && (
-          <div className="card bg-gray-50 border-gray-100 flex items-start gap-2">
-            <Info className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-            <div className="text-xs text-gray-600 space-y-0.5">
+          <div className="card bg-gray-50 dark:bg-gray-800 border-gray-100 dark:border-gray-700 flex items-start gap-2">
+            <Info className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 shrink-0" />
+            <div className="text-xs text-gray-600 dark:text-gray-400 space-y-0.5">
               <p>
                 Release rate:{' '}
-                <span className="font-mono font-semibold text-black">{rate} stroops/s</span>
+                <span className="font-mono font-semibold text-black dark:text-white">{rate} stroops/s</span>
               </p>
               {ratePerDay && (
                 <p>
-                  ≈ <span className="font-semibold text-black">{ratePerDay} {token}</span> per day
+                  ≈ <span className="font-semibold text-black dark:text-white">{ratePerDay} {token}</span> per day
                 </p>
               )}
             </div>
@@ -208,8 +208,8 @@ export default function CreatePage() {
             className="mt-0.5 rounded border-gray-300"
           />
           <div>
-            <span className="text-sm font-semibold">Enable clawback</span>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <span className="text-sm font-semibold dark:text-white">Enable clawback</span>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Allows you to reclaim unstreamed tokens at any time. Recipients can see this flag —
               use only when necessary.
             </p>

@@ -161,7 +161,7 @@ export function StreamActions({
       {topUpOpen && (
         <Modal title="Top up stream" onClose={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}>
           <div className="space-y-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               Add more {token} to extend the stream&apos;s lifetime at the current rate.
             </p>
             <div>

@@ -14,13 +14,13 @@ interface StreamCardProps {
 
 export function StreamCard({ id, counterparty, role, token, ratePerSecond, progress, status }: StreamCardProps) {
   return (
-    <Link href={`/stream/${id}`} className="card block hover:border-black transition-colors group">
+    <Link href={`/stream/${id}`} className="card block hover:border-black dark:hover:border-white transition-colors group">
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-xs text-gray-400 mb-0.5">
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">
             {role === 'recipient' ? 'From' : 'To'}
           </p>
-          <p className="font-mono text-xs text-black truncate max-w-[180px]">{counterparty}</p>
+          <p className="font-mono text-xs text-black dark:text-white truncate max-w-[180px]">{counterparty}</p>
         </div>
         <Badge status={status} />
       </div>
@@ -28,8 +28,8 @@ export function StreamCard({ id, counterparty, role, token, ratePerSecond, progr
       <ProgressBar value={progress} />
 
       <div className="flex items-center justify-between mt-3 text-xs">
-        <span className="text-gray-500">{token}</span>
-        <span className="amount text-black font-semibold">
+        <span className="text-gray-500 dark:text-gray-400">{token}</span>
+        <span className="amount text-black dark:text-white font-semibold">
           {(Number(ratePerSecond) / 1e7).toFixed(4)}/s
         </span>
       </div>

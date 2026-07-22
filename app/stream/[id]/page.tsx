@@ -70,19 +70,19 @@ export default function StreamPage() {
 
   if (loading) return (
     <div className="max-w-2xl mx-auto px-4 py-10">
-      <div className="h-6 w-32 bg-gray-100 rounded animate-pulse mb-6" />
-      <div className="h-8 w-48 bg-gray-100 rounded animate-pulse mb-4" />
-      <div className="card animate-pulse h-40 bg-gray-50 mb-4" />
-      <div className="card animate-pulse h-60 bg-gray-50" />
+      <div className="h-6 w-32 bg-gray-100 dark:bg-gray-800 rounded animate-pulse mb-6" />
+      <div className="h-8 w-48 bg-gray-100 dark:bg-gray-800 rounded animate-pulse mb-4" />
+      <div className="card animate-pulse h-40 bg-gray-50 dark:bg-gray-800 mb-4" />
+      <div className="card animate-pulse h-60 bg-gray-50 dark:bg-gray-800" />
     </div>
   );
 
   if (error || !info || !streamAddress) return (
     <div className="max-w-2xl mx-auto px-4 py-10">
-      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black mb-6">
+      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
-      <p className="text-sm text-gray-500">{error ?? 'Stream not found.'}</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">{error ?? 'Stream not found.'}</p>
     </div>
   );
 
@@ -94,14 +94,14 @@ export default function StreamPage() {
     <div className="max-w-2xl mx-auto px-4 py-10">
 
       {/* Back */}
-      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black mb-6">
+      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <p className="text-xs text-gray-400 mb-1 font-mono">{truncateAddress(streamAddress)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1 font-mono">{truncateAddress(streamAddress)}</p>
           <h1 className="text-2xl font-black tracking-tight">Stream #{id}</h1>
         </div>
         <Badge status={status} />
@@ -110,25 +110,25 @@ export default function StreamPage() {
       {/* Live withdrawable counter — active only */}
       {status === 'active' && (
         <Card className="mb-6 text-center">
-          <p className="text-xs text-gray-400 mb-1">Withdrawable now</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Withdrawable now</p>
           <p className="text-4xl font-black font-mono tabular-nums">
             <RateTicker
               ratePerSecond={info.ratePerSecond}
               startBalance={withdrawable}
             />
           </p>
-          <p className="text-xs text-gray-400 mt-1">{truncateAddress(info.token)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncateAddress(info.token)}</p>
         </Card>
       )}
 
       {/* Paused — show frozen withdrawable */}
       {status === 'paused' && (
         <Card className="mb-6 text-center">
-          <p className="text-xs text-gray-400 mb-1">Withdrawable (paused)</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Withdrawable (paused)</p>
           <p className="text-4xl font-black font-mono tabular-nums">
             {fromStroops(withdrawable)}
           </p>
-          <p className="text-xs text-gray-400 mt-1">{truncateAddress(info.token)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncateAddress(info.token)}</p>
           <p className="text-xs text-amber-600 mt-2">Stream is paused — balance frozen</p>
         </Card>
       )}
@@ -148,7 +148,7 @@ export default function StreamPage() {
       {/* Details table */}
       <Card className="mb-6">
         <table className="w-full text-sm">
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {[
               { label: 'Sender',          value: truncateAddress(info.sender)    },
               { label: 'Recipient',       value: truncateAddress(info.recipient) },
@@ -166,8 +166,8 @@ export default function StreamPage() {
               { label: 'Clawback', value: info.clawbackEnabled ? 'Enabled' : 'Disabled' },
             ].map(({ label, value }) => (
               <tr key={label}>
-                <td className="py-2.5 text-gray-400 w-40">{label}</td>
-                <td className="py-2.5 font-mono text-black text-right">{value}</td>
+                <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">{label}</td>
+                <td className="py-2.5 font-mono text-black dark:text-white text-right">{value}</td>
               </tr>
             ))}
           </tbody>
@@ -190,7 +190,7 @@ export default function StreamPage() {
 
       {/* Clawback warning */}
       {info.clawbackEnabled && status !== 'cancelled' && (
-        <p className="mt-4 text-xs text-gray-400 border border-gray-200 rounded p-3">
+        <p className="mt-4 text-xs text-gray-400 dark:text-gray-500 border border-gray-200 dark:border-gray-800 rounded p-3">
           ⚠ This stream has clawback enabled. The sender may reclaim unstreamed tokens at any time.
         </p>
       )}
