@@ -23,6 +23,8 @@ import {
   signTransaction,
 } from '@stellar/freighter-api';
 import { getNetworkPassphrase } from '@/lib/env';
+import { queryClient } from '@/lib/queryClient';
+import { useTransactionStore } from '@/lib/store';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [publicKey,  setPublicKey]  = useState<string | null>(null);
   const [walletName, setWalletName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+
+  // Access the Zustand store's reset action outside of a component render
+  const clearTransactions = useTransactionStore((s) => s.clearTransactions);
 
   // Restore previous session from localStorage
   useEffect(() => {
@@ -99,7 +104,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setPublicKey(null);
     setWalletName(null);
     localStorage.removeItem('conduit:wallet');
-  }, []);
+    // Clear all cached stream data so a subsequent wallet connection
+    // cannot see the previous wallet's streams (fixes #81).
+    queryClient.clear();
+    clearTransactions();
+  }, [clearTransactions]);
 
   const signTx = useCallback(async (xdr: string): Promise<string> => {
     if (!publicKey) throw new Error('Wallet not connected');

@@ -66,7 +66,12 @@ export default function StreamsPage() {
   const [statusFilter, setStatusFilter] = useState<"ALL" | StreamStatus>("ALL");
 
   useEffect(() => {
-    if (!publicKey) return;
+    if (!publicKey) {
+      // Wallet disconnected — clear stale stream rows immediately (fixes #81)
+      setReceiving([]);
+      setSending([]);
+      return;
+    }
     let active = true;
 
     setLoading(true);

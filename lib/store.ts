@@ -16,6 +16,8 @@ interface TransactionStore {
   transactions: Record<string, Transaction>;
   addTransaction: (id: string, description: string) => void;
   updateStatus: (id: string, status: TransactionStatus, hash?: string, error?: string) => void;
+  /** Remove all tracked transactions — called on wallet disconnect (fixes #81). */
+  clearTransactions: () => void;
 }
 
 export const useTransactionStore = create<TransactionStore>((set) => ({
@@ -57,5 +59,9 @@ export const useTransactionStore = create<TransactionStore>((set) => ({
         }
       };
     });
-  }
+  },
+
+  clearTransactions: () => {
+    set({ transactions: {} });
+  },
 }));
