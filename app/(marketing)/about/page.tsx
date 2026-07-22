@@ -10,18 +10,18 @@ export default function AboutPage() {
 
       <h1 className="text-4xl font-black tracking-tight mb-6">About Conduit</h1>
 
-      <p className="text-gray-600 leading-relaxed mb-8">
+      <p className="text-gray-600 dark:text-gray-400 leading-relaxed mb-8">
         Conduit is an open-source protocol for continuous token streaming on the Stellar network.
         Instead of lump-sum transfers, Conduit releases tokens every second — enforced on-chain
         by deployed Soroban contracts with no trusted intermediary.
       </p>
 
       <h2 className="text-lg font-black mb-3">How it works</h2>
-      <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600 mb-8">
+      <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600 dark:text-gray-400 mb-8">
         <li>A sender deposits tokens and sets a release rate (stroops per second).</li>
-        <li>The factory deploys a new <code className="font-mono bg-gray-100 px-1 rounded">DripStream</code> contract holding those tokens.</li>
+        <li>The factory deploys a new <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">DripStream</code> contract holding those tokens.</li>
         <li>Time passes. The recipient&apos;s withdrawable balance grows every second.</li>
-        <li>The recipient calls <code className="font-mono bg-gray-100 px-1 rounded">withdraw()</code> whenever they want.</li>
+        <li>The recipient calls <code className="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">withdraw()</code> whenever they want.</li>
         <li>The sender can pause, resume, or cancel at any time — settlement is always atomic.</li>
       </ol>
 
@@ -43,13 +43,13 @@ export default function AboutPage() {
         ].map(c => (
           <div key={c.name} className="card">
             <p className="font-mono font-bold text-sm mb-1">{c.name}</p>
-            <p className="text-xs text-gray-500">{c.desc}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{c.desc}</p>
           </div>
         ))}
       </div>
 
       <h2 className="text-lg font-black mb-3">Status</h2>
-      <div className="space-y-1 text-sm text-gray-600 mb-8">
+      <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400 mb-8">
         {([
           ['DripStream contract',   '✓ Testnet'],
           ['DripFactory contract',  '✓ Testnet'],
@@ -59,9 +59,9 @@ export default function AboutPage() {
           ['Mainnet deployment',    '○ Planned Q3 2026'],
           ['Security audit',        '○ Not started'],
         ] as const).map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between border-b border-gray-100 py-1.5">
+          <div key={label} className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 py-1.5">
             <span>{label}</span>
-            <span className={value.startsWith('✓') ? 'font-semibold' : 'text-gray-400'}>{value}</span>
+            <span className={value.startsWith('✓') ? 'font-semibold' : 'text-gray-400 dark:text-gray-500'}>{value}</span>
           </div>
         ))}
       </div>
