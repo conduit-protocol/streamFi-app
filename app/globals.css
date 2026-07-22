@@ -59,9 +59,10 @@
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold;
   }
 
-  .badge-active  { @apply badge bg-black text-white dark:bg-white dark:text-black; }
-  .badge-paused  { @apply badge bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200; }
-  .badge-ended   { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
+  .badge-active    { @apply badge bg-black text-white dark:bg-white dark:text-black; }
+  .badge-paused    { @apply badge bg-yellow-50 text-yellow-800 border border-yellow-200/60 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-700; }
+  .badge-ended     { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
+  .badge-cancelled { @apply badge bg-red-50 text-red-700 border border-red-200/60 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700; }
 
   /* Amount display */
   .amount {

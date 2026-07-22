@@ -34,6 +34,10 @@ export function getFactoryContractId(): string {
   return required('NEXT_PUBLIC_FACTORY_CONTRACT_ID');
 }
 
+export function tryGetFactoryContractId(): string | undefined {
+  return process.env['NEXT_PUBLIC_FACTORY_CONTRACT_ID'] || undefined;
+}
+
 /** Not yet read by any contract call — reserved for a future governor-config view. */
 export function getGovernorContractId(): string | undefined {
   return process.env['NEXT_PUBLIC_GOVERNOR_CONTRACT_ID'] || undefined;

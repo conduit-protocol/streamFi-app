@@ -6,9 +6,10 @@ import { ConnectButton }    from '@/components/ConnectButton';
 import { ThemeToggle }      from '@/components/ThemeToggle';
 
 const NAV = [
-  { href: '/streams',   label: 'Streams'   },
-  { href: '/create',    label: 'Create'    },
-  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/streams',      label: 'Streams'    },
+  { href: '/transactions', label: 'History'    },
+  { href: '/create',       label: 'Create'     },
+  { href: '/dashboard',    label: 'Dashboard'  },
 ];
 
 export function Navbar() {

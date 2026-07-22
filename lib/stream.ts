@@ -7,11 +7,16 @@
 
 import { xdr, Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128, scValToU64 } from './soroban';
-import { getFactoryContractId } from './env';
+import { tryGetFactoryContractId } from './env';
+import { MOCK_STREAMS, MOCK_ADDRESSES } from './mock-data';
 
 let _factory: string | undefined;
-function FACTORY(): string {
-  return _factory ??= getFactoryContractId();
+function FACTORY(): string | undefined {
+  return _factory ??= tryGetFactoryContractId();
+}
+
+function isMock(): boolean {
+  return !FACTORY();
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -36,14 +41,14 @@ export interface StreamInfo {
  * Fetch the stream contract address from the factory index.
  */
 export async function getStreamAddress(source: string, streamId: bigint): Promise<string | null> {
+  if (isMock()) return MOCK_ADDRESSES[streamId.toString()] ?? null;
   try {
     const result = await simulateReadOnly(
       source,
-      FACTORY(),
+      FACTORY()!,
       'stream_address',
       [nativeToScVal(streamId, { type: 'u64' })],
     );
-    // Option<Address> — check if Some
     if (result.switch().name === 'scvVoid') return null;
     return Address.fromScVal(result).toString();
   } catch {
@@ -55,6 +60,11 @@ export async function getStreamAddress(source: string, streamId: bigint): Promis
  * Get the current withdrawable balance from a stream contract.
  */
 export async function getWithdrawable(source: string, streamAddress: string): Promise<bigint> {
+  if (isMock()) {
+    const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
+    if (entry) return MOCK_STREAMS[entry[0]]?.withdrawn ?? 0n;
+    return 10000000000000000n;
+  }
   const result = await simulateReadOnly(source, streamAddress, 'withdrawable', []);
   return scValToI128(result);
 }
@@ -63,6 +73,23 @@ export async function getWithdrawable(source: string, streamAddress: string): Pr
  * Get the full stream info struct.
  */
 export async function getStreamInfo(source: string, streamAddress: string): Promise<StreamInfo> {
+  if (isMock()) {
+    const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
+    const fallback: StreamInfo = {
+      sender: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN',
+      recipient: 'GBV4ZDEPVQQ4HX6Z3V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7',
+      token: 'CAS3J7GYLGX6UWJ6V7R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6',
+      ratePerSecond: 11574074074074n,
+      startTime: Math.floor(Date.now() / 1000) - 86400,
+      endTime: Math.floor(Date.now() / 1000) + 86400 * 7,
+      withdrawn: 5000000000000000n,
+      paused: false,
+      pausedAt: 0,
+      clawbackEnabled: false,
+      cancelled: false,
+    };
+    return entry ? (MOCK_STREAMS[entry[0]] ?? fallback) : fallback;
+  }
   const result = await simulateReadOnly(source, streamAddress, 'info', []);
   const map    = result.map()!;
 
@@ -95,6 +122,7 @@ export async function withdraw(
   amount:        bigint,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_withdraw';
   return invokeContract(
     sender,
     streamAddress,
@@ -109,6 +137,7 @@ export async function cancel(
   streamAddress: string,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_cancel';
   return invokeContract(sender, streamAddress, 'cancel', [], signTx);
 }
 
@@ -117,6 +146,7 @@ export async function pause(
   streamAddress: string,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_pause';
   return invokeContract(sender, streamAddress, 'pause', [], signTx);
 }
 
@@ -125,6 +155,7 @@ export async function resume(
   streamAddress: string,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_resume';
   return invokeContract(sender, streamAddress, 'resume', [], signTx);
 }
 
@@ -134,6 +165,7 @@ export async function topUp(
   amount:        bigint,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_topup';
   return invokeContract(
     sender,
     streamAddress,
@@ -148,5 +180,6 @@ export async function clawback(
   streamAddress: string,
   signTx:        (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_clawback';
   return invokeContract(sender, streamAddress, 'clawback', [], signTx);
 }
