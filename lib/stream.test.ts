@@ -19,6 +19,7 @@ vi.mock('./soroban.js', () => ({
 
 vi.mock('./env.js', () => ({
   getFactoryContractId: mockGetFactoryContractId,
+  tryGetFactoryContractId: () => mockGetFactoryContractId(),
 }));
 
 const FACTORY_ID       = StrKey.encodeContract(Buffer.alloc(32, 1));

@@ -4,18 +4,24 @@
 
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToU64 } from './soroban';
-import { getFactoryContractId } from './env';
+import { tryGetFactoryContractId } from './env';
+import { SENDER_STREAM_IDS, RECIPIENT_STREAM_IDS, MOCK_STREAM_IDS } from './mock-data';
 
 let _factory: string | undefined;
-function FACTORY(): string {
-  return _factory ??= getFactoryContractId();
+function FACTORY(): string | undefined {
+  return _factory ??= tryGetFactoryContractId();
+}
+
+function isMock(): boolean {
+  return !FACTORY();
 }
 
 // ── Read-only ─────────────────────────────────────────────────────────────────
 
 /** Total number of streams ever created */
 export async function streamCount(source: string): Promise<bigint> {
-  const result = await simulateReadOnly(source, FACTORY(), 'stream_count', []);
+  if (isMock()) return BigInt(MOCK_STREAM_IDS.length);
+  const result = await simulateReadOnly(source, FACTORY()!, 'stream_count', []);
   return scValToU64(result);
 }
 
@@ -26,7 +32,8 @@ export async function streamsBySender(
   offset:  number,
   limit:   number,
 ): Promise<bigint[]> {
-  const result = await simulateReadOnly(source, FACTORY(), 'streams_by_sender', [
+  if (isMock()) return SENDER_STREAM_IDS;
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', [
     new Address(sender).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
@@ -41,7 +48,8 @@ export async function streamsByRecipient(
   offset:    number,
   limit:     number,
 ): Promise<bigint[]> {
-  const result = await simulateReadOnly(source, FACTORY(), 'streams_by_recipient', [
+  if (isMock()) return RECIPIENT_STREAM_IDS;
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', [
     new Address(recipient).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
@@ -75,9 +83,10 @@ export async function createStream(
   args:   CreateStreamArgs,
   signTx: (xdr: string) => Promise<string>,
 ): Promise<string> {
+  if (isMock()) return 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6';
   return invokeContract(
     args.sender,
-    FACTORY(),
+    FACTORY()!,
     'create_stream',
     [
       new Address(args.sender).toScVal(),

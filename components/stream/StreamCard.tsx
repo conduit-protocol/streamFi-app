@@ -1,6 +1,7 @@
 import Link            from 'next/link';
 import { Badge }       from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { truncateAddress } from '@/lib/format';
 
 interface StreamCardProps {
   id:            string;
@@ -13,24 +14,38 @@ interface StreamCardProps {
 }
 
 export function StreamCard({ id, counterparty, role, token, ratePerSecond, progress, status }: StreamCardProps) {
+  const rateFormatted = (Number(ratePerSecond) / 1e7).toFixed(4);
+
   return (
     <Link href={`/stream/${id}`} className="card block hover:border-black transition-colors group">
-      <div className="flex items-start justify-between mb-3">
-        <div>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="min-w-0">
           <p className="text-xs text-gray-400 mb-0.5">
             {role === 'recipient' ? 'From' : 'To'}
           </p>
-          <p className="font-mono text-xs text-black truncate max-w-[180px]">{counterparty}</p>
+          <p className="font-mono text-xs text-black truncate max-w-[110px] sm:max-w-[180px]">
+            {truncateAddress(counterparty)}
+          </p>
         </div>
-        <Badge status={status} />
+
+        {/* Rate number centered, green text */}
+        <div className="amount text-xs sm:text-sm font-bold text-green-600 truncate text-center px-1">
+          {rateFormatted}/s
+        </div>
+
+        <div className="shrink-0">
+          <Badge status={status} />
+        </div>
       </div>
 
       <ProgressBar value={progress} />
 
       <div className="flex items-center justify-between mt-3 text-xs">
-        <span className="text-gray-500">{token}</span>
-        <span className="amount text-black font-semibold">
-          {(Number(ratePerSecond) / 1e7).toFixed(4)}/s
+        <span className="text-gray-500 font-mono truncate max-w-[200px] sm:max-w-[300px]">
+          {truncateAddress(token)}
+        </span>
+        <span className="text-[10px] text-gray-400 font-medium font-mono">
+          {Math.round(progress * 100)}%
         </span>
       </div>
     </Link>

@@ -53,9 +53,10 @@
     @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold;
   }
 
-  .badge-active  { @apply badge bg-black text-white; }
-  .badge-paused  { @apply badge bg-gray-200 text-gray-700; }
-  .badge-ended   { @apply badge bg-gray-100 text-gray-500; }
+  .badge-active    { @apply badge bg-black text-white; }
+  .badge-paused    { @apply badge bg-yellow-50 text-yellow-800 border border-yellow-200/60; }
+  .badge-ended     { @apply badge bg-gray-100 text-gray-500; }
+  .badge-cancelled { @apply badge bg-red-50 text-red-700 border border-red-200/60; }
 
   /* Amount display */
   .amount {
