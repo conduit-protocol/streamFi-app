@@ -69,6 +69,10 @@ function simSuccess(retval?: xdr.ScVal) {
     : { transactionData: {}, result: { retval } };
 }
 
+function simMissingRetval() {
+  return { transactionData: {}, result: {} };
+}
+
 function simError(message: string) {
   return { error: message };
 }
@@ -161,6 +165,13 @@ describe('simulateReadOnly', () => {
 
   it('throws when simulation succeeds but returns no result', async () => {
     mockSimulate.mockResolvedValue(simSuccess());
+    const { simulateReadOnly } = await import('./soroban.js');
+    await expect(simulateReadOnly(SOURCE, CONTRACT_ID, 'info', []))
+      .rejects.toThrow(/No result returned/);
+  });
+
+  it('throws when simulation succeeds but omits retval', async () => {
+    mockSimulate.mockResolvedValue(simMissingRetval());
     const { simulateReadOnly } = await import('./soroban.js');
     await expect(simulateReadOnly(SOURCE, CONTRACT_ID, 'info', []))
       .rejects.toThrow(/No result returned/);
