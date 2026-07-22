@@ -66,7 +66,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!publicKey) return;
+    if (!publicKey) {
+      // Wallet disconnected — clear stale stream rows immediately (fixes #81)
+      setReceiving([]);
+      setSending([]);
+      return;
+    }
     let active = true;
 
     setLoading(true);
