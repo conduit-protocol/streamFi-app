@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams }                         from 'next/navigation';
 import Link                                  from 'next/link';
 import { ArrowLeft }                         from 'lucide-react';
@@ -33,6 +33,8 @@ export default function StreamPage() {
   const { id }                                    = useParams<{ id: string }>();
   const { publicKey }                             = useWallet();
   const callerAddr                                = publicKey ?? 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+  const mounted                                   = useRef(true);
+  const loadSeq                                   = useRef(0);
 
   const [streamAddress, setStreamAddress]         = useState<string | null>(null);
   const [info,          setInfo]                  = useState<StreamInfo | null>(null);
@@ -41,11 +43,19 @@ export default function StreamPage() {
   const [loading,       setLoading]               = useState(true);
   const [error,         setError]                 = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => { mounted.current = false; };
+  }, []);
+
   const loadStream = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    const isCurrent = () => mounted.current && seq === loadSeq.current;
+
     setLoading(true);
     setError(null);
     try {
       const addr = await getStreamAddress(callerAddr, BigInt(id));
+      if (!isCurrent()) return;
       if (!addr) { setError('Stream not found.'); return; }
 
       const [streamInfo, wAmt] = await Promise.all([
@@ -53,14 +63,16 @@ export default function StreamPage() {
         getWithdrawable(callerAddr, addr),
       ]);
 
+      if (!isCurrent()) return;
       setStreamAddress(addr);
       setInfo(streamInfo);
       setWithdrawable(wAmt);
       setStatus(deriveStatus(streamInfo));
     } catch (e) {
+      if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : 'Failed to load stream.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [id, callerAddr]);
 

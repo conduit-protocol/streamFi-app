@@ -76,6 +76,8 @@ export default function StreamsPage() {
 
   useEffect(() => {
     if (!publicKey) return;
+    let active = true;
+
     setLoading(true);
     const now = Math.floor(Date.now() / 1000);
     Promise.all([
@@ -83,11 +85,14 @@ export default function StreamsPage() {
       loadRows(publicKey, "sender", now),
     ])
       .then(([recv, sent]) => {
+        if (!active) return;
         setReceiving(recv);
         setSending(sent);
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((e) => { if (active) console.error(e); })
+      .finally(() => { if (active) setLoading(false); });
+
+    return () => { active = false; };
   }, [publicKey]);
 
   const displayed = (tab === "receiving" ? receiving : sending).filter(

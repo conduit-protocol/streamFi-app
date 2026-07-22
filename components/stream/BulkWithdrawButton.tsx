@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWallet } from '@/contexts/WalletContext';
 import { withdraw } from '@/lib/stream';
 import { Button } from '@/components/ui/Button';
 
 export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStreams: any[], onComplete?: (count: number) => void }) {
   const { publicKey, signTx } = useWallet();
+  const mounted = useRef(true);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    return () => { mounted.current = false; };
+  }, []);
 
   const handleBulkWithdraw = async () => {
     if (!publicKey) return;
@@ -25,6 +30,7 @@ export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStream
     } catch (error) {
       console.error("Failed during bulk withdrawal execution", error);
     } finally {
+      if (!mounted.current) return;
       setIsProcessing(false);
       if (successCount > 0 && onComplete) {
         onComplete(successCount);
