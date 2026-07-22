@@ -1,6 +1,6 @@
 'use client';
 
-import { useState }         from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter }        from 'next/navigation';
 import { useForm }          from 'react-hook-form';
 import { zodResolver }      from '@hookform/resolvers/zod';
@@ -11,6 +11,7 @@ import { createStream }     from '@/lib/factory';
 import { toStroops }        from '@/lib/format';
 import { TOKENS_TESTNET }   from '@/lib/tokens';
 import { CopyHashButton }   from '@/components/ui/CopyHashButton';
+import { useDebounce }      from '@/hooks/useDebounce';
 
 const schema = z.object({
   recipient:       z.string().min(56, 'Must be a valid Stellar address').max(56),
@@ -30,6 +31,7 @@ export default function CreatePage() {
   const [pending, setPending] = useState(false);
   const [txHash,  setTxHash]  = useState<string | null>(null);
   const [error,   setError]   = useState<string | null>(null);
+  const [addressValid, setAddressValid] = useState<boolean | null>(null);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -39,6 +41,22 @@ export default function CreatePage() {
   const deposit  = watch('depositAmount');
   const duration = watch('durationSeconds');
   const token    = watch('token');
+  const recipient = watch('recipient');
+
+  // Debounce recipient address to reduce API calls during validation
+  const debouncedRecipient = useDebounce(recipient, 300);
+
+  // Validate recipient address when debounced value changes
+  useEffect(() => {
+    if (!debouncedRecipient || debouncedRecipient.length < 56) {
+      setAddressValid(null);
+      return;
+    }
+
+    // Basic Stellar address validation (G followed by 55 alphanumeric characters)
+    const isValidStellarAddress = /^G[A-Z0-9]{55}$/.test(debouncedRecipient);
+    setAddressValid(isValidStellarAddress);
+  }, [debouncedRecipient]);
 
   // Tokens aren't all 7 decimals (the native XLM/SAC convention) — this app
   // supports arbitrary TOKENS_TESTNET entries, so the preview must use each
@@ -137,6 +155,11 @@ export default function CreatePage() {
           />
           {errors.recipient && (
             <p className="text-xs text-red-600 mt-1">{errors.recipient.message}</p>
+          )}
+          {debouncedRecipient && debouncedRecipient.length >= 56 && addressValid !== null && !errors.recipient && (
+            <p className={`text-xs mt-1 ${addressValid ? 'text-green-600' : 'text-red-600'}`}>
+              {addressValid ? 'Valid Stellar address' : 'Invalid Stellar address'}
+            </p>
           )}
         </div>
 
