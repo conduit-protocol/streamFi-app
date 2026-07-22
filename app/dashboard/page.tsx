@@ -15,10 +15,9 @@ type Tab = 'receiving' | 'sending';
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
 interface StreamRow {
-  id:       string;
-  info:     StreamInfo;
-  status:   StreamStatus;
-  progress: number;
+  id:     string;
+  info:   StreamInfo;
+  status: StreamStatus;
 }
 
 function deriveStatus(info: StreamInfo): StreamStatus {
@@ -27,14 +26,6 @@ function deriveStatus(info: StreamInfo): StreamStatus {
   const now = Math.floor(Date.now() / 1000);
   if (info.endTime > 0 && now >= info.endTime) return 'ended';
   return 'active';
-}
-
-function deriveProgress(info: StreamInfo): number {
-  if (info.endTime === 0) return 0;
-  const now = Math.floor(Date.now() / 1000);
-  if (now <= info.startTime) return 0;
-  if (now >= info.endTime)   return 1;
-  return (now - info.startTime) / (info.endTime - info.startTime);
 }
 
 async function loadRows(publicKey: string, role: 'sender' | 'recipient'): Promise<StreamRow[]> {
@@ -48,7 +39,7 @@ async function loadRows(publicKey: string, role: 'sender' | 'recipient'): Promis
       const addr = await getStreamAddress(publicKey, id);
       if (!addr) continue;
       const info = await getStreamInfo(publicKey, addr);
-      rows.push({ id: id.toString(), info, status: deriveStatus(info), progress: deriveProgress(info) });
+      rows.push({ id: id.toString(), info, status: deriveStatus(info) });
     } catch { /* skip invalid streams */ }
   }
   return rows;
@@ -198,7 +189,8 @@ export default function DashboardPage() {
                   role={tab === 'receiving' ? 'recipient' : 'sender'}
                   token={row.info.token}
                   ratePerSecond={row.info.ratePerSecond}
-                  progress={row.progress}
+                  startTime={row.info.startTime}
+                  endTime={row.info.endTime}
                   status={row.status}
                 />
               ))}
