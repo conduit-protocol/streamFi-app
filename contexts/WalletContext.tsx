@@ -10,11 +10,12 @@
  * doesn't need.
  */
 
-import {
+import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -59,6 +60,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [publicKey,  setPublicKey]  = useState<string | null>(null);
   const [walletName, setWalletName] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const isMountedRef = useRef(true);
+  const pendingRequestIdRef = useRef(0);
 
   // Access the Zustand store's reset action outside of a component render
   const clearTransactions = useTransactionStore((s) => s.clearTransactions);
@@ -69,16 +72,30 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     if (stored) {
       try {
         const { key, name } = JSON.parse(stored) as { key: string; name: string };
-        setPublicKey(key);
-        setWalletName(name);
-      } catch { /* ignore malformed */ }
+        if (typeof key === 'string' && key && typeof name === 'string' && name) {
+          setPublicKey(key);
+          setWalletName(name);
+        } else {
+          localStorage.removeItem('conduit:wallet');
+        }
+      } catch {
+        localStorage.removeItem('conduit:wallet');
+      }
     }
+
+    return () => {
+      isMountedRef.current = false;
+      pendingRequestIdRef.current += 1;
+    };
   }, []);
 
   const connect = useCallback(async () => {
+    const requestId = ++pendingRequestIdRef.current;
     setConnecting(true);
     try {
       const { isConnected: hasFreighter } = await freighterIsConnected();
+      if (requestId !== pendingRequestIdRef.current || !isMountedRef.current) return;
+
       if (!hasFreighter) {
         throw new Error(
           'Freighter wallet extension not detected. Install it from https://www.freighter.app/ and reload.',
@@ -88,6 +105,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       // Prompts the user for permission if not already granted, then
       // returns the currently-selected address.
       const { address, error } = await requestAccess();
+      if (requestId !== pendingRequestIdRef.current || !isMountedRef.current) return;
       if (error || !address) {
         throw new Error(error?.message ?? 'Failed to connect to Freighter.');
       }
@@ -96,11 +114,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setWalletName('Freighter');
       localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: 'Freighter' }));
     } finally {
-      setConnecting(false);
+      if (requestId === pendingRequestIdRef.current && isMountedRef.current) {
+        setConnecting(false);
+      }
     }
   }, []);
 
   const disconnect = useCallback(() => {
+    pendingRequestIdRef.current += 1;
+    setConnecting(false);
     setPublicKey(null);
     setWalletName(null);
     localStorage.removeItem('conduit:wallet');
@@ -112,10 +134,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const signTx = useCallback(async (xdr: string): Promise<string> => {
     if (!publicKey) throw new Error('Wallet not connected');
+    if (typeof xdr !== 'string' || !xdr.trim()) {
+      throw new Error('Invalid transaction payload.');
+    }
+
+    const requestId = pendingRequestIdRef.current;
+    const currentPublicKey = publicKey;
     const { signedTxXdr, error } = await signTransaction(xdr, {
       networkPassphrase: getNetworkPassphrase(),
-      address:           publicKey,
+      address:           currentPublicKey,
     });
+
+    if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKey) {
+      throw new Error('Wallet state changed during signing. Please retry the operation.');
+    }
+
     if (error || !signedTxXdr) {
       throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
     }
