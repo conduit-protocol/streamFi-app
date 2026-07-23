@@ -1,4 +1,8 @@
+import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createRoot } from 'react-dom/client';
+import { act } from 'react';
+import { OfflineIndicator } from '../OfflineIndicator';
 
 describe('OfflineIndicator', () => {
   beforeEach(() => {
@@ -16,16 +20,11 @@ describe('OfflineIndicator', () => {
   });
 
   it('should track online status changes', () => {
-    const listeners: { [key: string]: (event: Event) => void } = {};
-
-    const addEventListenerMock = vi.fn(
-      (event: string, handler: (event: Event) => void) => {
-        listeners[event] = handler;
-      },
-    );
+    const addEventListenerMock = vi.fn();
+    const removeEventListenerMock = vi.fn();
 
     window.addEventListener = addEventListenerMock as any;
-    window.removeEventListener = vi.fn();
+    window.removeEventListener = removeEventListenerMock as any;
 
     Object.defineProperty(navigator, 'onLine', {
       writable: true,
@@ -33,15 +32,27 @@ describe('OfflineIndicator', () => {
       configurable: true,
     });
 
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<OfflineIndicator />);
+    });
+
     expect(addEventListenerMock).toHaveBeenCalledWith(
       'online',
       expect.any(Function),
     );
-
     expect(addEventListenerMock).toHaveBeenCalledWith(
       'offline',
       expect.any(Function),
     );
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
   });
 
   it('should accept custom className prop', () => {
