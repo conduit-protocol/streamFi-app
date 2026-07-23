@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
+import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { BulkWithdrawButton } from "@/components/stream/BulkWithdrawButton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo } from "@/lib/stream";
@@ -202,11 +203,8 @@ export default function DashboardPage() {
           {/* Stream list */}
           {loading ? (
             <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="card animate-pulse h-24 bg-gray-50 dark:bg-gray-800"
-                />
+              {Array.from({ length: 3 }).map((_, i) => (
+                <StreamCardSkeleton key={i} />
               ))}
             </div>
           ) : displayed.length === 0 ? (
