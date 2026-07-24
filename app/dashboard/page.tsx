@@ -33,18 +33,26 @@ async function loadRows(
   role: "sender" | "recipient",
   now: number,
 ): Promise<StreamRow[]> {
-  const ids =
-    role === "sender"
-      ? await streamsBySender(publicKey, publicKey, 0, 50)
-      : await streamsByRecipient(publicKey, publicKey, 0, 50);
+  let ids: bigint[];
+  try {
+    ids =
+      role === "sender"
+        ? await streamsBySender(publicKey, publicKey, 0, 50)
+        : await streamsByRecipient(publicKey, publicKey, 0, 50);
+  } catch {
+    return [];
+  }
+
+  if (!ids || !Array.isArray(ids)) return [];
 
   const rows: StreamRow[] = [];
   for (const id of ids) {
     try {
       const addr = await getStreamAddress(publicKey, id);
-      if (!addr) continue;
+      if (!addr || typeof addr !== "string") continue;
       const info = await getStreamInfo(publicKey, addr);
-      if (!info) continue;
+      if (!info || typeof info !== "object") continue;
+      if (typeof info.ratePerSecond !== "bigint") continue;
       rows.push({
         id: id.toString(),
         info,
@@ -66,17 +74,20 @@ export default function DashboardPage() {
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!publicKey) {
       // Wallet disconnected — clear stale stream rows immediately (fixes #81)
       setReceiving([]);
       setSending([]);
+      setError(null);
       return;
     }
     let active = true;
 
     setLoading(true);
+    setError(null);
     const now = Math.floor(Date.now() / 1000);
     Promise.all([
       loadRows(publicKey, "recipient", now),
@@ -87,7 +98,11 @@ export default function DashboardPage() {
         setReceiving(recv);
         setSending(sent);
       })
-      .catch((e) => { if (active) console.error(e); })
+      .catch((e) => {
+        if (!active) return;
+        console.error(e);
+        setError("Failed to load streams. Please try again.");
+      })
       .finally(() => { if (active) setLoading(false); });
 
     return () => { active = false; };
@@ -101,16 +116,22 @@ export default function DashboardPage() {
   const receivingRate = useMemo(
     () =>
       receiving
-        .filter((s) => s.status === "active")
+        .filter((s) => s.status === "active" && s.info && typeof s.info.ratePerSecond === "bigint")
         .reduce((a, s) => a + s.info.ratePerSecond, 0n),
     [receiving],
   );
   const totalWithdrawn = useMemo(
-    () => receiving.reduce((a, s) => a + s.info.withdrawn, 0n),
+    () =>
+      receiving
+        .filter((s) => s.info && typeof s.info.withdrawn === "bigint")
+        .reduce((a, s) => a + s.info.withdrawn, 0n),
     [receiving],
   );
   const senderCount = useMemo(
-    () => new Set(receiving.map((s) => s.info.sender)).size,
+    () =>
+      new Set(
+        receiving.filter((s) => s.info?.sender).map((s) => s.info.sender),
+      ).size,
     [receiving],
   );
 
@@ -161,6 +182,12 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {error && (
+        <div className="card text-center py-4 mb-6 text-sm text-red-500 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
       {!connected ? (
         <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
