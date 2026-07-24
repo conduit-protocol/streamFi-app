@@ -1,34 +1,28 @@
-# Hydration Mismatch Fix — Task Tracking
+# Wallet Connect Flow - Concurrency Fix Implementation
 
-## Task: Fix hydration mismatch error on the main dashboard page
+## Phase 1 — Atomic State Transitions & Locking in WalletContext
+- [x] 1. Add `Mutex` class for transaction signing operations
+- [x] 2. Implement operation queue with configurable max concurrency (default 5)
+- [x] 3. Add `AbortController` integration for cancellable operations
+- [x] 4. Add `pendingOperationCount` to wallet state
+- [x] 5. Make `disconnect()` abort all in-flight operations and wait for graceful shutdown
+- [x] 6. Add `maxConcurrentOperations` config
 
-### Steps:
+## Phase 2 — Precision & Error-Boundary Wrappers
+- [x] 7. Add `lib/safe-operations.ts` with error normalization, safe wrappers, idempotency keys
+- [x] 8. Add `safeRateToString()`, `safeToStroops()`, `safePercent()` precision utilities
+- [x] 9. Wrap Soroban pipeline with abort signals, retry with backoff, circuit breaker
+- [x] 10. Add idempotency key support to `invokeContract()`
 
-- [x] Step 0: Analyze codebase and identify root cause
-- [x] Step 1: Get user approval on the plan
-- [x] Step 2: Fix `lib/format.ts` — Make `formatTimestamp()` deterministic by passing explicit `'en-US'` locale
-- [x] Step 3: Fix `components/stream/StreamTimeline.tsx` — Use `useEffect` + `useState` to make `Date.now()` client-only
-- [x] Step 4: Fix `app/dashboard/page.tsx` — Guard `deriveStatus`/`deriveProgress` with `useEffect` to avoid hydration mismatch
-- [x] Step 4b: Fix `app/streams/page.tsx` — Same pattern as dashboard (duplicate code)
-- [x] Step 5: Verify the fix — typecheck, lint, and tests (in progress...)
-- [x] Step 6: Generate PR description and write to `pr.md`
+## Phase 3 — Concurrency Control in Consumer Components
+- [x] 11. Replace sequential 2s-delay in `BulkWithdrawButton.tsx` with `withBoundedParallel`
+- [x] 12. Add abort signal propagation from UI to pipeline
+- [x] 13. Add per-stream error isolation and progress tracking
+- [x] 14. Update `ErrorBoundary.tsx` with circuit breaker, retry, configurable fallback
 
-## Summary
-
-### Root Cause
-
-The hydration mismatch on the dashboard page was caused by two issues:
-
-1. **`formatTimestamp()` in `lib/format.ts`** used `toLocaleString(undefined, ...)` which is locale-dependent. Node.js (server) may default to `en-US` while the browser uses the user's system locale, producing different formatted strings.
-
-2. **`StreamTimeline.tsx`** called `Math.floor(Date.now() / 1000)` **during component render** rather than inside a `useEffect`. This computed a different timestamp on the server (during SSR/prerendering) vs. the client (during hydration), causing React's hydration to fail.
-
-3. **`DashboardPage` and `StreamsPage`** used `deriveStatus()` and `deriveProgress()` functions that called `Date.now()` internally (rather than accepting it as a parameter), making the time dependency implicit and harder to control.
-
-### Fixes Applied
-
-1. **`lib/format.ts`** — Changed `toLocaleString(undefined, ...)` to `toLocaleString('en-US', ...)` for deterministic SSR output.
-
-2. **`components/stream/StreamTimeline.tsx`** — Moved `Date.now()` into `useEffect` + `useState`, initializing with `startTime` (0% progress) for SSR, then updating to real time after hydration. Added a 10-second refresh interval.
-
-3. **`app/dashboard/page.tsx`** & **`app/streams/page.tsx`** — Refactored `deriveStatus` and `deriveProgress` to accept `now` as an explicit parameter. The `Date.now()` call is now made once inside `useEffect` and passed to `loadRows`.
+## Phase 4 — Integration Test Suite
+- [ ] 15. Update WalletContext tests with 100 concurrent signTx() calls
+- [ ] 16. Test disconnect() while operations are in-flight
+- [ ] 17. Test abort signal propagation through pipeline
+- [ ] 18. Test bulk withdraw with mixed success/failure streams
+- [ ] 19. Test rate limiting and queue overflow behavior
