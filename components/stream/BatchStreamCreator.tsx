@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { truncateAddress } from '@/lib/format';
@@ -17,8 +17,14 @@ export function BatchStreamCreator() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  const isSubmittingRef = useRef(false);
+
   const addRecipient = () => {
     if (!addressInput || !rateInput) return;
+    if (!/^\d+$/.test(rateInput)) {
+      alert("Invalid rate input. Must be a positive integer.");
+      return;
+    }
     try {
       const rate = BigInt(rateInput);
       setRecipients([...recipients, { address: addressInput, ratePerSecond: rate }]);
@@ -34,7 +40,8 @@ export function BatchStreamCreator() {
   };
 
   const handleBatchCreate = async () => {
-    if (recipients.length === 0) return;
+    if (recipients.length === 0 || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       // Simulate interaction with SDK ConduitBatcher
@@ -45,6 +52,7 @@ export function BatchStreamCreator() {
       console.error("Batch creation failed", error);
       alert("Failed to submit batch transaction.");
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
