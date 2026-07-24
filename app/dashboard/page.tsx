@@ -44,6 +44,7 @@ async function loadRows(
       const addr = await getStreamAddress(publicKey, id);
       if (!addr) continue;
       const info = await getStreamInfo(publicKey, addr);
+      if (!info) continue;
       rows.push({
         id: id.toString(),
         info,
