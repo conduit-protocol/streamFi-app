@@ -141,13 +141,19 @@ export async function getStreamInfo(source: string, streamAddress: string): Prom
   };
 }
 
+
 // ── Mutating ──────────────────────────────────────────────────────────────────
 
+/**
+ * Withdraw the available balance from a stream.
+ * Supports abort signal for cancellation.
+ */
 export async function withdraw(
   sender:        string,
   streamAddress: string,
   amount:        bigint,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_withdraw';
   return invokeContract(
@@ -156,41 +162,58 @@ export async function withdraw(
     'withdraw',
     [nativeToScVal(amount, { type: 'i128' })],
     signTx,
+    { signal },
   );
 }
 
+/**
+ * Cancel a stream (sender only).
+ */
 export async function cancel(
   sender:        string,
   streamAddress: string,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_cancel';
-  return invokeContract(sender, streamAddress, 'cancel', [], signTx);
+  return invokeContract(sender, streamAddress, 'cancel', [], signTx, { signal });
 }
 
+/**
+ * Pause a stream (sender only, active streams).
+ */
 export async function pause(
   sender:        string,
   streamAddress: string,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_pause';
-  return invokeContract(sender, streamAddress, 'pause', [], signTx);
+  return invokeContract(sender, streamAddress, 'pause', [], signTx, { signal });
 }
 
+/**
+ * Resume a paused stream (sender only).
+ */
 export async function resume(
   sender:        string,
   streamAddress: string,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_resume';
-  return invokeContract(sender, streamAddress, 'resume', [], signTx);
+  return invokeContract(sender, streamAddress, 'resume', [], signTx, { signal });
 }
 
+/**
+ * Top up a stream with additional tokens (sender only).
+ */
 export async function topUp(
   sender:        string,
   streamAddress: string,
   amount:        bigint,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_topup';
   return invokeContract(
@@ -199,14 +222,19 @@ export async function topUp(
     'top_up',
     [nativeToScVal(amount, { type: 'i128' })],
     signTx,
+    { signal },
   );
 }
 
+/**
+ * Clawback unstreamed tokens (sender only, clawback-enabled streams).
+ */
 export async function clawback(
   sender:        string,
   streamAddress: string,
-  signTx:        (xdr: string) => Promise<string>,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_clawback';
-  return invokeContract(sender, streamAddress, 'clawback', [], signTx);
+  return invokeContract(sender, streamAddress, 'clawback', [], signTx, { signal });
 }
