@@ -19,11 +19,11 @@ export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStream
     
     try {
       for (const stream of activeStreams) {
+        if (!mounted.current) break;
+        if (!stream.info || !stream.id) continue;
         if (stream.info.withdrawable > 0n) {
-          // Process withdrawal for each stream sequentially to avoid nonce collisions
           await withdraw(publicKey, stream.id, stream.info.withdrawable, signTx);
           successCount++;
-          // A small delay to avoid rate limiting
           await new Promise(r => setTimeout(r, 2000));
         }
       }
@@ -39,7 +39,7 @@ export function BulkWithdrawButton({ activeStreams, onComplete }: { activeStream
   };
 
   const totalAvailable = activeStreams.reduce(
-    (sum, s) => sum + (s.info.withdrawable || 0n), 
+    (sum, s) => sum + (s.info?.withdrawable || 0n), 
     0n
   );
 
