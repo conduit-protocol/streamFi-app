@@ -16,7 +16,7 @@ import { useDebounce }      from '@/hooks/useDebounce';
 const schema = z.object({
   recipient:       z.string().min(56, 'Must be a valid Stellar address').max(56),
   token:           z.string().min(1, 'Select a token'),
-  depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount'),
+  depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
   durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour'),
   clawback:        z.boolean(),
 });
@@ -88,6 +88,7 @@ export default function CreatePage() {
       // silently produces a value wrong by orders of magnitude for any
       // non-7-decimal token if the decimals argument is omitted.
       const depositStroops = toStroops(data.depositAmount, tokenMeta.decimals);
+      if (depositStroops <= 0n) throw new Error('Deposit must be greater than 0');
       const rateStroops    = depositStroops / BigInt(data.durationSeconds);
       const startTime      = Math.floor(Date.now() / 1000) + 60; // 60s buffer
       const endTime        = startTime + data.durationSeconds;
