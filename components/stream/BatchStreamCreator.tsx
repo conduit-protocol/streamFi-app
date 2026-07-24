@@ -100,7 +100,7 @@ export function BatchStreamCreator() {
         onClick={handleBatchCreate} 
         disabled={recipients.length === 0 || isSubmitting}
       >
-        {isSubmitting ? 'Submitting...' : \`Create \${recipients.length} Streams\`}
+        {isSubmitting ? 'Submitting...' : `Create ${recipients.length} Streams`}
       </button>
     </div>
   );
