@@ -156,7 +156,7 @@ describe('mutating calls', () => {
     const hash = await withdraw(SENDER, STREAM_ADDRESS, 5_000n, signTx);
     expect(hash).toBe('hash1');
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx, expect.anything(),
+      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx,
     );
   });
 
@@ -165,7 +165,7 @@ describe('mutating calls', () => {
     const { cancel } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await cancel(SENDER, STREAM_ADDRESS, signTx)).toBe('hash2');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx);
   });
 
   it('pause()/resume() invoke their respective methods', async () => {
@@ -173,9 +173,9 @@ describe('mutating calls', () => {
     const { pause, resume } = await import('./stream.js');
     const signTx = vi.fn();
     await pause(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx);
     await resume(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx);
   });
 
   it('topUp() invokes top_up with the i128 amount', async () => {
@@ -184,7 +184,7 @@ describe('mutating calls', () => {
     const signTx = vi.fn();
     await topUp(SENDER, STREAM_ADDRESS, 25_000n, signTx);
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx, expect.anything(),
+      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx,
     );
   });
 
@@ -193,6 +193,6 @@ describe('mutating calls', () => {
     const { clawback } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await clawback(SENDER, STREAM_ADDRESS, signTx)).toBe('hash5');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx);
   });
 });

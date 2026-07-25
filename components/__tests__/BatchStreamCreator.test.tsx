@@ -28,7 +28,7 @@ async function addRecipient(container: HTMLElement) {
     (b) => b.textContent === 'Add',
   )!;
   await act(async () => {
-    setInputValue(addressInput, 'GABC123RECIPIENT');
+    setInputValue(addressInput, 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW');
     setInputValue(rateInput, '100');
   });
   await act(async () => {

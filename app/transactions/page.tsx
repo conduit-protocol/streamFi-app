@@ -5,8 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
 import { formatTimestamp, truncateAddress } from '@/lib/format';
 import { fetchTransactionHistoryWithTimeout, type TransactionRow } from '@/lib/indexer';
-
-export const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
+const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
 
 const STATUS_CLASS: Record<string, string> = {
   Success: 'text-green-700 bg-green-50',
@@ -17,7 +16,7 @@ const STATUS_CLASS: Record<string, string> = {
 export default function TransactionsPage() {
   const { data: txs = [], status, error, refetch, isRefetching } = useQuery<TransactionRow[]>({
     queryKey: TRANSACTIONS_QUERY_KEY,
-    queryFn: fetchTransactionHistoryWithTimeout,
+    queryFn: () => fetchTransactionHistoryWithTimeout(),
     staleTime: 1000 * 30,
     retry: 1,
   });

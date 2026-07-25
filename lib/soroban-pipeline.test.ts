@@ -111,7 +111,7 @@ describe('invokeContract', () => {
     );
 
     expect(hash).toBe('deadbeef');
-    expect(signTx).toHaveBeenCalledWith('assembled-envelope-b64', undefined);
+    expect(signTx).toHaveBeenCalledWith('assembled-envelope-b64');
   });
 
   it('throws on simulation failure without ever calling signTx', async () => {

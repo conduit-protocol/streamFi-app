@@ -276,9 +276,10 @@ export default function DashboardPage() {
                     setError(null);
                     setLoading(true);
                     const now = Math.floor(Date.now() / 1000);
+                    const controller = new AbortController();
                     Promise.all([
-                      loadRows(publicKey, "recipient", now),
-                      loadRows(publicKey, "sender", now),
+                      loadRows(publicKey, "recipient", now, controller.signal),
+                      loadRows(publicKey, "sender", now, controller.signal),
                     ])
                       .then(([recv, sent]) => {
                         setReceiving(recv);
@@ -287,7 +288,7 @@ export default function DashboardPage() {
                       .catch((e) => {
                         console.error(e);
                         const message =
-                          e instanceof RpcTimeoutError
+                          (e instanceof Error && e.name === "RpcTimeoutError")
                             ? "The RPC provider didn't respond in time. Check your connection and try again."
                             : "Failed to load streams. Please try again.";
                         setError(message);

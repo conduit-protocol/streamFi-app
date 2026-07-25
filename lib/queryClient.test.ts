@@ -25,6 +25,6 @@ describe('refreshStreamData', () => {
     await refreshStreamData();
 
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ refetchType: 'active' });
-    expect(queryClient.refetchQueries).toHaveBeenCalledWith({ type: 'active', refetchType: 'active' });
+    expect(queryClient.refetchQueries).toHaveBeenCalledWith({ type: 'active' });
   });
 });

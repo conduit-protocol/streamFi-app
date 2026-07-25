@@ -19,7 +19,10 @@ const mockUseWallet = vi.mocked(useWallet);
 const mockWithdraw = vi.mocked(withdraw);
 
 function makeStream(id: string, withdrawable: bigint) {
-  return { id, info: { withdrawable } };
+  const address = id === '1' ? 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' 
+                : id === 'A' ? 'CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+                : 'CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  return { id, address, info: { withdrawable } };
 }
 
 describe('BulkWithdrawButton', () => {
@@ -41,10 +44,10 @@ describe('BulkWithdrawButton', () => {
 
   it('skips streams with missing info without throwing', async () => {
     const streams = [
-      { id: undefined, info: undefined },
-      makeStream('C_STREAM_1', 100n),
-      { id: 'C_STREAM_2', info: undefined },
-    ];
+      { id: undefined, address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: undefined },
+      makeStream('1', 100n),
+      { id: 'C_STREAM_2', address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: undefined },
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -67,7 +70,7 @@ describe('BulkWithdrawButton', () => {
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
       'GABC123',
-      'C_STREAM_1',
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       100n,
       expect.any(Function),
       expect.anything(),
@@ -81,9 +84,9 @@ describe('BulkWithdrawButton', () => {
 
   it('skips streams with missing id without throwing', async () => {
     const streams = [
-      { id: undefined, info: { withdrawable: 50n } },
-      makeStream('C_STREAM_A', 200n),
-    ];
+      { id: undefined, address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: { withdrawable: 50n } },
+      makeStream('A', 200n),
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -103,7 +106,7 @@ describe('BulkWithdrawButton', () => {
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
       'GABC123',
-      'C_STREAM_A',
+      'CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       200n,
       expect.any(Function),
       expect.anything(),
@@ -153,9 +156,9 @@ describe('BulkWithdrawButton', () => {
 
     const onComplete = vi.fn();
     const streams = [
-      makeStream('C_STREAM_1', 100n),
-      makeStream('C_STREAM_2', 200n),
-    ];
+      makeStream('1', 100n),
+      makeStream('A', 200n),
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -191,9 +194,9 @@ describe('BulkWithdrawButton', () => {
 
   it('renders disabled button when no streams have withdrawable balance', () => {
     const streams = [
-      { id: 'C_A', info: { withdrawable: 0n } },
-      { id: 'C_B', info: { withdrawable: 0n } },
-    ];
+      { id: 'C_A', address: 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW', info: { withdrawable: 0n } },
+      { id: 'C_B', address: 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW', info: { withdrawable: 0n } },
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
