@@ -75,6 +75,23 @@ export async function getWithdrawable(source: string, streamAddress: string): Pr
 }
 
 /**
+ * Get the total amount streamed so far across the duration of the stream.
+ */
+export async function streamedTotal(
+  source: string,
+  streamAddress: string,
+  options?: { signal?: AbortSignal },
+): Promise<bigint> {
+  if (isMock()) {
+    const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
+    if (entry) return MOCK_STREAMS[entry[0]]?.withdrawn ?? 0n;
+    return 5000000000000000n;
+  }
+  const result = await simulateReadOnly(source, streamAddress, 'streamed_total', [], options);
+  return scValToI128(result);
+}
+
+/**
  * Get the full stream info struct.
  */
 export async function getStreamInfo(
@@ -186,6 +203,21 @@ export async function cancel(
 }
 
 /**
+ * Force cancel a payment stream (Admin/Governor only).
+ */
+export async function forceCancel(
+  sender:        string,
+  streamAddress: string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_force_cancel';
+  return signal
+    ? invokeContract(sender, streamAddress, 'force_cancel', [], signTx, { signal })
+    : invokeContract(sender, streamAddress, 'force_cancel', [], signTx);
+}
+
+/**
  * Pause a stream (sender only, active streams).
  */
 export async function pause(
@@ -244,4 +276,21 @@ export async function clawback(
   return signal
     ? invokeContract(sender, streamAddress, 'clawback', [], signTx, { signal })
     : invokeContract(sender, streamAddress, 'clawback', [], signTx);
+}
+
+/**
+ * Transfer stream ownership to a new recipient address.
+ */
+export async function transferRecipient(
+  sender:        string,
+  streamAddress: string,
+  newRecipient:  string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_transfer_recipient';
+  const args = [new Address(newRecipient).toScVal()];
+  return signal
+    ? invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx, { signal })
+    : invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx);
 }

@@ -253,6 +253,7 @@ export function WalletProvider({
   const abortControllerRef = useRef<AbortController | null>(null);
   const semaphoreRef = useRef<Semaphore>(new Semaphore(maxConcurrentOperations));
   const connectMutexRef = useRef<Mutex>(new Mutex());
+  const pendingConnectAbortRef = useRef<AbortController | null>(null); // 👈 ADD THIS LINE
   const router = useRouter();
 
   // Access the Zustand store's reset action outside of a component render
