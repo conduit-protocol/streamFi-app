@@ -1,5 +1,4 @@
 'use client';
-
 /**
  * WalletContext — Stellar wallet connection state.
  *
