@@ -23,6 +23,11 @@ import {
   signTransaction,
 } from '@stellar/freighter-api';
 import { getNetworkPassphrase } from '@/lib/env';
+import {
+  clearWalletSession,
+  loadWalletSession,
+  saveWalletSession,
+} from '@/lib/wallet-storage';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,13 +65,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // Restore previous session from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('conduit:wallet');
+    const stored = loadWalletSession();
     if (stored) {
-      try {
-        const { key, name } = JSON.parse(stored) as { key: string; name: string };
-        setPublicKey(key);
-        setWalletName(name);
-      } catch { /* ignore malformed */ }
+      setPublicKey(stored.key);
+      setWalletName(stored.name);
     }
   }, []);
 
@@ -89,7 +91,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       setPublicKey(address);
       setWalletName('Freighter');
-      localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: 'Freighter' }));
+      saveWalletSession({ key: address, name: 'Freighter' });
     } finally {
       setConnecting(false);
     }
@@ -98,7 +100,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(() => {
     setPublicKey(null);
     setWalletName(null);
-    localStorage.removeItem('conduit:wallet');
+    clearWalletSession();
   }, []);
 
   const signTx = useCallback(async (xdr: string): Promise<string> => {
