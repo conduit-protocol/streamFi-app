@@ -60,6 +60,8 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
     withdrawn: 0n,
     cancelled: false,
     paused: false,
+    pausedAt: 0,
+    clawbackEnabled: false,
     ...overrides,
   };
 }
