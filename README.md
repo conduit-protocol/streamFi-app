@@ -16,6 +16,8 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Freighter](https://ww
 | `/create` | Create a new stream — token, recipient, rate, duration |
 | `/stream/[id]` | Single stream view — progress, withdraw, top-up, cancel |
 | `/dashboard` | Sender overview — aggregate flow rate, total disbursed |
+| `/transactions` | Transaction history — indexed on-chain activity for the connected wallet |
+| `/profile` | Connected wallet profile — address, network, and session details |
 
 ---
 
