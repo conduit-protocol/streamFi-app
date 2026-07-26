@@ -1,15 +1,16 @@
 'use client';
 
-import { useState }         from 'react';
-import { useRouter }        from 'next/navigation';
-import { useForm }          from 'react-hook-form';
-import { zodResolver }      from '@hookform/resolvers/zod';
-import { z }                from 'zod';
-import { ArrowRight, Info } from 'lucide-react';
-import { useWallet }        from '@/contexts/WalletContext';
-import { createStream }     from '@/lib/factory';
-import { toStroops }        from '@/lib/format';
-import { TOKENS_TESTNET }   from '@/lib/tokens';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter }                   from 'next/navigation';
+import { useForm }                     from 'react-hook-form';
+import { zodResolver }                 from '@hookform/resolvers/zod';
+import { z }                           from 'zod';
+import { ArrowRight, Info }            from 'lucide-react';
+import { useWallet }                   from '@/contexts/WalletContext';
+import { createStream }                from '@/lib/factory';
+import { toStroops }                   from '@/lib/format';
+import { TOKENS_TESTNET }              from '@/lib/tokens';
+import { checkRecipientExists }        from '@/lib/soroban';
 
 const schema = z.object({
   recipient:       z.string().min(56, 'Must be a valid Stellar address').max(56),
@@ -30,14 +31,55 @@ export default function CreatePage() {
   const [txHash,  setTxHash]  = useState<string | null>(null);
   const [error,   setError]   = useState<string | null>(null);
 
+  // On-chain recipient existence check — only runs after the address passes
+  // the Zod length/format guard (i.e. it's a plausible 56-char G… key).
+  // Debounced to avoid hammering the RPC on every keystroke.
+  const [recipientStatus, setRecipientStatus] = useState<
+    'idle' | 'checking' | 'valid' | 'not-found' | 'error'
+  >('idle');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { token: 'XLM', clawback: false, durationSeconds: 2592000 },
   });
 
-  const deposit  = watch('depositAmount');
-  const duration = watch('durationSeconds');
-  const token    = watch('token');
+  const recipient = watch('recipient');
+  const deposit   = watch('depositAmount');
+  const duration  = watch('durationSeconds');
+  const token     = watch('token');
+
+  // Debounced async on-chain account existence check.
+  // Only fires once the address satisfies the Zod schema (56 chars, starts
+  // with G) so we never waste an RPC call on a partially-typed address.
+  useEffect(() => {
+    // The Zod schema enforces min(56)/max(56), so only proceed when the
+    // address looks complete.
+    const validLength = recipient?.length === 56;
+
+    if (!validLength) {
+      setRecipientStatus('idle');
+      return;
+    }
+
+    setRecipientStatus('checking');
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const exists = await checkRecipientExists(recipient);
+        setRecipientStatus(exists ? 'valid' : 'not-found');
+      } catch {
+        // Network / RPC error — don't block the user, but surface a warning.
+        setRecipientStatus('error');
+      }
+    }, 600);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [recipient]);
 
   // Tokens aren't all 7 decimals (the native XLM/SAC convention) — this app
   // supports arbitrary TOKENS_TESTNET entries, so the preview must use each
@@ -55,6 +97,14 @@ export default function CreatePage() {
   async function onSubmit(data: FormValues) {
     if (!publicKey) {
       setError('Connect your wallet first.');
+      return;
+    }
+    // Reject if the on-chain check confirmed the account does not exist.
+    // (A status of 'idle' or 'checking' means the address is incomplete or
+    //  the check is still in-flight — Zod guards the shape; we only hard-block
+    //  on a definitive not-found result.)
+    if (recipientStatus === 'not-found') {
+      setError('Recipient account does not exist on-chain. Please check the address.');
       return;
     }
     setPending(true);
@@ -133,6 +183,28 @@ export default function CreatePage() {
           />
           {errors.recipient && (
             <p className="text-xs text-red-600 mt-1">{errors.recipient.message}</p>
+          )}
+          {/* On-chain existence feedback — only shown once the address passes
+              the Zod format check (no redundancy with live Zod validation) */}
+          {!errors.recipient && recipientStatus === 'checking' && (
+            <p className="text-xs text-gray-400 mt-1">Checking account on-chain…</p>
+          )}
+          {!errors.recipient && recipientStatus === 'not-found' && (
+            <p className="text-xs text-red-600 mt-1" role="alert">
+              <span aria-hidden="true">✗ </span>
+              Account not found on-chain — the recipient must be funded before receiving a stream.
+            </p>
+          )}
+          {!errors.recipient && recipientStatus === 'valid' && (
+            <p className="text-xs text-gray-500 mt-1" role="status">
+              <span aria-hidden="true">✓ </span>
+              Account verified on-chain.
+            </p>
+          )}
+          {!errors.recipient && recipientStatus === 'error' && (
+            <p className="text-xs text-gray-400 mt-1" role="status">
+              Could not verify account — network error. You may still proceed.
+            </p>
           )}
         </div>
 
@@ -222,11 +294,15 @@ export default function CreatePage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={pending || !connected}
+          disabled={pending || !connected || recipientStatus === 'not-found'}
           className="btn-primary w-full"
         >
-          {pending ? 'Signing transaction…' : 'Create stream'}
-          {!pending && <ArrowRight className="w-4 h-4" />}
+          {pending
+            ? 'Signing transaction…'
+            : recipientStatus === 'checking'
+              ? 'Verifying recipient…'
+              : 'Create stream'}
+          {!pending && recipientStatus !== 'checking' && <ArrowRight className="w-4 h-4" />}
         </button>
       </form>
     </div>
