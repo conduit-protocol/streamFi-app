@@ -16,7 +16,6 @@
  * pattern. AbortController integration ensures graceful cancellation of
  * in-flight operations when the wallet disconnects.
  */
-
 import React, {
   createContext,
   useCallback,
