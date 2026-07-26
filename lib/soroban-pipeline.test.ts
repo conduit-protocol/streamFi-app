@@ -144,6 +144,38 @@ describe('invokeContract', () => {
       invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx),
     )).rejects.toThrow(/Transaction failed/);
   });
+
+  // TODO.md Phase 4, item 17 — Phase 2 wired AbortController integration
+  // through the pipeline's retry/backoff and circuit breaker, but nothing
+  // end-to-end confirmed a signal aborted mid-retry actually stops it.
+  it('stops retrying and rejects with an abort-recognizable error when the signal fires mid-backoff', async () => {
+    mockGetAccount.mockRejectedValue(new Error('network request failed — connection reset'));
+    const signTx = vi.fn();
+    const controller = new AbortController();
+
+    const { invokeContract } = await import('./soroban.js');
+    const promise = invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx, {
+      signal: controller.signal,
+    });
+    promise.catch(() => {});
+
+    // Let the first getAccount() call run and fail — the retry loop is now
+    // inside its backoff sleep(), waiting on setTimeout or the abort signal.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockGetAccount).toHaveBeenCalledTimes(1);
+
+    // Abort mid-backoff, well before the retry delay would otherwise elapse.
+    controller.abort();
+
+    await expect(promise).rejects.toThrow(/abort/i);
+
+    // No further retry attempts after the abort, even once enough time
+    // passes that a retry would otherwise have fired — the pipeline
+    // actually stopped rather than merely rejecting the outer promise.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(mockGetAccount).toHaveBeenCalledTimes(1);
+    expect(signTx).not.toHaveBeenCalled();
+  });
 });
 
 describe('simulateReadOnly', () => {

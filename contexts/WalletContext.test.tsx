@@ -285,6 +285,122 @@ describe('WalletContext', () => {
 
     document.body.removeChild(container);
   });
+
+  // TODO.md Phase 4, item 15 — the Mutex/queue-based concurrency work in
+  // signTx has no test exercising it under real concurrent load.
+  it('processes 100 concurrent signTx() calls without exceeding the concurrency limit or dropping any', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GACONCURRENTTEST', error: null } as any);
+
+    const { stateRef, container } = mountWallet();
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    const wallet = stateRef.current;
+    const pendingSigns: Array<() => void> = [];
+    let maxObservedPending = 0;
+
+    mockedFreighter.signTransaction.mockImplementation(
+      () => new Promise((resolve) => {
+        pendingSigns.push(() => resolve({ signedTxXdr: 'signed-xdr', error: null } as any));
+      }),
+    );
+
+    const TOTAL_CALLS = 100;
+    let calls: Promise<string>[] = [];
+
+    await act(async () => {
+      calls = Array.from({ length: TOTAL_CALLS }, () => wallet.signTx('AAAA'));
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    });
+
+    maxObservedPending = Math.max(maxObservedPending, stateRef.current!.pendingOperationCount);
+    expect(maxObservedPending).toBeGreaterThan(0);
+    expect(maxObservedPending).toBeLessThanOrEqual(wallet.maxConcurrentOperations);
+
+    // Drain in waves — resolving the currently-active batch frees up
+    // semaphore permits for the next queued batch — until all 100 calls
+    // have been dispatched to signTransaction().
+    let safetyCounter = 0;
+    while (pendingSigns.length > 0 && safetyCounter < TOTAL_CALLS * 2) {
+      const wave = pendingSigns.splice(0, pendingSigns.length);
+      await act(async () => {
+        wave.forEach((resolve) => resolve());
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      });
+      maxObservedPending = Math.max(maxObservedPending, stateRef.current!.pendingOperationCount);
+      expect(stateRef.current!.pendingOperationCount).toBeLessThanOrEqual(wallet.maxConcurrentOperations);
+      safetyCounter++;
+    }
+
+    const results = await Promise.all(calls);
+
+    expect(results).toHaveLength(TOTAL_CALLS);
+    expect(results.every((r) => r === 'signed-xdr')).toBe(true);
+    expect(mockedFreighter.signTransaction).toHaveBeenCalledTimes(TOTAL_CALLS);
+    expect(stateRef.current?.pendingOperationCount).toBe(0);
+    expect(maxObservedPending).toBeLessThanOrEqual(wallet.maxConcurrentOperations);
+
+    document.body.removeChild(container);
+  });
+
+  // TODO.md Phase 4, item 16 — disconnect() is documented (Phase 1, item 5)
+  // to abort in-flight operations, but nothing confirmed that actually
+  // happens when a signTx() call is genuinely mid-flight.
+  it('aborts an in-flight signTx() operation when disconnect() is called before it resolves', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GADISCONNECTTEST', error: null } as any);
+
+    const { stateRef, container } = mountWallet();
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    const wallet = stateRef.current;
+    expect(wallet.connected).toBe(true);
+
+    let resolveSign: (v: { signedTxXdr: string; error: null }) => void;
+    mockedFreighter.signTransaction.mockImplementation(
+      () => new Promise((resolve) => { resolveSign = resolve; }),
+    );
+
+    let signPromise: Promise<string>;
+    await act(async () => {
+      signPromise = wallet.signTx('AAAA');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stateRef.current?.pendingOperationCount).toBe(1);
+
+    // Disconnect while signTx() is still mid-flight — simulating closing the
+    // tab, or switching wallets, before Freighter has responded.
+    act(() => {
+      stateRef.current!.disconnect();
+    });
+
+    expect(stateRef.current?.connected).toBe(false);
+    expect(stateRef.current?.publicKey).toBe(null);
+
+    // Freighter finally responds after the disconnect — the operation must
+    // reject rather than resolve with a now-stale signed transaction.
+    let caught: unknown;
+    await act(async () => {
+      resolveSign!({ signedTxXdr: 'signed-xdr', error: null });
+      await signPromise.catch((e) => { caught = e; });
+    });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toMatch(/abort/i);
+    expect(stateRef.current?.connected).toBe(false);
+    expect(stateRef.current?.publicKey).toBe(null);
+    expect(stateRef.current?.pendingOperationCount).toBe(0);
+
+    document.body.removeChild(container);
+  });
 });
 
 // The Mutex guarding connect() under concurrent "connect wallet" clicks
