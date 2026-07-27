@@ -244,7 +244,19 @@ export function safeToStroops(amount: string, decimals = 7): bigint | null {
   if (scientificMatch) {
     const base = scientificMatch[1]!;
     const exp = parseInt(scientificMatch[2]!, 10);
-    return safeToStroops(base, decimals - exp) ?? safeToStroops(base, decimals);
+    const effectiveDecimals = decimals - exp;
+
+    if (effectiveDecimals < 0) {
+      const power = BigInt(-effectiveDecimals);
+      // Prevent astronomically large values from causing DOS/OOM issues
+      if (power > 100n) return null;
+
+      const baseVal = safeToStroops(base, decimals);
+      if (baseVal === null) return null;
+      return baseVal * (10n ** power);
+    }
+
+    return safeToStroops(base, effectiveDecimals);
   }
 
   const [whole = '0', frac = ''] = trimmed.split('.');
@@ -253,7 +265,7 @@ export function safeToStroops(amount: string, decimals = 7): bigint | null {
 
   const fracPadded = frac.slice(0, decimals).padEnd(decimals, '0');
   try {
-    return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
+    return BigInt(whole) * (10n ** BigInt(decimals)) + BigInt(fracPadded);
   } catch {
     return null;
   }
