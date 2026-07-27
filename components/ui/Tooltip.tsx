@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 interface TooltipProps {
   content: React.ReactNode;
@@ -10,6 +10,7 @@ interface TooltipProps {
 
 export function Tooltip({ content, children, side = 'top' }: TooltipProps) {
   const [show, setShow] = useState(false);
+  const tooltipId = useId();
 
   return (
     <span
@@ -18,10 +19,12 @@ export function Tooltip({ content, children, side = 'top' }: TooltipProps) {
       onMouseLeave={() => setShow(false)}
       onFocus={() => setShow(true)}
       onBlur={() => setShow(false)}
+      aria-describedby={show ? tooltipId : undefined}
     >
       {children}
       {show && (
         <span
+          id={tooltipId}
           className={`absolute z-50 ${
             side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
           } left-1/2 -translate-x-1/2 px-2.5 py-1.5 text-xs text-white bg-black rounded shadow-card whitespace-nowrap animate-fade-in`}
