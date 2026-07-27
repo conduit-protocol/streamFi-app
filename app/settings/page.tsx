@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTheme } from "next-themes";
 
-type Theme = "light" | "dark" | "system";
 type Currency = "USD" | "EUR" | "XLM";
 type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
 
 interface SettingsState {
-  theme: Theme;
   currency: Currency;
   slippageTolerance: Slippage;
   notificationsEnabled: boolean;
@@ -18,14 +17,13 @@ const STORAGE_KEY = "conduit:settings";
 
 function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
-    return { theme: "system", currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    return { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
-        theme: parsed.theme ?? "system",
         currency: parsed.currency ?? "USD",
         slippageTolerance: parsed.slippageTolerance ?? 1.0,
         notificationsEnabled: parsed.notificationsEnabled ?? true,
@@ -35,27 +33,15 @@ function loadSettings(): SettingsState {
   } catch {
     // Ignore parse errors, use defaults
   }
-  return { theme: "system", currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
-}
-
-function applyTheme(theme: Theme) {
-  const root = document.documentElement;
-  if (theme === "dark") {
-    root.classList.add("dark");
-  } else if (theme === "light") {
-    root.classList.remove("dark");
-  } else {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    root.classList.toggle("dark", prefersDark);
-  }
+  return { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
 }
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsState>(loadSettings);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    applyTheme(settings.theme);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   }, [settings]);
 
@@ -65,11 +51,12 @@ export default function SettingsPage() {
   }, []);
 
   const handleReset = useCallback(() => {
-    const defaults: SettingsState = { theme: "system", currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    const defaults: SettingsState = { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
     setSettings(defaults);
+    setTheme("system");
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, []);
+  }, [setTheme]);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10 space-y-8">
@@ -90,12 +77,12 @@ export default function SettingsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="text-sm">Theme</span>
           <div className="flex gap-2">
-            {(["light", "dark", "system"] as Theme[]).map((t) => (
+            {(["light", "dark", "system"] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => updateSetting("theme", t)}
+                onClick={() => setTheme(t)}
                 className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
-                  settings.theme === t
+                  theme === t
                     ? "bg-black text-white dark:bg-white dark:text-black"
                     : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`}

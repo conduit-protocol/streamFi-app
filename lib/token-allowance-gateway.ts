@@ -328,12 +328,6 @@ export class TokenAllowanceGateway {
       };
     }
 
-    // Acquire per-token mutex (cancel-safe)
-    const releaseMutex = await record.mutex.acquire(signal);
-
-    // Acquire concurrency slot
-    const releaseConcurrency = await this._acquireConcurrency(signal);
-
     // Set up abort controller for this operation
     const opAbort = new AbortController();
     record.pendingAbort = opAbort;
@@ -350,7 +344,15 @@ export class TokenAllowanceGateway {
     record.state = 'pending';
     record.lastError = undefined;
 
+    let releaseMutex: (() => void) | undefined;
+    let releaseConcurrency: (() => void) | undefined;
+
     try {
+      // Acquire per-token mutex (cancel-safe)
+      releaseMutex = await record.mutex.acquire(signal);
+
+      // Acquire concurrency slot
+      releaseConcurrency = await this._acquireConcurrency(signal);
       const result = await withIdempotency(idempotencyKey, async () => {
         return withSafeOperation(async () => {
           // Check abort before RPC call
@@ -417,8 +419,8 @@ export class TokenAllowanceGateway {
 
       record.pendingAbort = undefined;
       signalCleanup?.();
-      releaseConcurrency();
-      releaseMutex();
+      releaseConcurrency?.();
+      releaseMutex?.();
     }
   }
 

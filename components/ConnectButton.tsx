@@ -1,16 +1,36 @@
 'use client';
 
-import { useState }          from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useWallet }         from '@/contexts/WalletContext';
 import { truncateAddress }   from '@/lib/format';
 import { LogOut }            from 'lucide-react';
 
+const CONNECT_UI_TIMEOUT_MS = 20_000;
+
 export function ConnectButton() {
   const { connected, connecting, publicKey, walletName, connect, disconnect } = useWallet();
   const [error, setError] = useState<string | null>(null);
+  const connectStartRef = useRef<number>(0);
+
+  // Safety net: if connecting stays true beyond the expected timeout window,
+  // force-clear the UI state so the user isn't stuck with a spinner.
+  useEffect(() => {
+    if (!connecting) return;
+    const elapsed = Date.now() - connectStartRef.current;
+    const remaining = CONNECT_UI_TIMEOUT_MS - elapsed;
+    if (remaining <= 0) {
+      setError('Connection timed out. Please try again.');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setError('Connection timed out. Please try again.');
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [connecting]);
 
   const handleConnect = async () => {
     setError(null);
+    connectStartRef.current = Date.now();
     try {
       await connect();
     } catch (e) {
