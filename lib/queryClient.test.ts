@@ -21,10 +21,13 @@ describe('refreshStreamData', () => {
     mockRefetchQueries.mockResolvedValue(undefined);
   });
 
-  it('invalidates and refetches active queries after a stream mutation succeeds', async () => {
+  it('refetches active queries only once after a stream mutation succeeds', async () => {
     await refreshStreamData();
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ refetchType: 'active' });
-    expect(queryClient.refetchQueries).toHaveBeenCalledWith({ type: 'active' });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      refetchType: 'active',
+    });
+    expect(queryClient.refetchQueries).not.toHaveBeenCalled();
   });
 });
