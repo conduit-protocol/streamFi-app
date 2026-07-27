@@ -64,13 +64,17 @@ export async function getStreamAddress(
 /**
  * Get the current withdrawable balance from a stream contract.
  */
-export async function getWithdrawable(source: string, streamAddress: string): Promise<bigint> {
+export async function getWithdrawable(
+  source: string,
+  streamAddress: string,
+  options?: { signal?: AbortSignal },
+): Promise<bigint> {
   if (isMock()) {
     const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
     if (entry) return MOCK_STREAMS[entry[0]]?.withdrawn ?? 0n;
     return 10000000000000000n;
   }
-  const result = await simulateReadOnly(source, streamAddress, 'withdrawable', []);
+  const result = await simulateReadOnly(source, streamAddress, 'withdrawable', [], options);
   return scValToI128(result);
 }
 
