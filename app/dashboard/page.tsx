@@ -126,7 +126,18 @@ export default function DashboardPage() {
     }
     const controller = new AbortController();
     fetchStreams(controller.signal);
-    return () => controller.abort();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !controller.signal.aborted) {
+        fetchStreams(new AbortController().signal);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      controller.abort();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [publicKey, fetchStreams]);
 
   const activeCount = useMemo(

@@ -1,8 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Badge } from '@/components/ui/Badge';
-import { ProgressBar } from '@/components/ui/ProgressBar';
+import { useState } from 'react';
 import { truncateAddress } from '@/lib/format';
 
 interface Recipient {
@@ -14,46 +12,32 @@ export function BatchStreamCreator() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [addressInput, setAddressInput] = useState('');
   const [rateInput, setRateInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const isSubmittingRef = useRef(false);
-  const mounted = useRef(true);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    return () => {
-      mounted.current = false;
-      abortControllerRef.current?.abort();
-    };
-  }, []);
 
   const addRecipient = () => {
     if (!addressInput || !rateInput) return;
 
-    // Validate Stellar address format: G + 55 alphanumeric characters
     if (!/^G[A-Z0-9]{55}$/.test(addressInput.trim())) {
-      alert("Invalid Stellar address. Must start with G and be 56 characters.");
+      setError('Invalid Stellar address. Must start with G and be 56 characters.');
       return;
     }
 
     if (!/^\d+$/.test(rateInput)) {
-      setError("Invalid rate input. Must be a positive integer.");
+      setError('Invalid rate input. Must be a positive integer.');
       return;
     }
     try {
       const rate = BigInt(rateInput);
       if (rate <= 0n) {
-        alert("Rate must be greater than zero.");
+        setError('Rate must be greater than zero.');
         return;
       }
       setRecipients([...recipients, { address: addressInput.trim(), ratePerSecond: rate }]);
       setAddressInput('');
       setRateInput('');
       setError(null);
-    } catch (e) {
-      setError("Invalid rate input. Must be an integer.");
+    } catch {
+      setError('Invalid rate input. Must be an integer.');
     }
   };
 
@@ -61,51 +45,10 @@ export function BatchStreamCreator() {
     setRecipients(recipients.filter((_, i) => i !== index));
   };
 
-  const handleBatchCreate = async () => {
-    if (recipients.length === 0 || isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
-    setIsSubmitting(true);
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-    try {
-      // Simulate interaction with SDK ConduitBatcher.
-      // NOTE: When this is replaced with the real SDK call, pass `signal`
-      // through so a slow/pending request is cancelled if the user navigates
-      // away (see BulkWithdrawButton for the withdraw(..., signal) pattern).
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, 2000);
-        signal.addEventListener('abort', () => {
-          clearTimeout(timer);
-          reject(new DOMException('Aborted', 'AbortError'));
-        });
-      });
-      if (!mounted.current) return;
-      setSuccess(true);
-      setRecipients([]);
-    } catch (error) {
-      // Swallow aborts caused by unmount; only surface real failures.
-      if ((error as Error)?.name === 'AbortError' || !mounted.current) return;
-      console.error("Batch creation failed", error);
-      alert("Failed to submit batch transaction.");
-    } finally {
-      isSubmittingRef.current = false;
-      if (mounted.current) {
-        setIsSubmitting(false);
-      }
-    }
+  const handleBatchCreate = () => {
+    if (recipients.length === 0) return;
+    setError('Batch stream creation is not yet available. Please create streams individually.');
   };
-
-  if (success) {
-    return (
-      <div className="card text-center py-8">
-        <h3 className="text-xl font-bold text-green-600 mb-2">Batch Stream Created!</h3>
-        <p className="text-gray-500">Your transaction was successful.</p>
-        <button className="btn btn-primary mt-4" onClick={() => setSuccess(false)}>
-          Create Another Batch
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="card max-w-2xl mx-auto p-6">
@@ -122,18 +65,18 @@ export function BatchStreamCreator() {
       )}
 
       <div className="flex gap-2 mb-4">
-        <input 
-          className="input flex-1" 
-          placeholder="Recipient Address (G...)" 
-          value={addressInput} 
-          onChange={e => setAddressInput(e.target.value.toUpperCase())} 
+        <input
+          className="input flex-1"
+          placeholder="Recipient Address (G...)"
+          value={addressInput}
+          onChange={e => setAddressInput(e.target.value.toUpperCase())}
           maxLength={56}
         />
-        <input 
-          className="input w-32" 
-          placeholder="Rate (units/sec)" 
-          value={rateInput} 
-          onChange={e => setRateInput(e.target.value)} 
+        <input
+          className="input w-32"
+          placeholder="Rate (units/sec)"
+          value={rateInput}
+          onChange={e => setRateInput(e.target.value)}
           type="number"
         />
         <button className="btn btn-secondary" onClick={addRecipient}>Add</button>
@@ -152,12 +95,12 @@ export function BatchStreamCreator() {
         {recipients.length === 0 && <p className="text-sm text-gray-500 italic text-center py-4">No recipients added yet.</p>}
       </div>
 
-      <button 
-        className="btn btn-primary w-full" 
-        onClick={handleBatchCreate} 
-        disabled={recipients.length === 0 || isSubmitting}
+      <button
+        className="btn btn-primary w-full"
+        onClick={handleBatchCreate}
+        disabled={recipients.length === 0}
       >
-        {isSubmitting ? 'Submitting...' : `Create ${recipients.length} Streams`}
+        Create {recipients.length} Streams
       </button>
     </div>
   );

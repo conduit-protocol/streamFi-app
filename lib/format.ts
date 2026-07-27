@@ -5,18 +5,25 @@
  */
 export function fromStroops(stroops: bigint, decimals = 7): string {
   const factor = BigInt(10 ** decimals);
-  const whole = stroops / factor;
-  const frac = (stroops % factor).toString().padStart(decimals, "0");
+  const negative = stroops < 0n;
+  const abs = negative ? -stroops : stroops;
+  const whole = abs / factor;
+  const frac = (abs % factor).toString().padStart(decimals, "0");
   // Trim trailing zeros but keep at least 2 decimal places
   const trimmed = frac.replace(/0+$/, "").padEnd(2, "0");
-  return `${whole}.${trimmed}`;
+  return `${negative ? "-" : ""}${whole}.${trimmed}`;
 }
 
 /** Convert a display amount string to stroops bigint */
 export function toStroops(amount: string, decimals = 7): bigint {
-  const [whole = "0", frac = ""] = amount.split(".");
+  const factor = BigInt(10 ** decimals);
+  const negative = amount.trim().startsWith("-");
+  const raw = negative ? amount.trim().slice(1) : amount.trim();
+  const [wholeRaw = "0", frac = ""] = raw.split(".");
+  const whole = wholeRaw || "0";
   const fracPadded = frac.slice(0, decimals).padEnd(decimals, "0");
-  return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
+  const result = BigInt(whole) * factor + BigInt(fracPadded);
+  return negative ? -result : result;
 }
 
 /**

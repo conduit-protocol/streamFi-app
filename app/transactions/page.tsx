@@ -64,7 +64,7 @@ export default function TransactionsPage() {
         <Card padded={false}>
           {/* Mobile Layout */}
           <div className="sm:hidden flex flex-col divide-y divide-gray-100">
-            {txs.map((tx, i) => {
+            {txs.map((tx) => {
               const isPositive = tx.type === 'Stream Created';
               const isNegative = tx.type === 'Withdrawn';
               const isCancelled = tx.type === 'Cancelled';
@@ -72,7 +72,7 @@ export default function TransactionsPage() {
               const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
 
               return (
-                <div key={i} className="flex items-center justify-between py-4 px-4 hover:bg-gray-50 transition-colors">
+                <div key={tx.hash} className="flex items-center justify-between py-4 px-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-500">
                       {isPositive ? '↓' : isNegative ? '↑' : '×'}
@@ -117,7 +117,7 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {txs.map((tx, i) => {
+                {txs.map((tx) => {
                   const isPositive = tx.type === 'Stream Created';
                   const isNegative = tx.type === 'Withdrawn';
                   const isCancelled = tx.type === 'Cancelled';
@@ -125,7 +125,7 @@ export default function TransactionsPage() {
                   const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
 
                   return (
-                    <tr key={i}>
+                    <tr key={tx.hash}>
                       <td className="py-2.5 px-4 text-black font-medium">{tx.type}</td>
                       <td className="py-2.5 px-4 font-mono text-right">
                         <span className={amountColor}>{sign}{tx.amount}</span>

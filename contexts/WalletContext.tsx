@@ -38,6 +38,11 @@ import { queryClient } from '@/lib/queryClient';
 import { useTransactionStore } from '@/lib/store';
 import { truncateAddress } from '@/lib/format';
 import { useRouter } from 'next/navigation';
+import {
+  clearWalletSession,
+  loadWalletSession,
+  saveWalletSession,
+} from '@/lib/wallet-storage';
 import toast from 'react-hot-toast';
 
 // ── Concurrency Primitives ───────────────────────────────────────────────────
@@ -256,7 +261,7 @@ export function WalletProvider({
   const abortControllerRef = useRef<AbortController | null>(null);
   const semaphoreRef = useRef<Semaphore>(new Semaphore(maxConcurrentOperations));
   const connectMutexRef = useRef<Mutex>(new Mutex());
-  const pendingConnectAbortRef = useRef<AbortController | null>(null); // 👈 ADD THIS LINE
+  const pendingConnectAbortRef = useRef<AbortController | null>(null);
   const router = useRouter();
 
   // Mirrors `publicKey` for use inside the WatchWalletChanges callback below,
@@ -269,28 +274,14 @@ export function WalletProvider({
   // Access the Zustand store's reset action outside of a component render
   const clearTransactions = useTransactionStore((s) => s.clearTransactions);
 
-  // Restore previous session from localStorage
+  // Restore previous session from localStorage (scoped to the wallet key
+  // only — never a blanket clear(), so unrelated storage like the theme
+  // preference is never disturbed).
   useEffect(() => {
-    const stored = localStorage.getItem('conduit:wallet');
+    const stored = loadWalletSession();
     if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { key: string; name: string; exp?: number; expiresAt?: number };
-        const expiry = parsed.exp ?? parsed.expiresAt;
-        if (expiry && Date.now() >= expiry) {
-          // Session expired: purge all sensitive cached data from localStorage and sessionStorage
-          localStorage.clear();
-          sessionStorage.clear();
-          setPublicKey(null);
-          setWalletName(null);
-        } else if (typeof parsed.key === 'string' && parsed.key && typeof parsed.name === 'string' && parsed.name) {
-          setPublicKey(parsed.key);
-          setWalletName(parsed.name);
-        } else {
-          localStorage.clear();
-        }
-      } catch {
-        localStorage.clear();
-      }
+      setPublicKey(stored.key);
+      setWalletName(stored.name);
     }
 
     return () => {
@@ -374,7 +365,7 @@ export function WalletProvider({
 
       setPublicKey(address);
       setWalletName('Freighter');
-      localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: 'Freighter' }));
+      saveWalletSession({ key: address, name: 'Freighter' });
     } catch (error) {
       clearConnectingState();
       throw error;
@@ -393,9 +384,9 @@ export function WalletProvider({
     setPublicKey(null);
     setWalletName(null);
 
-    // Purge all local and session storage sensitive data (fixes #146)
-    localStorage.clear();
-    sessionStorage.clear();
+    // Purge the wallet session only — a blanket clear() previously wiped
+    // unrelated storage (e.g. the theme preference) on every disconnect (#237).
+    clearWalletSession();
 
     // Abort all in-flight operations immediately
     abortControllerRef.current?.abort();
@@ -432,7 +423,7 @@ export function WalletProvider({
       if (address === publicKeyRef.current) return; // nothing actually changed
 
       setPublicKey(address);
-      localStorage.setItem('conduit:wallet', JSON.stringify({ key: address, name: 'Freighter' }));
+      saveWalletSession({ key: address, name: 'Freighter' });
       queryClient.clear();
       clearTransactions();
       toast(`Switched to ${truncateAddress(address)}`, { icon: '🔄' });

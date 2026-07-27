@@ -452,3 +452,28 @@ export function scValToU64(val: xdr.ScVal): bigint {
   }
   return BigInt(val.u64().toString());
 }
+
+/**
+ * Check whether a Stellar account exists on-chain.
+ *
+ * Uses `getAccount()` against the configured Soroban RPC / Horizon endpoint.
+ * Returns `true` if the account is funded and exists, `false` if the RPC
+ * returns a 404-style "account not found" response.
+ *
+ * Throws for any other network error so callers can distinguish
+ * "definitely does not exist" from "couldn't reach the network".
+ *
+ * @param address  Stellar G… public key
+ */
+export async function checkRecipientExists(address: string): Promise<boolean> {
+  try {
+    await getServer().getAccount(address);
+    return true;
+  } catch (err: unknown) {
+    // stellar-sdk throws an error whose message contains "404" or
+    // "Account not found" when the account has never been funded.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/not found|404/i.test(message)) return false;
+    throw err;
+  }
+}

@@ -53,6 +53,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
+vi.mock('@/lib/env', () => ({
+  getNetworkPassphrase: () => 'Test SDF Network ; September 2015',
+}));
+
 const mockedFreighter = vi.mocked(freighter, true);
 
 function mountWallet() {
@@ -362,7 +366,7 @@ describe('WalletContext', () => {
     const wallet = stateRef.current;
     expect(wallet.connected).toBe(true);
 
-    let resolveSign: (v: { signedTxXdr: string; error: null }) => void;
+    let resolveSign: (v: { signedTxXdr: string; signerAddress: string; error: null }) => void;
     mockedFreighter.signTransaction.mockImplementation(
       () => new Promise((resolve) => { resolveSign = resolve; }),
     );
@@ -389,7 +393,7 @@ describe('WalletContext', () => {
     // reject rather than resolve with a now-stale signed transaction.
     let caught: unknown;
     await act(async () => {
-      resolveSign!({ signedTxXdr: 'signed-xdr', error: null });
+      resolveSign!({ signedTxXdr: 'signed-xdr', signerAddress: 'GADISCONNECTTEST', error: null });
       await signPromise.catch((e) => { caught = e; });
     });
 
@@ -444,5 +448,132 @@ describe('Mutex — queued acquire under load', () => {
     const release3 = await mutex.acquire();
     expect(typeof release3).toBe('function');
     release3();
+  });
+});
+
+describe('Semaphore — queue overflow and rate limiting', () => {
+  // The Semaphore class is not exported directly, but we can test its behavior
+  // through the WalletProvider's signTx method, which uses a Semaphore internally.
+  // We test the overflow scenario by enqueueing more operations than maxConcurrentOperations.
+
+  it('queues all signTx calls when max concurrency is exceeded, dropping none', async () => {
+    let activeCount = 0;
+    let maxObserved = 0;
+
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GTEST123', error: null } as any);
+    mockedFreighter.signTransaction.mockImplementation(async () => {
+      activeCount++;
+      maxObserved = Math.max(maxObserved, activeCount);
+      await new Promise((r) => setTimeout(r, 10));
+      activeCount--;
+      return { signedTxXdr: 'AAAAAGLm4LZ5F2dO4FQ7AAAAuRz7L5eJ3F9GJ0+5AAAAAA==', signerAddress: 'GTEST123', error: null };
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const stateRef = { current: null as any };
+
+    function TestComponent() {
+      const wallet = useWallet();
+      useEffect(() => {
+        stateRef.current = wallet;
+      }, [wallet]);
+      return null;
+    }
+
+    await act(async () => {
+      createRoot(container).render(
+        <WalletProvider maxConcurrentOperations={2}>
+          <TestComponent />
+        </WalletProvider>,
+      );
+    });
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    // Enqueue 10 signTx calls with only 2 concurrent slots
+    // Use valid base64 XDR strings
+    const validXdr = 'AAAAAGLm4LZ5F2dO4FQ7AAAAuRz7L5eJ3F9GJ0+5AAAAAA==';
+    const results = await act(async () => {
+      const promises = Array.from({ length: 10 }, (_, i) =>
+        stateRef.current.signTx(validXdr).catch((e: Error) => e),
+      );
+      return Promise.all(promises);
+    });
+
+    // All 10 operations should complete (none silently dropped)
+    expect(results).toHaveLength(10);
+    const successes = results.filter((r: any) => typeof r === 'string');
+    expect(successes.length).toBe(10);
+    // Max observed concurrency should not exceed 2
+    expect(maxObserved).toBeLessThanOrEqual(2);
+
+    act(() => {
+      stateRef.current.disconnect();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('maintains FIFO ordering when operations overflow the queue', async () => {
+    const executionOrder: number[] = [];
+    let activeCount = 0;
+
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GTEST123', error: null } as any);
+    mockedFreighter.signTransaction.mockImplementation(async (xdr: string) => {
+      activeCount++;
+      await new Promise((r) => setTimeout(r, 5));
+      // Extract a unique ID from each call to track ordering
+      const callIndex = executionOrder.length;
+      executionOrder.push(callIndex);
+      activeCount--;
+      return { signedTxXdr: `signed_${callIndex}`, signerAddress: 'GTEST123', error: null };
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const stateRef = { current: null as any };
+
+    function TestComponent() {
+      const wallet = useWallet();
+      useEffect(() => {
+        stateRef.current = wallet;
+      }, [wallet]);
+      return null;
+    }
+
+    await act(async () => {
+      createRoot(container).render(
+        <WalletProvider maxConcurrentOperations={1}>
+          <TestComponent />
+        </WalletProvider>,
+      );
+    });
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    // With maxConcurrency=1, operations should execute in FIFO order
+    // Use valid base64 XDR strings
+    const validXdr = 'AAAAAGLm4LZ5F2dO4FQ7AAAAuRz7L5eJ3F9GJ0+5AAAAAA==';
+    await act(async () => {
+      const promises = Array.from({ length: 5 }, (_, i) =>
+        stateRef.current.signTx(validXdr),
+      );
+      await Promise.all(promises);
+    });
+
+    // Each call should execute in order
+    expect(executionOrder.length).toBe(5);
+    expect(executionOrder).toEqual([0, 1, 2, 3, 4]);
+
+    act(() => {
+      stateRef.current.disconnect();
+    });
+    document.body.removeChild(container);
   });
 });

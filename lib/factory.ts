@@ -21,8 +21,21 @@ function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
 }
 
+/** True only when NEXT_PUBLIC_DEMO_MODE is explicitly set to "true". */
+function isDemoMode(): boolean {
+  return process.env['NEXT_PUBLIC_DEMO_MODE'] === 'true';
+}
+
 function isMock(): boolean {
-  return !FACTORY();
+  if (isDemoMode()) return true;
+  const id = FACTORY();
+  if (!id) {
+    throw new Error(
+      'NEXT_PUBLIC_FACTORY_CONTRACT_ID is not set. ' +
+      'Set it in .env.local, or set NEXT_PUBLIC_DEMO_MODE=true to run in demo mode with fake data.'
+    );
+  }
+  return false;
 }
 
 const MAX_U32 = 0xffff_ffff;
@@ -64,7 +77,7 @@ export async function streamsBySender(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals, options);
   return decodeU64Vec(result);
 }
 
@@ -83,7 +96,7 @@ export async function streamsByRecipient(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals, options);
   return decodeU64Vec(result);
 }
 

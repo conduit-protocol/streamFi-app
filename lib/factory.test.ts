@@ -83,6 +83,36 @@ describe('streamsBySender / streamsByRecipient', () => {
     expect(mockSimulateReadOnly).toHaveBeenCalledWith(
       SENDER, FACTORY_ID, 'streams_by_recipient',
       expect.arrayContaining([expect.anything(), expect.anything(), expect.anything()]),
+      undefined,
+    );
+  });
+
+  // Regression test for issue #209: options.signal was accepted in the
+  // signature but silently dropped before reaching simulateReadOnly, so
+  // aborting never actually cancelled the in-flight call.
+  it.each([
+    ['streamsBySender', SENDER] as const,
+    ['streamsByRecipient', RECIPIENT] as const,
+  ])('%s forwards options.signal to simulateReadOnly so aborting cancels the call', async (fnName, addr) => {
+    const controller = new AbortController();
+    mockSimulateReadOnly.mockImplementation((...args: unknown[]) => {
+      const options = args[4] as { signal?: AbortSignal } | undefined;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      });
+    });
+
+    const factory = await import('./factory.js');
+    const fn = factory[fnName] as (
+      source: string, addr: string, offset: number, limit: number, options?: { signal?: AbortSignal },
+    ) => Promise<bigint[]>;
+
+    const promise = fn(SENDER, addr, 0, 20, { signal: controller.signal });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow(/aborted/i);
+    expect(mockSimulateReadOnly).toHaveBeenCalledWith(
+      SENDER, FACTORY_ID, expect.any(String), expect.any(Array), { signal: controller.signal },
     );
   });
 

@@ -100,18 +100,6 @@ export function StreamProgressBar({
 
   return (
     <>
-      {/*
-        The keyframe is injected once as a global style tag.
-        It lives in the <head> only while this component is mounted.
-        The animation simply widens from 0% → 100%.
-      */}
-      <style>{`
-        @keyframes stream-progress-fill {
-          from { width: 0%; }
-          to   { width: 100%; }
-        }
-      `}</style>
-
       <div
         role="progressbar"
         aria-valuenow={ariaNow}

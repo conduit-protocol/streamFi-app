@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import { BatchStreamCreator } from '../stream/BatchStreamCreator';
@@ -7,9 +7,6 @@ import { BatchStreamCreator } from '../stream/BatchStreamCreator';
 vi.mock('@/lib/format', () => ({
   truncateAddress: (a: string) => a,
 }));
-
-vi.mock('@/components/ui/Badge', () => ({ Badge: () => null }));
-vi.mock('@/components/ui/ProgressBar', () => ({ ProgressBar: () => null }));
 
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
@@ -38,22 +35,12 @@ async function addRecipient(container: HTMLElement) {
 
 function getCreateButton(container: HTMLElement) {
   return Array.from(container.querySelectorAll('button')).find((b) =>
-    /Create|Submitting/.test(b.textContent || ''),
+    /Create/.test(b.textContent || ''),
   ) as HTMLButtonElement;
 }
 
 describe('BatchStreamCreator', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it('completes the normal successful flow and shows success state', async () => {
+  it('shows an inline error for invalid Stellar address instead of alert', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -62,32 +49,29 @@ describe('BatchStreamCreator', () => {
       root.render(<BatchStreamCreator />);
     });
 
-    await addRecipient(container);
+    const inputs = container.querySelectorAll('input');
+    const addressInput = inputs[0] as HTMLInputElement;
+    const rateInput = inputs[1] as HTMLInputElement;
+    const addButton = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Add',
+    )!;
 
-    const createButton = getCreateButton(container);
     await act(async () => {
-      createButton.click();
+      setInputValue(addressInput, 'INVALID');
+      setInputValue(rateInput, '100');
     });
-
-    // Advance past the mocked 2s SDK call.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      addButton.click();
     });
 
-    expect(container.textContent).toContain('Batch Stream Created!');
+    expect(container.textContent).toContain('Invalid Stellar address');
+    expect(container.querySelector('[role="alert"]')).toBeTruthy();
 
-    act(() => {
-      root.unmount();
-    });
+    act(() => { root.unmount(); });
     document.body.removeChild(container);
   });
 
-  it('does not throw or update state after unmount while submission is in flight', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const alertSpy = vi
-      .spyOn(window, 'alert')
-      .mockImplementation(() => {});
-
+  it('shows an inline error for rate of zero instead of alert', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -96,35 +80,29 @@ describe('BatchStreamCreator', () => {
       root.render(<BatchStreamCreator />);
     });
 
-    await addRecipient(container);
+    const inputs = container.querySelectorAll('input');
+    const addressInput = inputs[0] as HTMLInputElement;
+    const rateInput = inputs[1] as HTMLInputElement;
+    const addButton = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Add',
+    )!;
 
-    const createButton = getCreateButton(container);
     await act(async () => {
-      createButton.click();
+      setInputValue(addressInput, 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW');
+      setInputValue(rateInput, '0');
     });
-
-    // Unmount while the 2s async operation is still pending.
-    act(() => {
-      root.unmount();
-    });
-
-    // Flush the pending timer/abort after unmount — must not warn or throw.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      addButton.click();
     });
 
-    // No state-update-after-unmount error, and no user-facing alert.
-    expect(errorSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('unmounted'),
-    );
-    expect(alertSpy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Rate must be greater than zero');
+    expect(container.querySelector('[role="alert"]')).toBeTruthy();
 
+    act(() => { root.unmount(); });
     document.body.removeChild(container);
   });
 
-  it('ignores a second submit while one is already in flight (double-submit guard)', async () => {
-    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
-
+  it('shows a deprecation message when clicking create (SDK not yet available)', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -136,27 +114,115 @@ describe('BatchStreamCreator', () => {
     await addRecipient(container);
 
     const createButton = getCreateButton(container);
-
-    // Fire two clicks before the first submission resolves.
     await act(async () => {
-      createButton.click();
       createButton.click();
     });
 
-    const submitTimers = setTimeoutSpy.mock.calls.filter(
-      ([, delay]) => delay === 2000,
+    expect(container.textContent).toContain('not yet available');
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('disables the create button when no recipients are added', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BatchStreamCreator />);
+    });
+
+    const createButton = getCreateButton(container);
+    expect(createButton.disabled).toBe(true);
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('enables the create button after adding recipients', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BatchStreamCreator />);
+    });
+
+    await addRecipient(container);
+
+    const createButton = getCreateButton(container);
+    expect(createButton.disabled).toBe(false);
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('adds and removes recipients correctly', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BatchStreamCreator />);
+    });
+
+    await addRecipient(container);
+    expect(container.textContent).toContain('GABC123');
+    expect(container.textContent).toContain('100/s');
+
+    const removeButtons = Array.from(container.querySelectorAll('button')).filter(
+      (b) => b.textContent === 'Remove',
     );
-    expect(submitTimers).toHaveLength(1);
+    expect(removeButtons).toHaveLength(1);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      removeButtons[0]!.click();
     });
 
-    expect(container.textContent).toContain('Batch Stream Created!');
+    expect(container.textContent).toContain('No recipients added yet');
 
-    act(() => {
-      root.unmount();
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('clears the error when adding a valid recipient after an error', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BatchStreamCreator />);
     });
+
+    const inputs = container.querySelectorAll('input');
+    const addressInput = inputs[0] as HTMLInputElement;
+    const rateInput = inputs[1] as HTMLInputElement;
+    const addButton = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Add',
+    )!;
+
+    await act(async () => {
+      setInputValue(addressInput, 'INVALID');
+      setInputValue(rateInput, '100');
+    });
+    await act(async () => {
+      addButton.click();
+    });
+
+    expect(container.textContent).toContain('Invalid Stellar address');
+
+    await act(async () => {
+      setInputValue(addressInput, 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW');
+      setInputValue(rateInput, '100');
+    });
+    await act(async () => {
+      addButton.click();
+    });
+
+    expect(container.textContent).not.toContain('Invalid Stellar address');
+
+    act(() => { root.unmount(); });
     document.body.removeChild(container);
   });
 });
