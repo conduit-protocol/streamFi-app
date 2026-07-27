@@ -59,6 +59,14 @@ describe('fromStroops', () => {
   it('respects a custom decimals value', () => {
     expect(fromStroops(1_050n, 2)).toBe('10.50');
   });
+
+  it('renders negative stroops correctly (issue #205)', () => {
+    expect(fromStroops(-1_234_567n)).toBe('-0.1234567');
+  });
+
+  it('renders negative whole amounts correctly', () => {
+    expect(fromStroops(-100_000_000n)).toBe('-10.00');
+  });
 });
 
 describe('toStroops', () => {
@@ -72,6 +80,18 @@ describe('toStroops', () => {
 
   it('pads a short fractional part', () => {
     expect(toStroops('1.5')).toBe(15_000_000n);
+  });
+
+  it('handles leading-dot input (issue #206)', () => {
+    expect(toStroops('.5')).toBe(5_000_000n);
+  });
+
+  it('handles negative whole+fraction correctly (issue #207)', () => {
+    expect(toStroops('-5.25')).toBe(-52_500_000n);
+  });
+
+  it('handles negative whole-only correctly', () => {
+    expect(toStroops('-3')).toBe(-30_000_000n);
   });
 });
 
