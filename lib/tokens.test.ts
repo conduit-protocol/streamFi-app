@@ -47,11 +47,10 @@ describe('tokens module', () => {
 });
 
 describe('Token Allowance Gateway (promise rejection safety)', () => {
-  it('getAllowance catches promise rejections gracefully and returns 0n', async () => {
+  it('getAllowance propagates RPC errors (does not silently return 0n)', async () => {
     vi.mocked(soroban.simulateReadOnly).mockRejectedValueOnce(new Error('RPC network failure'));
 
-    const allowance = await getAllowance(SENDER, TOKEN, SPENDER);
-    expect(allowance).toBe(0n);
+    await expect(getAllowance(SENDER, TOKEN, SPENDER)).rejects.toThrow('RPC network failure');
   });
 
   it('getAllowance returns 0n when parameters are missing', async () => {
@@ -59,13 +58,20 @@ describe('Token Allowance Gateway (promise rejection safety)', () => {
     expect(allowance).toBe(0n);
   });
 
-  it('checkAllowance reports missing allowance when promise rejections occur', async () => {
+  it('getAllowance propagates abort errors', async () => {
+    vi.mocked(soroban.simulateReadOnly).mockRejectedValueOnce(new Error('AbortError: operation aborted'));
+
+    await expect(getAllowance(SENDER, TOKEN, SPENDER)).rejects.toThrow('aborted');
+  });
+
+  it('checkAllowance surfaces errors in the result instead of silent zero', async () => {
     vi.mocked(soroban.simulateReadOnly).mockRejectedValueOnce(new Error('Simulation failed'));
 
     const result = await checkAllowance(SENDER, TOKEN, SPENDER, 1000n);
     expect(result).toEqual({
       hasAllowance: false,
       currentAllowance: 0n,
+      error: 'Simulation failed',
     });
   });
 
