@@ -83,6 +83,7 @@ describe('streamsBySender / streamsByRecipient', () => {
     expect(mockSimulateReadOnly).toHaveBeenCalledWith(
       SENDER, FACTORY_ID, 'streams_by_recipient',
       expect.arrayContaining([expect.anything(), expect.anything(), expect.anything()]),
+      undefined,
     );
   });
 
