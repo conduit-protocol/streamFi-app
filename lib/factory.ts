@@ -64,7 +64,7 @@ export async function streamsBySender(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals, options);
   return decodeU64Vec(result);
 }
 
@@ -83,7 +83,7 @@ export async function streamsByRecipient(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals, options);
   return decodeU64Vec(result);
 }
 
