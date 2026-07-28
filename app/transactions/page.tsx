@@ -1,10 +1,12 @@
 'use client';
 
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, Info } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
 import { formatTimestamp, truncateAddress } from '@/lib/format';
 import { fetchTransactionHistoryWithTimeout, type TransactionRow } from '@/lib/indexer';
+import { useWallet } from '@/contexts/WalletContext';
+
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
 
 const STATUS_CLASS: Record<string, string> = {
@@ -14,16 +16,36 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export default function TransactionsPage() {
+  const { publicKey, connected } = useWallet();
   const { data: txs = [], status, error, refetch, isRefetching } = useQuery<TransactionRow[]>({
-    queryKey: TRANSACTIONS_QUERY_KEY,
-    queryFn: () => fetchTransactionHistoryWithTimeout(),
+    queryKey: [...TRANSACTIONS_QUERY_KEY, publicKey],
+    queryFn: () => fetchTransactionHistoryWithTimeout(publicKey),
     staleTime: 1000 * 30,
     retry: 1,
   });
 
+  const isDemoData = connected && txs.length > 0;
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="text-2xl font-black tracking-tight mb-8">Transaction History</h1>
+
+      {isDemoData && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <p>
+            <span className="font-semibold">Demo data</span> — Transaction history is not yet connected to the indexer. 
+            The rows below are placeholder examples and do not reflect your actual wallet activity.
+          </p>
+        </div>
+      )}
+
+      {!connected && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <p>Connect your wallet to view your transaction history.</p>
+        </div>
+      )}
 
       {status === 'pending' ? (
         <Card>

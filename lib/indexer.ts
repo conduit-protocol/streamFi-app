@@ -33,8 +33,16 @@ const SUBGRAPH_TIMEOUT_MS = 10_000;
  * The `signal` allows callers to abort a hung request. If the signal fires
  * while a real network call is in-flight, the promise rejects with an
  * AbortError so the UI shows an error state instead of an infinite spinner.
+ *
+ * @param publicKey - The wallet's public key to fetch transactions for.
+ *                    When provided, the returned data is scoped to this wallet.
+ *                    When omitted, demo data is returned (placeholder mode).
+ * @param signal    - AbortSignal for cancellation
  */
-export async function fetchTransactionHistory(signal?: AbortSignal): Promise<TransactionRow[]> {
+export async function fetchTransactionHistory(
+  publicKey?: string | null,
+  signal?: AbortSignal,
+): Promise<TransactionRow[]> {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   return new Promise<TransactionRow[]>((resolve, reject) => {
@@ -43,11 +51,18 @@ export async function fetchTransactionHistory(signal?: AbortSignal): Promise<Tra
       signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    // Placeholder for the real GraphQL call, e.g.
-    //   const res = await fetch('/api/graphql', { method: 'POST', signal, body: ... });
+    // TODO: Replace with real GraphQL/indexer call once the subgraph is ready.
+    // Example implementation:
+    //   const res = await fetch('/api/graphql', {
+    //     method: 'POST',
+    //     signal,
+    //     body: JSON.stringify({ query: TX_HISTORY_QUERY, variables: { address: publicKey } }),
+    //   });
     //   if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
     //   return (await res.json()).data.transactions;
-    resolve(DEMO_TXS);
+
+    // Placeholder: return demo data. The page UI labels this as demo data.
+    resolve(publicKey ? DEMO_TXS : []);
   });
 }
 
@@ -57,14 +72,18 @@ export async function fetchTransactionHistory(signal?: AbortSignal): Promise<Tra
  *
  * Rejects with a descriptive Error on timeout so the UI can display a
  * user-friendly message and React Query can transition out of 'pending'.
+ *
+ * @param publicKey - The wallet's public key to fetch transactions for
+ * @param timeoutMs - Timeout in milliseconds (default: 10s)
  */
 export async function fetchTransactionHistoryWithTimeout(
+  publicKey?: string | null,
   timeoutMs: number = SUBGRAPH_TIMEOUT_MS,
 ): Promise<TransactionRow[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetchTransactionHistory(controller.signal);
+    return await fetchTransactionHistory(publicKey, controller.signal);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new Error(`Transaction history timed out after ${timeoutMs / 1000}s — the network may be slow or unavailable.`);
