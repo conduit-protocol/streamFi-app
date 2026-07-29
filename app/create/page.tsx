@@ -6,11 +6,13 @@ import { useForm }          from 'react-hook-form';
 import { z, ZodType } from 'zod';
 import { ArrowRight, Info } from 'lucide-react';
 import { useWallet }        from '@/contexts/WalletContext';
-import { createStream }     from '@/lib/factory';
+import { createStream, isMock } from '@/lib/factory';
 import { TOKENS_TESTNET, tokenLogoUrl } from '@/lib/tokens';
 import { CopyHashButton }   from '@/components/ui/CopyHashButton';
 import { checkRecipientExists } from '@/lib/soroban';
 import { refreshStreamData } from '@/lib/queryClient';
+import { getFactoryContractId } from '@/lib/env';
+import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import styles from './CreateStream.module.css';
 import { toStroops, wouldRateTruncateToZero } from '@/lib/format';
 
@@ -72,6 +74,11 @@ export default function CreatePage() {
   const [pending, setPending] = useState(false);
   const [txHash,  setTxHash]  = useState<string | null>(null);
   const [error,   setError]   = useState<string | null>(null);
+
+  // Tracks the SEP-41 allowance pre-flight (#218) so the button label can
+  // tell the user which on-chain step they're currently waiting on — an
+  // approve() transaction is a separate wallet prompt from create_stream's.
+  const [allowanceStage, setAllowanceStage] = useState<'checking' | 'approving' | null>(null);
 
   // On-chain recipient existence check — only runs after the address passes
   // the Zod length/format guard (i.e. it's a plausible 56-char G… key).
@@ -179,6 +186,47 @@ export default function CreatePage() {
       const startTime      = Math.floor(Date.now() / 1000) + 60; // 60s buffer
       const endTime        = startTime + data.durationSeconds;
 
+      // DripFactory::create_stream pulls the deposit from the sender via the
+      // token's SEP-41 transfer_from, which requires a pre-existing allowance
+      // from sender -> factory at least as large as the deposit. Without this
+      // check, the first-ever deposit fails with an opaque contract error
+      // (see #218). Skipped in demo/mock mode — createStream() never issues
+      // a real RPC call there either.
+      if (!isMock()) {
+        const spender = getFactoryContractId();
+        const gateway = getTokenAllowanceGateway();
+
+        setAllowanceStage('checking');
+        const allowanceCheck = await gateway.checkAllowance({
+          token:   tokenAddr,
+          owner:   publicKey,
+          spender,
+          source:  publicKey,
+        });
+        if (!allowanceCheck.success) {
+          throw new Error(
+            allowanceCheck.error?.message ?? 'Could not verify token allowance. Please try again.',
+          );
+        }
+
+        if ((allowanceCheck.data ?? 0n) < depositStroops) {
+          setAllowanceStage('approving');
+          const approveResult = await gateway.approve({
+            token:  tokenAddr,
+            spender,
+            amount: depositStroops,
+            source: publicKey,
+            signTx,
+          });
+          if (!approveResult.success) {
+            throw new Error(
+              approveResult.error?.message ?? 'Token approval failed. Please try again.',
+            );
+          }
+        }
+        setAllowanceStage(null);
+      }
+
       const hash = await withTimeout(
         createStream({
           sender:     publicKey,
@@ -204,6 +252,7 @@ export default function CreatePage() {
       setError(e instanceof Error ? e.message : 'Transaction failed');
     } finally {
       setPending(false);
+      setAllowanceStage(null);
     }
   }
 
@@ -380,7 +429,11 @@ export default function CreatePage() {
           className="btn-primary w-full"
         >
           {pending
-            ? 'Signing transaction…'
+            ? allowanceStage === 'checking'
+              ? 'Checking token allowance…'
+              : allowanceStage === 'approving'
+                ? 'Requesting approval…'
+                : 'Signing transaction…'
             : recipientStatus === 'checking'
               ? 'Verifying recipient…'
               : 'Create stream'}

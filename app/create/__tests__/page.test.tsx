@@ -24,13 +24,31 @@ vi.mock('next/navigation', () => ({
 }));
 
 const mockCreateStream = vi.fn();
+// Defaults to demo/mock mode so the pre-existing zero-rate-guard tests below
+// (which predate the #218 allowance step) don't need to know about it.
+const mockIsMock = vi.fn(() => true);
 vi.mock('@/lib/factory', () => ({
   createStream: (...args: unknown[]) => mockCreateStream(...args),
+  isMock: () => mockIsMock(),
 }));
 
 const mockRefreshStreamData = vi.fn();
 vi.mock('@/lib/queryClient', () => ({
   refreshStreamData: (...args: unknown[]) => mockRefreshStreamData(...args),
+}));
+
+const FACTORY_ID = 'CFACTORYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+vi.mock('@/lib/env', () => ({
+  getFactoryContractId: () => FACTORY_ID,
+}));
+
+const mockCheckAllowance = vi.fn();
+const mockApprove = vi.fn();
+vi.mock('@/lib/token-allowance-gateway', () => ({
+  getTokenAllowanceGateway: () => ({
+    checkAllowance: (...args: unknown[]) => mockCheckAllowance(...args),
+    approve: (...args: unknown[]) => mockApprove(...args),
+  }),
 }));
 
 vi.mock('lucide-react', () => ({
@@ -151,6 +169,107 @@ describe('CreatePage — zero-rate guard (issue #243)', () => {
     });
 
     expect(mockCreateStream).toHaveBeenCalledTimes(1);
+
+    cleanup(root, container);
+  });
+});
+
+describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', () => {
+  const XLM_ADDRESS = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsMock.mockReturnValue(false);
+    mockCreateStream.mockResolvedValue('tx_hash_abc');
+    mockRefreshStreamData.mockResolvedValue(undefined);
+  });
+
+  async function submitDeposit(container: HTMLElement) {
+    await fillRecipient(container);
+    // 1000 XLM over the default 30-day duration -> well above the zero-rate floor.
+    await fillDeposit(container, '1000');
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+  }
+
+  it('requests approval when the existing allowance is insufficient, then proceeds to create the stream', async () => {
+    mockCheckAllowance.mockResolvedValue({ success: true, data: 0n });
+    mockApprove.mockResolvedValue({ success: true, data: 'approve_tx_hash' });
+
+    const { container, root } = renderCreatePage();
+    await submitDeposit(container);
+
+    expect(mockCheckAllowance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token:  XLM_ADDRESS,
+        owner:  'GSENDER1234567890ABCDEF',
+        spender: FACTORY_ID,
+      }),
+    );
+    expect(mockApprove).toHaveBeenCalledTimes(1);
+    // approve() must resolve before create_stream is submitted.
+    expect(mockCreateStream).toHaveBeenCalledTimes(1);
+
+    cleanup(root, container);
+  });
+
+  it('skips approve() when the existing allowance already covers the deposit', async () => {
+    mockCheckAllowance.mockResolvedValue({ success: true, data: 10_000_000_000_000n });
+
+    const { container, root } = renderCreatePage();
+    await submitDeposit(container);
+
+    expect(mockCheckAllowance).toHaveBeenCalledTimes(1);
+    expect(mockApprove).not.toHaveBeenCalled();
+    expect(mockCreateStream).toHaveBeenCalledTimes(1);
+
+    cleanup(root, container);
+  });
+
+  it('surfaces an actionable error and never submits the deposit when approval fails', async () => {
+    mockCheckAllowance.mockResolvedValue({ success: true, data: 0n });
+    mockApprove.mockResolvedValue({
+      success: false,
+      error: {
+        message: 'Wallet rejected the approval request',
+        code: 'WALLET_REJECTED',
+        source: 'wallet',
+        retryable: false,
+      },
+    });
+
+    const { container, root } = renderCreatePage();
+    await submitDeposit(container);
+
+    expect(mockApprove).toHaveBeenCalledTimes(1);
+    expect(mockCreateStream).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Wallet rejected the approval request');
+
+    cleanup(root, container);
+  });
+
+  it('surfaces an actionable error and never approves/deposits when the allowance check itself fails', async () => {
+    // Mirrors #291 — a transient RPC/network failure must not be treated as
+    // a genuine zero allowance and silently trigger an approve() call.
+    mockCheckAllowance.mockResolvedValue({
+      success: false,
+      error: {
+        message: 'Network request timed out',
+        code: 'NETWORK_TIMEOUT',
+        source: 'network',
+        retryable: true,
+      },
+    });
+
+    const { container, root } = renderCreatePage();
+    await submitDeposit(container);
+
+    expect(mockApprove).not.toHaveBeenCalled();
+    expect(mockCreateStream).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Network request timed out');
 
     cleanup(root, container);
   });

@@ -26,7 +26,13 @@ function isDemoMode(): boolean {
   return process.env['NEXT_PUBLIC_DEMO_MODE'] === 'true';
 }
 
-function isMock(): boolean {
+/**
+ * Exported so callers that need to gate non-factory on-chain steps (e.g. the
+ * SEP-41 allowance check/approve step ahead of create_stream — see #218) can
+ * skip them under the exact same condition createStream() itself uses to
+ * skip the real RPC call.
+ */
+export function isMock(): boolean {
   if (isDemoMode()) return true;
 
   // #279 — require NEXT_PUBLIC_DEMO_MODE=true explicitly rather than
