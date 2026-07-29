@@ -4,7 +4,7 @@ import React, { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
-import { WalletProvider, useWallet, Mutex } from './WalletContext';
+import { WalletProvider, useWallet, Mutex, Semaphore } from './WalletContext';
 import * as freighter from '@stellar/freighter-api';
 import { queryClient } from '@/lib/queryClient';
 import { useTransactionStore } from '@/lib/store';
@@ -89,6 +89,27 @@ describe('WalletContext', () => {
     vi.clearAllMocks();
     watchInstances.length = 0;
     useTransactionStore.setState({ transactions: {}, order: [] });
+  });
+
+  it('restores a valid stored wallet session on mount', () => {
+    localStorage.setItem(
+      'conduit:wallet',
+      JSON.stringify({ key: 'GVALID123', name: 'Freighter', expiresAt: Date.now() + 60000 }),
+    );
+    const { stateRef, container } = mountWallet();
+    expect(stateRef.current?.publicKey).toBe('GVALID123');
+    document.body.removeChild(container);
+  });
+
+  it('purges an expired stored wallet session on mount instead of restoring it', () => {
+    localStorage.setItem(
+      'conduit:wallet',
+      JSON.stringify({ key: 'GEXPIRED123', name: 'Freighter', expiresAt: Date.now() - 10000 }),
+    );
+    const { stateRef, container } = mountWallet();
+    expect(stateRef.current?.publicKey).toBe(null);
+    expect(localStorage.getItem('conduit:wallet')).toBeNull();
+    document.body.removeChild(container);
   });
 
   it('prevents stale async connection state from applying after disconnect', async () => {
@@ -290,6 +311,54 @@ describe('WalletContext', () => {
     document.body.removeChild(container);
   });
 
+  it('rejects signTx with error when the account changes while signing is in flight', async () => {
+    let resolveSign: (value: { signedTxXdr: string; signerAddress: string; error: null }) => void;
+    const signPromise = new Promise<{ signedTxXdr: string; signerAddress: string; error: null }>((resolve) => {
+      resolveSign = resolve;
+    });
+
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GAFIRSTACCOUNT', error: null } as any);
+    mockedFreighter.signTransaction.mockReturnValue(signPromise as any);
+
+    const { stateRef, container } = mountWallet();
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    const validXdr = 'AAAAAGLm4LZ5F2dO4FQ7AAAAuRz7L5eJ3F9GJ0+5AAAAAA==';
+    // An object ref (rather than a bare `let`) sidesteps a TS control-flow
+    // narrowing quirk where a `let` only ever reassigned inside a nested
+    // async closure gets narrowed to `never` at the read site below.
+    const errorRef: { current: Error | null } = { current: null };
+
+    let pendingSign: Promise<string>;
+    await act(async () => {
+      pendingSign = stateRef.current.signTx(validXdr).catch((e: Error) => {
+        errorRef.current = e;
+        return '';
+      });
+    });
+
+    // Account switches mid-signature via Freighter watcher tick
+    const watcher = watchInstances[watchInstances.length - 1];
+    await act(async () => {
+      watcher?.cb?.({ address: 'GASECONDACCOUNT', network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
+    });
+
+    // Now Freighter finishes signing
+    await act(async () => {
+      resolveSign!({ signedTxXdr: 'signed_xdr', signerAddress: 'GAFIRSTACCOUNT', error: null });
+      await pendingSign;
+    });
+
+    expect(errorRef.current).not.toBeNull();
+    expect(errorRef.current?.message).toMatch(/Wallet state changed during signing/i);
+
+    document.body.removeChild(container);
+  });
+
   // TODO.md Phase 4, item 15 — the Mutex/queue-based concurrency work in
   // signTx has no test exercising it under real concurrent load.
   it('processes 100 concurrent signTx() calls without exceeding the concurrency limit or dropping any', async () => {
@@ -451,9 +520,129 @@ describe('Mutex — queued acquire under load', () => {
   });
 });
 
+describe('Semaphore — unit tests', () => {
+  it('enforces minimum concurrency limit of 1', () => {
+    const sem0 = new Semaphore(0);
+    expect(sem0.availablePermits).toBe(1);
+
+    const semNeg = new Semaphore(-5);
+    expect(semNeg.availablePermits).toBe(1);
+  });
+
+  it('allows immediate acquisition up to configured concurrency limit', async () => {
+    const sem = new Semaphore(3);
+    expect(sem.availablePermits).toBe(3);
+    expect(sem.pendingCount).toBe(0);
+
+    const rel1 = await sem.acquire();
+    expect(sem.availablePermits).toBe(2);
+    expect(sem.pendingCount).toBe(0);
+
+    const rel2 = await sem.acquire();
+    const rel3 = await sem.acquire();
+    expect(sem.availablePermits).toBe(0);
+    expect(sem.pendingCount).toBe(0);
+
+    rel1();
+    expect(sem.availablePermits).toBe(1);
+    rel2();
+    rel3();
+    expect(sem.availablePermits).toBe(3);
+  });
+
+  it('queues callers when concurrency limit is reached and grants access in FIFO release ordering', async () => {
+    const sem = new Semaphore(2);
+    const rel1 = await sem.acquire();
+    const rel2 = await sem.acquire();
+
+    expect(sem.availablePermits).toBe(0);
+
+    const order: number[] = [];
+    const p3 = sem.acquire().then((rel) => {
+      order.push(3);
+      return rel;
+    });
+    const p4 = sem.acquire().then((rel) => {
+      order.push(4);
+      return rel;
+    });
+
+    expect(sem.pendingCount).toBe(2);
+    expect(order).toEqual([]);
+
+    // Release first permit -> p3 resolves
+    rel1();
+    const rel3 = await p3;
+    expect(order).toEqual([3]);
+    expect(sem.pendingCount).toBe(1);
+
+    // Release second permit -> p4 resolves
+    rel2();
+    const rel4 = await p4;
+    expect(order).toEqual([3, 4]);
+    expect(sem.pendingCount).toBe(0);
+
+    rel3();
+    rel4();
+    expect(sem.availablePermits).toBe(2);
+  });
+
+  it('rejects a queued waiter when its AbortSignal fires, without corrupting the queue', async () => {
+    const sem = new Semaphore(1);
+    const release1 = await sem.acquire();
+
+    const controller = new AbortController();
+    const queuedAcquire = sem.acquire(controller.signal);
+
+    expect(sem.pendingCount).toBe(1);
+
+    controller.abort();
+    await expect(queuedAcquire).rejects.toThrow(/aborted/i);
+    expect(sem.pendingCount).toBe(0);
+
+    // The semaphore must still be usable afterwards — the aborted entry should
+    // have been cleanly removed from the queue, not left dangling.
+    let acquired2 = false;
+    const p2 = sem.acquire().then((rel) => {
+      acquired2 = true;
+      return rel;
+    });
+
+    release1();
+    const release2 = await p2;
+    expect(acquired2).toBe(true);
+    release2();
+  });
+
+  it('handles abort of a middle queued waiter without interrupting other queued waiters', async () => {
+    const sem = new Semaphore(1);
+    const release1 = await sem.acquire();
+
+    const p2 = sem.acquire();
+    const controller3 = new AbortController();
+    const p3 = sem.acquire(controller3.signal);
+    const p4 = sem.acquire();
+
+    expect(sem.pendingCount).toBe(3);
+
+    // Abort p3 in middle of queue
+    controller3.abort();
+    await expect(p3).rejects.toThrow(/aborted/i);
+    expect(sem.pendingCount).toBe(2);
+
+    // Release 1 -> p2 should get acquired
+    release1();
+    const release2 = await p2;
+
+    // Release 2 -> p4 should get acquired
+    release2();
+    const release4 = await p4;
+    expect(typeof release4).toBe('function');
+    release4();
+  });
+});
+
 describe('Semaphore — queue overflow and rate limiting', () => {
-  // The Semaphore class is not exported directly, but we can test its behavior
-  // through the WalletProvider's signTx method, which uses a Semaphore internally.
   // We test the overflow scenario by enqueueing more operations than maxConcurrentOperations.
 
   it('queues all signTx calls when max concurrency is exceeded, dropping none', async () => {

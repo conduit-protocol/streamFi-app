@@ -102,7 +102,7 @@ export class Mutex {
  * A bounded Semaphore that limits concurrent operation count.
  * Default max concurrency is 5, configurable via maxConcurrentOperations.
  */
-class Semaphore {
+export class Semaphore {
   private _available: number;
   private _queue: Array<{
     resolver: (release: () => void) => void;
@@ -294,7 +294,7 @@ export function WalletProvider({
 
   // ── Operation tracking helper ──────────────────────────────────────────────
 
-  function trackOperation<T>(fn: () => Promise<T>, _signal?: AbortSignal): Promise<T> {
+  function trackOperation<T>(fn: () => Promise<T>): Promise<T> {
     setPendingOperationCount((c) => c + 1);
     return fn().finally(() => {
       if (isMountedRef.current) {
@@ -463,11 +463,11 @@ export function WalletProvider({
         }
 
         const requestId = pendingRequestIdRef.current;
-        const currentPublicKey = publicKey;
+        const currentPublicKey = publicKeyRef.current;
         const { signedTxXdr, error } = await withTimeout(
           signTransaction(xdr, {
             networkPassphrase: getNetworkPassphrase(),
-            address:           currentPublicKey,
+            address:           currentPublicKey ?? undefined,
           }),
           WALLET_CONNECT_TIMEOUT_MS,
           'Freighter signing',
@@ -477,7 +477,7 @@ export function WalletProvider({
           throw new Error('Operation aborted');
         }
 
-        if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKey) {
+        if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKeyRef.current) {
           throw new Error('Wallet state changed during signing. Please retry the operation.');
         }
 
@@ -489,7 +489,7 @@ export function WalletProvider({
         release();
         abortControllerRef.current?.signal.removeEventListener('abort', globalAbortCleanup);
       }
-    }, combinedSignal);
+    });
   }, [publicKey, trackOperation]);
 
   // ── Memoized context value ─────────────────────────────────────────────────

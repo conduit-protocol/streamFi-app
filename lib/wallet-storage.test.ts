@@ -50,11 +50,28 @@ beforeEach(() => {
 // ── saveWalletSession ────────────────────────────────────────────────────────
 
 describe('saveWalletSession', () => {
-  it('persists the wallet under the scoped key', () => {
+  it('persists the wallet under the scoped key with expiresAt timestamp', () => {
     saveWalletSession({ key: 'GTEST', name: 'Freighter' });
     const raw = store.get(WALLET_STORAGE_KEY);
     expect(raw).not.toBeNull();
-    expect(JSON.parse(raw!)).toEqual({ key: 'GTEST', name: 'Freighter' });
+    const parsed = JSON.parse(raw!);
+    expect(parsed).toEqual({
+      key: 'GTEST',
+      name: 'Freighter',
+      expiresAt: expect.any(Number),
+    });
+    expect(parsed.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it('allows custom TTL or explicit expiresAt', () => {
+    const customExpiry = Date.now() + 60000;
+    saveWalletSession({ key: 'GTEST', name: 'Freighter', expiresAt: customExpiry });
+    const raw = store.get(WALLET_STORAGE_KEY);
+    expect(JSON.parse(raw!)).toEqual({
+      key: 'GTEST',
+      name: 'Freighter',
+      expiresAt: customExpiry,
+    });
   });
 
   it('does not disturb unrelated storage keys', () => {
@@ -92,9 +109,34 @@ describe('loadWalletSession', () => {
     expect(loadWalletSession()).toBeNull();
   });
 
-  it('returns the persisted wallet', () => {
+  it('returns the persisted wallet when not expired', () => {
     saveWalletSession({ key: 'GTEST', name: 'Freighter' });
-    expect(loadWalletSession()).toEqual({ key: 'GTEST', name: 'Freighter' });
+    const loaded = loadWalletSession();
+    expect(loaded).toEqual({
+      key: 'GTEST',
+      name: 'Freighter',
+      expiresAt: expect.any(Number),
+    });
+  });
+
+  it('purges and returns null when stored session expiresAt is in the past', () => {
+    const pastTime = Date.now() - 10000;
+    store.set(
+      WALLET_STORAGE_KEY,
+      JSON.stringify({ key: 'GTEST', name: 'Freighter', expiresAt: pastTime }),
+    );
+    expect(loadWalletSession()).toBeNull();
+    expect(store.has(WALLET_STORAGE_KEY)).toBe(false);
+  });
+
+  it('purges and returns null when stored session exp field is in the past', () => {
+    const pastTime = Date.now() - 10000;
+    store.set(
+      WALLET_STORAGE_KEY,
+      JSON.stringify({ key: 'GTEST', name: 'Freighter', exp: pastTime }),
+    );
+    expect(loadWalletSession()).toBeNull();
+    expect(store.has(WALLET_STORAGE_KEY)).toBe(false);
   });
 
   it('returns null and does not throw on malformed JSON', () => {

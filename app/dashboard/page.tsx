@@ -61,7 +61,7 @@ async function loadRows(
       if (!addr || typeof addr !== "string") continue;
       const [info, withdrawable] = await Promise.all([
         getStreamInfo(publicKey, addr, { signal }),
-        getWithdrawable(publicKey, addr),
+        getWithdrawable(publicKey, addr, { signal }),
       ]);
       if (!info || typeof info !== "object") continue;
       if (typeof info.ratePerSecond !== "bigint") continue;

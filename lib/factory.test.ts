@@ -45,11 +45,11 @@ describe('streamCount', () => {
     expect(mockSimulateReadOnly).toHaveBeenCalledWith(SENDER, FACTORY_ID, 'stream_count', []);
   });
 
-  it('gracefully falls back to mock data when factory contract ID is not set', async () => {
+  it('throws a clear error when the factory contract ID is not set and demo mode is off (#279)', async () => {
     vi.resetModules();
     mockGetFactoryContractId.mockReturnValue(undefined);
     const { streamCount } = await import('./factory.js');
-    await expect(streamCount(SENDER)).resolves.toBe(5n); // MOCK_STREAM_IDS.length
+    await expect(streamCount(SENDER)).rejects.toThrow(/NEXT_PUBLIC_FACTORY_CONTRACT_ID is not set/);
   });
 });
 

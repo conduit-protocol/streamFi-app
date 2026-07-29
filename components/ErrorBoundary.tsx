@@ -4,7 +4,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children?: ReactNode;
-  fallback?: (error: Error, reset: () => void) => ReactNode;
+  fallback?: (error: Error, retry: () => void, reset: () => void) => ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
@@ -108,7 +108,7 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       if (this.props.fallback) {
-        return this.props.fallback(this.state.error!, this.reset);
+        return this.props.fallback(this.state.error!, this.retry, this.reset);
       }
 
       return React.createElement('div', { className: 'flex items-center justify-center min-h-[200px]' },

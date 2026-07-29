@@ -28,6 +28,11 @@ function isDemoMode(): boolean {
 
 function isMock(): boolean {
   if (isDemoMode()) return true;
+
+  // #279 — require NEXT_PUBLIC_DEMO_MODE=true explicitly rather than
+  // silently falling back to mock data whenever the factory contract ID is
+  // unset. A misconfigured production deploy should fail loudly, not serve
+  // fake data to real users with no indication anything is wrong.
   const id = FACTORY();
   if (!id) {
     throw new Error(

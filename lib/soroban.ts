@@ -130,6 +130,11 @@ async function withRetry<T>(
 
       // Don't retry on last attempt
       if (attempt >= maxRetries) {
+        // Record failure for the circuit breaker — this is a retryable error
+        // that exhausted all retries (e.g., RPC timeout, network failure).
+        // Without this, the circuit breaker never opens for the actual
+        // scenario it's designed to protect against (see #283).
+        recordFailure();
         throw err;
       }
 
