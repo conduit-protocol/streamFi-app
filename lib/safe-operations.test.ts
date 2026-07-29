@@ -546,11 +546,11 @@ describe('withBoundedParallel', () => {
       },
     );
 
-    expect(results[0].success).toBe(true);
-    expect(results[1].success).toBe(true);
-    expect(results[2].success).toBe(false);
-    expect(results[3].success).toBe(true);
-    expect(results[4].success).toBe(true);
+    expect(results[0]!.success).toBe(true);
+    expect(results[1]!.success).toBe(true);
+    expect(results[2]!.success).toBe(false);
+    expect(results[3]!.success).toBe(true);
+    expect(results[4]!.success).toBe(true);
   });
 
   it('stops processing new items when signal is aborted', async () => {
@@ -603,8 +603,8 @@ describe('withBoundedParallel', () => {
       { itemLabel: (item) => `processing ${item}` },
     );
 
-    expect(results[0].success).toBe(false);
-    expect(results[0].error!.message).toContain('processing bad-item');
+    expect(results[0]!.success).toBe(false);
+    expect(results[0]!.error!.message).toContain('processing bad-item');
   });
 
   it('falls back to item[N] label when no itemLabel provided', async () => {
@@ -616,8 +616,8 @@ describe('withBoundedParallel', () => {
       },
     );
 
-    expect(results[0].success).toBe(false);
-    expect(results[0].error!.message).toContain('item[0]');
+    expect(results[0]!.success).toBe(false);
+    expect(results[0]!.error!.message).toContain('item[0]');
   });
 
   it('passes the abort signal to individual handlers', async () => {
@@ -663,10 +663,10 @@ describe('withBoundedParallel', () => {
       },
     );
 
-    expect(results[0].success).toBe(false);
+    expect(results[0]!.success).toBe(false);
     // normalizeError wraps with context: "item[0]: string error"
-    expect(results[0].error!.message).toContain('string error');
-    expect(results[0].error!.message).toContain('item[0]');
+    expect(results[0]!.error!.message).toContain('string error');
+    expect(results[0]!.error!.message).toContain('item[0]');
   });
 });
 
@@ -790,10 +790,10 @@ describe('clearIdempotencyKeys', () => {
     await Promise.all([promise1, promise2, promise3]);
 
     expect(fn).toHaveBeenCalledTimes(2);
-import { describe, it, expect } from 'vitest';
-import { safeToStroops } from './safe-operations.js';
+  });
+});
 
-describe('safeToStroops', () => {
+describe('safeToStroops — scientific notation', () => {
   it('parses a standard whole number', () => {
     expect(safeToStroops('5', 7)).toBe(50_000_000n);
   });
