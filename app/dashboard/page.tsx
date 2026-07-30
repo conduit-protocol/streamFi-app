@@ -61,7 +61,7 @@ async function loadRows(
       if (!addr || typeof addr !== "string") continue;
       const [info, withdrawable] = await Promise.all([
         getStreamInfo(publicKey, addr, { signal }),
-        getWithdrawable(publicKey, addr),
+        getWithdrawable(publicKey, addr, { signal }),
       ]);
       if (!info || typeof info !== "object") continue;
       if (typeof info.ratePerSecond !== "bigint") continue;
@@ -126,7 +126,18 @@ export default function DashboardPage() {
     }
     const controller = new AbortController();
     fetchStreams(controller.signal);
-    return () => controller.abort();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !controller.signal.aborted) {
+        fetchStreams(new AbortController().signal);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      controller.abort();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [publicKey, fetchStreams]);
 
   const activeCount = useMemo(

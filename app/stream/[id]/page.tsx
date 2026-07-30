@@ -32,8 +32,7 @@ function deriveStatus(info: StreamInfo): StreamStatus {
 
 export default function StreamPage() {
   const { id }                                    = useParams<{ id: string }>();
-  const { publicKey }                             = useWallet();
-  const callerAddr                                = publicKey ?? 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
+  const { publicKey, connected }                  = useWallet();
   const mounted                                   = useRef(true);
   const loadSeq                                   = useRef(0);
 
@@ -49,19 +48,29 @@ export default function StreamPage() {
   }, []);
 
   const loadStream = useCallback(async () => {
+    if (!publicKey) {
+      setStreamAddress(null);
+      setInfo(null);
+      setWithdrawable(0n);
+      setStatus('active');
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const seq = ++loadSeq.current;
     const isCurrent = () => mounted.current && seq === loadSeq.current;
 
     setLoading(true);
     setError(null);
     try {
-      const addr = await getStreamAddress(callerAddr, BigInt(id));
+      const addr = await getStreamAddress(publicKey, BigInt(id));
       if (!isCurrent()) return;
       if (!addr) { setError('Stream not found.'); return; }
 
       const [streamInfo, wAmt] = await Promise.all([
-        getStreamInfo(callerAddr, addr),
-        getWithdrawable(callerAddr, addr),
+        getStreamInfo(publicKey, addr),
+        getWithdrawable(publicKey, addr),
       ]);
 
       if (!isCurrent()) return;
@@ -75,11 +84,22 @@ export default function StreamPage() {
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [id, callerAddr]);
+  }, [id, publicKey]);
 
   useEffect(() => { loadStream(); }, [loadStream]);
 
   // ── Render states ─────────────────────────────────────────────────────────
+
+  if (!connected) return (
+    <div className="max-w-2xl mx-auto px-4 py-10">
+      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
+        <ArrowLeft className="w-3.5 h-3.5" /> All streams
+      </Link>
+      <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
+        Connect your wallet to view this stream.
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div className="max-w-2xl mx-auto px-4 py-10">

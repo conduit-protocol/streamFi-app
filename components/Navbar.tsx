@@ -67,10 +67,10 @@ export function Navbar() {
               undefined value in a widget's state hook) shouldn't blank the
               whole header, just fall back to a compact retry (fixes #191). */}
           <ErrorBoundary
-            fallback={(_error, reset) => (
+            fallback={(_error, retry) => (
               <button
                 type="button"
-                onClick={reset}
+                onClick={retry}
                 className="text-xs text-gray-400 hover:text-black dark:hover:text-white underline"
               >
                 Reload wallet controls

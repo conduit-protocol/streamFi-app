@@ -66,6 +66,8 @@ export function StreamActions({
       console.error(`[${name}] error:`, e);
       setActionError(e instanceof Error ? e.message : `Failed to ${name}.`);
     } finally {
+      // Always clear the pending spinner, even on RPC timeout, so the user
+      // is never left with a button stuck in a loading state (fixes #195).
       if (mounted.current) setPending(null);
     }
   }

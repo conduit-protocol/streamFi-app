@@ -1,10 +1,12 @@
 'use client';
 
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, Info } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
 import { formatTimestamp, truncateAddress } from '@/lib/format';
 import { fetchTransactionHistoryWithTimeout, type TransactionRow } from '@/lib/indexer';
+import { useWallet } from '@/contexts/WalletContext';
+
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
 
 const STATUS_CLASS: Record<string, string> = {
@@ -14,16 +16,36 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 export default function TransactionsPage() {
+  const { publicKey, connected } = useWallet();
   const { data: txs = [], status, error, refetch, isRefetching } = useQuery<TransactionRow[]>({
-    queryKey: TRANSACTIONS_QUERY_KEY,
-    queryFn: () => fetchTransactionHistoryWithTimeout(),
+    queryKey: [...TRANSACTIONS_QUERY_KEY, publicKey],
+    queryFn: () => fetchTransactionHistoryWithTimeout(publicKey),
     staleTime: 1000 * 30,
     retry: 1,
   });
 
+  const isDemoData = connected && txs.length > 0;
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="text-2xl font-black tracking-tight mb-8">Transaction History</h1>
+
+      {isDemoData && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <p>
+            <span className="font-semibold">Demo data</span> — Transaction history is not yet connected to the indexer. 
+            The rows below are placeholder examples and do not reflect your actual wallet activity.
+          </p>
+        </div>
+      )}
+
+      {!connected && (
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg">
+          <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <p>Connect your wallet to view your transaction history.</p>
+        </div>
+      )}
 
       {status === 'pending' ? (
         <Card>
@@ -64,7 +86,7 @@ export default function TransactionsPage() {
         <Card padded={false}>
           {/* Mobile Layout */}
           <div className="sm:hidden flex flex-col divide-y divide-gray-100">
-            {txs.map((tx, i) => {
+            {txs.map((tx) => {
               const isPositive = tx.type === 'Stream Created';
               const isNegative = tx.type === 'Withdrawn';
               const isCancelled = tx.type === 'Cancelled';
@@ -72,7 +94,7 @@ export default function TransactionsPage() {
               const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
 
               return (
-                <div key={i} className="flex items-center justify-between py-4 px-4 hover:bg-gray-50 transition-colors">
+                <div key={tx.hash} className="flex items-center justify-between py-4 px-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-500">
                       {isPositive ? '↓' : isNegative ? '↑' : '×'}
@@ -117,7 +139,7 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {txs.map((tx, i) => {
+                {txs.map((tx) => {
                   const isPositive = tx.type === 'Stream Created';
                   const isNegative = tx.type === 'Withdrawn';
                   const isCancelled = tx.type === 'Cancelled';
@@ -125,7 +147,7 @@ export default function TransactionsPage() {
                   const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
 
                   return (
-                    <tr key={i}>
+                    <tr key={tx.hash}>
                       <td className="py-2.5 px-4 text-black font-medium">{tx.type}</td>
                       <td className="py-2.5 px-4 font-mono text-right">
                         <span className={amountColor}>{sign}{tx.amount}</span>

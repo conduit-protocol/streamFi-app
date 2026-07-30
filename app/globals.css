@@ -69,3 +69,9 @@
     @apply font-mono tabular-nums slashed-zero;
   }
 }
+
+/* ── Keyframes ───────────────────────────────────────────────────────────────── */
+@keyframes stream-progress-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}

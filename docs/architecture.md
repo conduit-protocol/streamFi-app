@@ -63,22 +63,27 @@ happens during static generation.
 
 ---
 
-## Wallet integration is stubbed — read this before building on top of mutations
+## Wallet integration — read this before building on top of mutations
 
 `contexts/WalletContext.tsx` provides the shape (`publicKey`, `connected`, `connect`,
-`disconnect`, `signTx`) the rest of the app depends on, but none of it talks to a real wallet:
+`disconnect`, `signTx`) the rest of the app depends on, and it's a real `@stellar/freighter-api`
+integration, not a stub:
 
-- `connect()` sets a hardcoded fake address (`GABC1234STUBWALLET...`) instead of opening Stellar
-  Wallets Kit's modal.
-- `signTx(xdr)` logs the XDR and returns it **unchanged** — no signature is ever added.
-- `@stellar/wallet-kit` isn't a dependency yet.
+- `connect()` calls Freighter's `requestAccess()` to obtain the user's actual connected public
+  key, persists the session, and watches for account/network changes.
+- `signTx(xdr)` calls Freighter's `signTransaction(xdr, ...)` and returns a genuinely signed XDR.
+- This app is intentionally Freighter-only rather than a multi-wallet kit — see the comment at
+  the top of `WalletContext.tsx` for why `@creit.tech/stellar-wallets-kit` was evaluated and
+  rejected (its dependency tree pulls in ~300 extra packages for wallet support this app
+  doesn't use).
 
-Practical effect: `invokeContract()`'s pipeline (build → simulate → `signTx` → submit) runs all
-the way to network submission, but the submitted transaction is unsigned and will be rejected by
-the network. Read-only paths (`simulateReadOnly` — balances, stream lists, `/streams`,
-`/dashboard`) work end-to-end against testnet today; every mutating action (withdraw, cancel,
-pause, resume, top-up, clawback, create) does not, until `WalletContext.tsx`'s `connect()`/
-`signTx()` TODOs are replaced with real Stellar Wallets Kit calls.
+Practical effect: `invokeContract()`'s pipeline (build → simulate → `signTx` → submit) runs
+end-to-end with a real signature, for both read-only paths (`simulateReadOnly` — balances,
+stream lists, `/streams`, `/dashboard`) and every mutating action (withdraw, cancel, pause,
+resume, top-up, clawback, create) against testnet today. `signTx`/`connect` also route through
+the Semaphore + Mutex concurrency controls documented at the top of `WalletContext.tsx` — worth
+reading before adding a new mutation, since they determine how concurrent calls queue and how
+`disconnect()` aborts in-flight ones.
 
 ---
 

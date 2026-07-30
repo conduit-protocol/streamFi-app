@@ -55,6 +55,9 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
       await queryClient.invalidateQueries();
       onSuccess?.();
     } catch (e) {
+      // Always clear the loading state, even if the RPC provider timed out
+      // or the component is still mounted after the async failure — prevents
+      // an infinite spinner (fixes #195).
       if (!mounted.current) return;
       setError(e instanceof Error ? e.message : 'Transaction failed');
       setStep('error');
@@ -111,7 +114,6 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
             }
           >
             <button
-              tabIndex={-1}
               className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-1 rounded"
               aria-label="Protocol fee information"
             >

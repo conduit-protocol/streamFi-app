@@ -21,8 +21,32 @@ function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
 }
 
-function isMock(): boolean {
-  return !FACTORY();
+/** True only when NEXT_PUBLIC_DEMO_MODE is explicitly set to "true". */
+function isDemoMode(): boolean {
+  return process.env['NEXT_PUBLIC_DEMO_MODE'] === 'true';
+}
+
+/**
+ * Exported so callers that need to gate non-factory on-chain steps (e.g. the
+ * SEP-41 allowance check/approve step ahead of create_stream — see #218) can
+ * skip them under the exact same condition createStream() itself uses to
+ * skip the real RPC call.
+ */
+export function isMock(): boolean {
+  if (isDemoMode()) return true;
+
+  // #279 — require NEXT_PUBLIC_DEMO_MODE=true explicitly rather than
+  // silently falling back to mock data whenever the factory contract ID is
+  // unset. A misconfigured production deploy should fail loudly, not serve
+  // fake data to real users with no indication anything is wrong.
+  const id = FACTORY();
+  if (!id) {
+    throw new Error(
+      'NEXT_PUBLIC_FACTORY_CONTRACT_ID is not set. ' +
+      'Set it in .env.local, or set NEXT_PUBLIC_DEMO_MODE=true to run in demo mode with fake data.'
+    );
+  }
+  return false;
 }
 
 const MAX_U32 = 0xffff_ffff;
@@ -64,7 +88,7 @@ export async function streamsBySender(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals, options);
   return decodeU64Vec(result);
 }
 
@@ -83,7 +107,7 @@ export async function streamsByRecipient(
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
   ];
-  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals);
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals, options);
   return decodeU64Vec(result);
 }
 

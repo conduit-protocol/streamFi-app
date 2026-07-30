@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { CopyHashButton } from "@/components/ui/CopyHashButton";
+
+const STELLAR_ADDRESS_RE = /^[GA][A-Z0-9]{55}$/;
 
 type ConnectionState =
   | { status: "loading" }
@@ -15,7 +17,7 @@ function useConnectionState(): ConnectionState {
   const { publicKey, connected, walletName, connecting } = wallet;
 
   if (connecting) return { status: "loading" };
-  if (connected && publicKey) {
+  if (connected && publicKey && STELLAR_ADDRESS_RE.test(publicKey)) {
     return { status: "connected", publicKey, walletName };
   }
   return { status: "disconnected" };
@@ -23,18 +25,6 @@ function useConnectionState(): ConnectionState {
 
 export default function ProfilePage() {
   const connection = useConnectionState();
-
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard not available — silently ignore
-    }
-  };
 
   const shortenedKey = useMemo(() => {
     if (connection.status !== "connected") return "";

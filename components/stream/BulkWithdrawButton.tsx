@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useWallet } from '@/contexts/WalletContext';
 import { withdraw } from '@/lib/stream';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,21 @@ interface BulkWithdrawResult {
   successCount: number;
   totalCount: number;
   errors: Array<{ streamId: string; error: string }>;
+}
+
+type ValidStream = StreamEntry & { id: string; info: { withdrawable: bigint } };
+
+function isStreamValid(s: StreamEntry): s is ValidStream {
+  return (
+    typeof s.id === 'string' &&
+    s.id.length > 0 &&
+    typeof s.address === 'string' &&
+    STELLAR_ADDRESS_RE.test(s.address) &&
+    s.info?.withdrawable != null &&
+    typeof s.info.withdrawable === 'bigint' &&
+    s.info.withdrawable > 0n &&
+    s.info.withdrawable <= MAX_I128
+  );
 }
 
 export function BulkWithdrawButton({
@@ -48,6 +63,18 @@ export function BulkWithdrawButton({
     };
   }, []);
 
+  const withdrawableStreams = useMemo(
+    () => activeStreams.filter(isStreamValid),
+    [activeStreams],
+  );
+
+  const totalAvailable = useMemo(
+    () => withdrawableStreams.reduce((sum, s) => sum + s.info.withdrawable, 0n),
+    [withdrawableStreams],
+  );
+
+  const excludedCount = activeStreams.length - withdrawableStreams.length;
+
   const handleBulkWithdraw = useCallback(async () => {
     if (!publicKey || isProcessing) return;
 
@@ -55,18 +82,6 @@ export function BulkWithdrawButton({
     const { signal } = abortControllerRef.current;
 
     setIsProcessing(true);
-
-    const withdrawableStreams = activeStreams.filter(
-      (s): s is StreamEntry & { id: string; info: { withdrawable: bigint } } =>
-        typeof s.id === 'string' &&
-        s.id.length > 0 &&
-        typeof s.address === 'string' &&
-        STELLAR_ADDRESS_RE.test(s.address) &&
-        s.info?.withdrawable != null &&
-        typeof s.info.withdrawable === 'bigint' &&
-        s.info.withdrawable > 0n &&
-        s.info.withdrawable <= MAX_I128,
-    );
 
     setProgress({ done: 0, total: withdrawableStreams.length });
 
@@ -113,7 +128,6 @@ export function BulkWithdrawButton({
       },
     );
 
-    // Check if we were aborted or unmounted
     if (signal.aborted || !mounted.current) {
       setIsProcessing(false);
       return;
@@ -124,24 +138,28 @@ export function BulkWithdrawButton({
     if (onComplete && mounted.current) {
       onComplete({ successCount, totalCount: withdrawableStreams.length, errors });
     }
-  }, [publicKey, isProcessing, activeStreams, signTx, maxConcurrency, onComplete]);
-
-  const totalAvailable = activeStreams.reduce(
-    (sum, s) => sum + (typeof s.info?.withdrawable === 'bigint' ? s.info.withdrawable : 0n),
-    0n,
-  );
+  }, [publicKey, isProcessing, withdrawableStreams, signTx, maxConcurrency, onComplete]);
 
   return (
     <div className="space-y-2">
       <Button
         onClick={handleBulkWithdraw}
-        disabled={isProcessing || totalAvailable === 0n}
+        disabled={isProcessing || withdrawableStreams.length === 0}
         className="w-full mt-4"
       >
         {isProcessing
           ? `Processing ${progress.done}/${progress.total}...`
           : 'Withdraw All Available'}
       </Button>
+
+      {excludedCount > 0 && !isProcessing && (
+        <div
+          role="status"
+          className="text-xs text-amber-600 dark:text-amber-400 mt-1"
+        >
+          {excludedCount} stream{excludedCount === 1 ? '' : 's'} excluded due to invalid or missing data
+        </div>
+      )}
 
       {isProcessing && progress.total > 0 && (
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">

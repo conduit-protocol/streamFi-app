@@ -1,7 +1,7 @@
 import Link                    from 'next/link';
 import { Badge }               from '@/components/ui/Badge';
 import { StreamProgressBar }   from '@/components/stream/StreamProgressBar';
-import { truncateAddress }     from '@/lib/format';
+import { truncateAddress, fromStroops } from '@/lib/format';
 
 interface StreamCardProps {
   id:            string;
@@ -26,7 +26,7 @@ export function StreamCard({
   endTime,
   status,
 }: StreamCardProps) {
-  const rateFormatted = (Number(ratePerSecond) / 1e7).toFixed(4);
+  const rateFormatted = fromStroops(ratePerSecond);
 
   // Derive a snapshot percentage for the text label only (no state, no timer)
   const pctSnapshot = (() => {

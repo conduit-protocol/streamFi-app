@@ -77,7 +77,15 @@ export const useTransactionStore = create<TransactionStore>((set) => ({
       const tx = state.transactions[id];
       if (!tx) return state;
 
-      const updated = { ...tx, status, hash, error };
+      // Merge hash/error — only overwrite if explicitly provided, to avoid
+      // silently losing a hash from an earlier call when updateStatus is
+      // invoked later with only a status transition (no hash param).
+      const updated: Transaction = {
+        ...tx,
+        status,
+        ...(hash !== undefined ? { hash } : {}),
+        ...(error !== undefined ? { error } : {}),
+      };
 
       if (status === 'success') {
         toast.success(`${tx.description} successful!`, { id });
