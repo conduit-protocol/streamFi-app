@@ -308,7 +308,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!token || !/^C[A-Z0-9]{55}$/.test(token)) {
+    if (!token || !/^C[A-Z2-7]{55}$/.test(token)) {
       return {
         success: false,
         error: normalizeError(
@@ -318,7 +318,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!spender || !/^C[A-Z0-9]{55}$/.test(spender)) {
+    if (!spender || !/^C[A-Z2-7]{55}$/.test(spender)) {
       return {
         success: false,
         error: normalizeError(
