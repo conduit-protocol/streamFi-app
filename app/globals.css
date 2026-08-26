@@ -60,9 +60,12 @@
   }
 
   .badge-active    { @apply badge bg-black text-white dark:bg-white dark:text-black; }
-  .badge-paused    { @apply badge bg-yellow-50 text-yellow-800 border border-yellow-200/60 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-700; }
+  /* #311: paused/cancelled were bg-yellow/bg-red (prohibited hues, not the
+     documented delta-only exception, and unlabeled). Now border+gray only,
+     matching the Badge component README spec. */
+  .badge-paused    { @apply badge border border-gray-400 text-gray-400 dark:border-gray-500 dark:text-gray-500; }
   .badge-ended     { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
-  .badge-cancelled { @apply badge bg-red-50 text-red-700 border border-red-200/60 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700; }
+  .badge-cancelled { @apply badge border border-gray-200 text-gray-300 line-through dark:border-gray-700 dark:text-gray-600; }
 
   /* Amount display */
   .amount {
