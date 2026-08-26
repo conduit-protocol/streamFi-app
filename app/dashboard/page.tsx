@@ -91,10 +91,20 @@ export default function DashboardPage() {
   const [sending, setSending] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // #307 — loadSeqRef is the ordering guard: each fetch captures its own
+  // seq and only commits state if it's still the most recent request by the
+  // time it resolves, the same pattern app/stream/[id]/page.tsx uses.
+  // activeControllerRef tracks whichever AbortController is currently "the"
+  // in-flight fetch so every trigger (mount, visibility change, retry,
+  // bulk-withdraw completion) aborts the previous one before starting a new
+  // one, instead of each site spinning up its own untracked controller.
   const loadSeqRef = useRef(0);
+  const activeControllerRef = useRef<AbortController | null>(null);
 
   const fetchStreams = useCallback(async (signal: AbortSignal) => {
     if (!publicKey) return;
+    const seq = ++loadSeqRef.current;
+    const isCurrent = () => seq === loadSeqRef.current;
     const now = Math.floor(Date.now() / 1000);
     setLoading(true);
     setError(null);
@@ -103,19 +113,26 @@ export default function DashboardPage() {
         loadRows(publicKey, "recipient", now, signal),
         loadRows(publicKey, "sender", now, signal),
       ]);
-      if (!signal.aborted) {
+      if (!signal.aborted && isCurrent()) {
         setReceiving(recv);
         setSending(sent);
       }
     } catch (e) {
-      if (!signal.aborted) {
+      if (!signal.aborted && isCurrent()) {
         console.error(e);
         setError("Failed to load streams. Please try again.");
       }
     } finally {
-      if (!signal.aborted) setLoading(false);
+      if (!signal.aborted && isCurrent()) setLoading(false);
     }
   }, [publicKey]);
+
+  const refetch = useCallback(() => {
+    activeControllerRef.current?.abort();
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    fetchStreams(controller.signal);
+  }, [fetchStreams]);
 
   useEffect(() => {
     if (!publicKey) {
@@ -124,21 +141,20 @@ export default function DashboardPage() {
       setError(null);
       return;
     }
-    const controller = new AbortController();
-    fetchStreams(controller.signal);
+    refetch();
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !controller.signal.aborted) {
-        fetchStreams(new AbortController().signal);
+      if (document.visibilityState === 'visible') {
+        refetch();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      controller.abort();
+      activeControllerRef.current?.abort();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [publicKey, fetchStreams]);
+  }, [publicKey, refetch]);
 
   const activeCount = useMemo(
     () =>
@@ -263,8 +279,7 @@ export default function DashboardPage() {
                     }))}
                   onComplete={async () => {
                     await refreshStreamData();
-                    const controller = new AbortController();
-                    fetchStreams(controller.signal);
+                    refetch();
                   }}
                 />
               </div>
@@ -282,31 +297,7 @@ export default function DashboardPage() {
               <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" aria-hidden="true" />
               <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
               <button
-                onClick={() => {
-                  if (publicKey) {
-                    setError(null);
-                    setLoading(true);
-                    const now = Math.floor(Date.now() / 1000);
-                    const controller = new AbortController();
-                    Promise.all([
-                      loadRows(publicKey, "recipient", now, controller.signal),
-                      loadRows(publicKey, "sender", now, controller.signal),
-                    ])
-                      .then(([recv, sent]) => {
-                        setReceiving(recv);
-                        setSending(sent);
-                      })
-                      .catch((e) => {
-                        console.error(e);
-                        const message =
-                          (e instanceof Error && e.name === "RpcTimeoutError")
-                            ? "The RPC provider didn't respond in time. Check your connection and try again."
-                            : "Failed to load streams. Please try again.";
-                        setError(message);
-                      })
-                      .finally(() => setLoading(false));
-                  }
-                }}
+                onClick={refetch}
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
