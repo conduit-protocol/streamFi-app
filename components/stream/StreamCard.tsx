@@ -50,7 +50,10 @@ export function StreamCard({
         </div>
 
         {/* Rate number centered, green text */}
-        <div className="amount text-xs sm:text-sm font-bold text-green-600 dark:text-green-400 truncate text-center px-1">
+        <div
+          className="amount text-xs sm:text-sm font-bold text-green-600 dark:text-green-400 truncate text-center px-1"
+          aria-label={`streaming rate: ${rateFormatted} per second`}
+        >
           {rateFormatted}/s
         </div>
 

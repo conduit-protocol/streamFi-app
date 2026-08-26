@@ -87,8 +87,13 @@ export function BatchStreamCreator() {
           <div key={i} className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
             <span className="font-mono text-sm">{truncateAddress(rec.address)}</span>
             <div className="flex items-center gap-4">
-              <span className="font-mono text-green-600 dark:text-green-400 font-bold">{rec.ratePerSecond.toString()}/s</span>
-              <button className="text-red-500 text-sm hover:underline" onClick={() => removeRecipient(i)}>Remove</button>
+              <span
+                className="font-mono text-green-600 dark:text-green-400 font-bold"
+                aria-label={`streaming rate: ${rec.ratePerSecond.toString()} per second`}
+              >
+                {rec.ratePerSecond.toString()}/s
+              </span>
+              <button className="text-black dark:text-white text-sm underline hover:no-underline" onClick={() => removeRecipient(i)}>Remove</button>
             </div>
           </div>
         ))}

@@ -162,7 +162,7 @@ export default function StreamPage() {
             {fromStroops(withdrawable)}
           </p>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncateAddress(info.token)}</p>
-          <p className="text-xs text-amber-600 mt-2">Stream is paused — balance frozen</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Stream is paused — balance frozen</p>
         </Card>
       )}
 

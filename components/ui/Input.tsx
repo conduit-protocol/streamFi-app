@@ -19,7 +19,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
-          className={`input ${error ? 'border-red-400 focus:border-red-500 focus:ring-red-500/10' : ''} ${className}`}
+          className={`input ${error ? 'border-black dark:border-white border-2 focus:ring-black/10 dark:focus:ring-white/10' : ''} ${className}`}
           aria-invalid={error ? 'true' : undefined}
           aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
           {...props}
@@ -28,7 +28,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <p id={`${inputId}-hint`} className="text-xs text-gray-400 dark:text-gray-500">{hint}</p>
         )}
         {error && (
-          <p id={`${inputId}-error`} className="text-xs text-red-600" role="alert">{error}</p>
+          <p id={`${inputId}-error`} className="text-xs font-semibold text-black dark:text-white" role="alert">{error}</p>
         )}
       </div>
     );
