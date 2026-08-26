@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { fromStroops } from '@/lib/format';
 
 interface RateTickerProps {
   /** Rate in stroops per second */
@@ -9,14 +10,6 @@ interface RateTickerProps {
   startBalance: bigint;
   /** Decimal places to display (default: 7 for XLM) */
   decimals?: number;
-}
-
-/** Converts stroops to display amount string */
-function fromStroops(stroops: bigint, decimals: number): string {
-  const factor = BigInt(10 ** decimals);
-  const whole  = stroops / factor;
-  const frac   = stroops % factor;
-  return `${whole}.${frac.toString().padStart(decimals, '0')}`;
 }
 
 /**
