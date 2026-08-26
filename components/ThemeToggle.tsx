@@ -7,14 +7,27 @@ import { useEffect, useState } from 'react';
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  // #306 — theme (from next-themes) never changes when the OS switches
+  // color scheme while theme === 'system', so this component's own icon/
+  // label would otherwise go stale until some unrelated re-render happened.
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemPrefersDark(mql.matches);
+
+    const handleChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
+  }, []);
 
   if (!mounted) {
     return <div className="w-9 h-9" />;
   }
 
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
 
   return (
     <button
