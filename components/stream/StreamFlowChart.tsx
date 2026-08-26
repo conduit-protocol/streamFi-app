@@ -25,12 +25,6 @@ interface DataPoint {
   y: number;
 }
 
-// Issue #313: Replace hardcoded hex colors with semantic constants
-// These match Tailwind's blue-500 (#3b82f6) and amber-500 (#f59e0b)
-// but are defined here for SVG compatibility
-const COLOR_ACTIVE = 'rgb(59 130 246)';   // Tailwind blue-500
-const COLOR_PAUSED = 'rgb(245 158 11)';   // Tailwind amber-500
-
 export function StreamFlowChart({
   startTime,
   endTime,
@@ -136,9 +130,14 @@ export function StreamFlowChart({
           onMouseLeave={() => setHoverPoint(null)}
         >
           <defs>
+            {/* #313 correction — COLOR_ACTIVE/COLOR_PAUSED were rgb(59 130 246)
+                (blue-500) / rgb(245 158 11) (amber-500): still banned hues,
+                just spelled as rgb() instead of hex. The "Paused" tooltip
+                label already conveys that state, so the chart itself stays
+                black/white per the design system regardless of status. */}
             <linearGradient id="streamFlowGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={paused ? COLOR_PAUSED : COLOR_ACTIVE} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={paused ? COLOR_PAUSED : COLOR_ACTIVE} stopOpacity="0.0" />
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" className="text-black dark:text-white" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0.0" className="text-black dark:text-white" />
             </linearGradient>
           </defs>
 
@@ -167,7 +166,8 @@ export function StreamFlowChart({
           <path
             d={pathD}
             fill="none"
-            stroke={paused ? COLOR_PAUSED : COLOR_ACTIVE}
+            stroke="currentColor"
+            className="text-black dark:text-white"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -180,10 +180,10 @@ export function StreamFlowChart({
               cx={p.x}
               cy={p.y}
               r={hoverPoint?.x === p.x ? 5 : 3}
-              fill={p.isPausedPoint ? COLOR_PAUSED : COLOR_ACTIVE}
+              fill="currentColor"
               stroke="#ffffff"
               strokeWidth="1.5"
-              className="cursor-pointer transition-all duration-150"
+              className="cursor-pointer transition-all duration-150 text-black dark:text-white"
               onMouseEnter={() => setHoverPoint(p)}
             />
           ))}
@@ -224,7 +224,7 @@ export function StreamFlowChart({
               {fromStroops(hoverPoint.amount)} {tokenSymbol}
             </div>
             {hoverPoint.isPausedPoint && (
-              <div className="text-amber-400 text-[10px]">Paused</div>
+              <div className="text-gray-400 text-[10px]">Paused</div>
             )}
           </div>
         )}

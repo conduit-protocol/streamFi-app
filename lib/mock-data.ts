@@ -77,12 +77,17 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
   },
 };
 
+// #316 correction — the previous fix here still left entry '4' at 57
+// characters (one too many), so demo mode was still silently filtering that
+// stream out. Every real Stellar StrKey address (accounts and contracts) is
+// exactly 56 characters; these are genuinely 56-character, StrKey-valid
+// contract addresses (verified via @stellar/stellar-sdk's StrKey.encodeContract).
 export const MOCK_ADDRESSES: Record<string, string> = {
-  '1': 'CCXJVGD3MZ7W5X4Y5T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6AAA',  // 56 chars
-  '2': 'CDR4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4BBBB',   // 56 chars
-  '3': 'C5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2CCCC',   // 56 chars
-  '4': 'C6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQ6DDDD',   // 56 chars
-  '5': 'CZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6ZEEEE',   // 56 chars
+  '1': 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526',
+  '2': 'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ',
+  '3': 'CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3',
+  '4': 'CACAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAINCW',
+  '5': 'CACQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQLC2U',
 };
 
 export const SENDER_STREAM_IDS = [1n, 3n, 5n];

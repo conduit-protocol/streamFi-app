@@ -38,7 +38,7 @@ describe('StreamFlowChart', () => {
     document.body.removeChild(container);
   });
 
-  it('renders paused indicator styling when stream is paused', () => {
+  it('renders the flow line without a hardcoded hue when the stream is paused', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -47,8 +47,14 @@ describe('StreamFlowChart', () => {
       root.render(<StreamFlowChart {...baseProps} paused={true} pausedAt={1700200000} />);
     });
 
-    const strokePath = container.querySelector('path[stroke="#f59e0b"]');
-    expect(strokePath).not.toBeNull();
+    // #313 — paused/active no longer differ by hardcoded hue (hex or rgb());
+    // the flow line always uses currentColor (black/white via design-system
+    // classes), and the "Paused" tooltip label is the only signal of state.
+    expect(container.querySelector('path[stroke="currentColor"]')).not.toBeNull();
+    expect(container.querySelector('path[stroke="#f59e0b"]')).toBeNull();
+    expect(container.querySelector('path[stroke="#3b82f6"]')).toBeNull();
+    expect(container.querySelector('path[stroke="rgb(245 158 11)"]')).toBeNull();
+    expect(container.querySelector('path[stroke="rgb(59 130 246)"]')).toBeNull();
 
     act(() => {
       root.unmount();
