@@ -16,7 +16,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TokenSelector } from '../TokenSelector';
+import { TokenSelector } from './TokenSelector';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ describe('TokenSelector', () => {
         root.render(
           <TokenSelector
             value={currentValue}
-            onChange={val => {
+            onChange={(val: string) => {
               currentValue = val;
             }}
             {...extras}
@@ -350,8 +350,8 @@ describe('TokenSelector', () => {
       // The callback should reflect only the final address (UNKNOWN_CONTRACT → null).
       // It may be called once (unknown) or twice if both effects settled, but the
       // LAST call must be with null (unknown contract), not with the USDC token.
-      const lastCall = cb.mock.calls[cb.mock.calls.length - 1];
-      expect(lastCall[0]).toBeNull(); // UNKNOWN_CONTRACT resolves to null
+      const lastCall = cb.mock.calls.at(-1);
+      expect(lastCall?.[0]).toBeNull(); // UNKNOWN_CONTRACT resolves to null
     });
 
     it('resets to idle when address is cleared mid-lookup', async () => {
