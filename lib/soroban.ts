@@ -469,10 +469,22 @@ export function scValToU64(val: xdr.ScVal): bigint {
  * "definitely does not exist" from "couldn't reach the network".
  *
  * @param address  Stellar G… public key
+ * @param options  Optional abort signal and timeout
  */
-export async function checkRecipientExists(address: string): Promise<boolean> {
+export async function checkRecipientExists(
+  address: string,
+  options?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const signal = options?.signal;
+
   try {
-    await getServer().getAccount(address);
+    await withTimeout(
+      getServer().getAccount(address),
+      timeoutMs,
+      'checkRecipientExists',
+      signal
+    );
     return true;
   } catch (err: unknown) {
     // stellar-sdk throws an error whose message contains "404" or
