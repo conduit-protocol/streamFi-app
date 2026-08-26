@@ -31,6 +31,8 @@ interface StreamProgressBarProps {
   endTime: number;
   /** Current stream status */
   status: 'active' | 'paused' | 'ended' | 'cancelled';
+  /** Unix timestamp (seconds) when the stream was paused — required to freeze the bar correctly while status === 'paused' */
+  pausedAt?: number;
   /** aria-label for screen readers */
   label?: string;
 }
@@ -39,6 +41,7 @@ export function StreamProgressBar({
   startTime,
   endTime,
   status,
+  pausedAt,
   label,
 }: StreamProgressBarProps) {
   const fillRef = useRef<HTMLDivElement>(null);
@@ -49,7 +52,6 @@ export function StreamProgressBar({
     const el = fillRef.current;
     if (!el) return;
 
-    const nowMs       = Date.now();
     const startMs     = startTime * 1_000;
     const endMs       = endTime   * 1_000;
 
@@ -63,7 +65,11 @@ export function StreamProgressBar({
     }
 
     const totalDurationMs = endMs - startMs;
-    const elapsedMs       = Math.max(0, nowMs - startMs);
+    // Paused streams freeze at pausedAt, not the wall-clock time this
+    // effect happens to run at — otherwise reloading (or just re-rendering)
+    // a paused stream makes the "frozen" bar keep creeping forward.
+    const referenceMs = status === 'paused' && pausedAt ? pausedAt * 1_000 : Date.now();
+    const elapsedMs   = Math.max(0, referenceMs - startMs);
 
     // Clamp for ended streams — show full bar, static
     if (status === 'ended' || status === 'cancelled') {
@@ -72,7 +78,7 @@ export function StreamProgressBar({
       return;
     }
 
-    // Paused — freeze at current position, no animation
+    // Paused — freeze at the pause position, no animation
     if (status === 'paused') {
       const frozenPct = Math.min(100, (elapsedMs / totalDurationMs) * 100);
       el.style.width     = `${frozenPct.toFixed(2)}%`;
@@ -90,13 +96,13 @@ export function StreamProgressBar({
     el.style.animationFillMode  = 'forwards';
     el.style.animationPlayState = 'running';
     el.style.animationIterationCount = '1';
-  }, [startTime, endTime, status]);
+  }, [startTime, endTime, status, pausedAt]);
 
   // Derive aria value for accessibility (computed once on render, not on tick)
-  const nowSec     = Math.floor(Date.now() / 1_000);
-  const totalSec   = endTime > 0 ? endTime - startTime : 0;
-  const elapsedSec = totalSec > 0 ? Math.max(0, nowSec - startTime) : 0;
-  const ariaNow    = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
+  const totalSec      = endTime > 0 ? endTime - startTime : 0;
+  const referenceSec  = status === 'paused' && pausedAt ? pausedAt : Math.floor(Date.now() / 1_000);
+  const elapsedSec    = totalSec > 0 ? Math.max(0, referenceSec - startTime) : 0;
+  const ariaNow        = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
 
   return (
     <>
@@ -115,7 +121,8 @@ export function StreamProgressBar({
           style={{
             width: (() => {
               if (endTime === 0) return '0%';
-              const t = (Date.now() / 1_000 - startTime) / (endTime - startTime);
+              const referenceSecInline = status === 'paused' && pausedAt ? pausedAt : Date.now() / 1_000;
+              const t = (referenceSecInline - startTime) / (endTime - startTime);
               return `${Math.min(100, Math.max(0, t * 100)).toFixed(2)}%`;
             })(),
           }}

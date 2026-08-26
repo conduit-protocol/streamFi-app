@@ -14,6 +14,8 @@ interface StreamCardProps {
   /** Unix timestamp (seconds) when the stream ends (0 = open-ended) */
   endTime:       number;
   status:        'active' | 'paused' | 'ended' | 'cancelled';
+  /** Unix timestamp (seconds) when the stream was paused — required to freeze the % label correctly while status === 'paused' */
+  pausedAt?:     number;
 }
 
 export function StreamCard({
@@ -25,15 +27,19 @@ export function StreamCard({
   startTime,
   endTime,
   status,
+  pausedAt,
 }: StreamCardProps) {
   const rateFormatted = fromStroops(ratePerSecond);
 
   // Derive a snapshot percentage for the text label only (no state, no timer)
   const pctSnapshot = (() => {
     if (endTime === 0) return 0;
-    const now   = Date.now() / 1_000;
     const total = endTime - startTime;
     if (total <= 0) return 0;
+    // Paused streams freeze at pausedAt, not the wall-clock time this
+    // renders at — otherwise the % label keeps climbing for a stream
+    // that isn't actually streaming.
+    const now = status === 'paused' && pausedAt ? pausedAt : Date.now() / 1_000;
     return Math.min(100, Math.max(0, ((now - startTime) / total) * 100));
   })();
 
@@ -64,6 +70,7 @@ export function StreamCard({
         startTime={startTime}
         endTime={endTime}
         status={status}
+        pausedAt={pausedAt}
       />
 
       <div className="flex items-center justify-between mt-3 text-xs">

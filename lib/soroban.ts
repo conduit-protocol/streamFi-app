@@ -468,13 +468,35 @@ export function scValToU64(val: xdr.ScVal): bigint {
  * Throws for any other network error so callers can distinguish
  * "definitely does not exist" from "couldn't reach the network".
  *
- * @param address  Stellar G… public key
+ * Accepts an optional AbortSignal so callers can cancel in-flight checks
+ * (e.g. when the user changes the address or navigates away) and an optional
+ * timeoutMs so a hung RPC provider never keeps the caller waiting forever.
+ * Defaults to 10s if not specified.
+ *
+ * @param address    Stellar G… public key
+ * @param options    Optional signal and timeout
  */
-export async function checkRecipientExists(address: string): Promise<boolean> {
+export async function checkRecipientExists(
+  address: string,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 10_000;
+
+  if (options?.signal?.aborted) throw new OperationAbortedError();
+
   try {
-    await getServer().getAccount(address);
+    await withTimeout(
+      getServer().getAccount(address),
+      timeoutMs,
+      'checkRecipientExists',
+      options?.signal,
+    );
     return true;
   } catch (err: unknown) {
+    // Re-throw abort/cancellation so callers can distinguish it from a
+    // network failure and skip updating React state after unmount.
+    if (err instanceof OperationAbortedError) throw err;
+
     // stellar-sdk throws an error whose message contains "404" or
     // "Account not found" when the account has never been funded.
     const message = err instanceof Error ? err.message : String(err);

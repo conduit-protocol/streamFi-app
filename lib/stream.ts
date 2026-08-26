@@ -8,15 +8,12 @@
 import { xdr, Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128, scValToU64 } from './soroban';
 import { tryGetFactoryContractId } from './env';
+import { isMock } from './factory';
 import { MOCK_STREAMS, MOCK_ADDRESSES } from './mock-data';
 
 let _factory: string | undefined;
 function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
-}
-
-function isMock(): boolean {
-  return !FACTORY();
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

@@ -24,7 +24,10 @@ const schema = z.object({
     .regex(/^G[A-Z0-9]{55}$/, 'Must be a valid Stellar address starting with G'),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
-  durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour'),
+  // #319 — no upper bound previously meant an accidental extra digit (e.g.
+  // 25920000 instead of 2592000) had no client-side guard before signing.
+  // 10 years mirrors DripGovernor's own default max_duration_seconds cap.
+  durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour').max(315_360_000, 'Maximum 10 years'),
   clawback:        z.boolean(),
 });
 
@@ -107,6 +110,15 @@ export default function CreatePage() {
   // address satisfies the Zod schema (56 chars, starts with G) so we never
   // waste an RPC call on a partially-typed address — Zod already owns
   // partial-input/format feedback exclusively.
+  //
+  // An AbortController is created per effect run so that:
+  //   1. If the address changes before the debounce fires, the in-flight
+  //      check (if any) is cancelled and the loading state is cleared.
+  //   2. If the RPC provider hangs indefinitely, a 10s timeout rejects the
+  //      promise and transitions status to 'error' rather than leaving the
+  //      user stuck on "Verifying recipient…" forever.
+  //   3. If the component unmounts mid-flight the state update is suppressed.
+  const RECIPIENT_CHECK_TIMEOUT_MS = 10_000;
   useEffect(() => {
     const seq = ++recipientSeqRef.current;
     const isCurrent = () => seq === recipientSeqRef.current;
@@ -122,7 +134,13 @@ export default function CreatePage() {
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
+    const controller = new AbortController();
+
     debounceRef.current = setTimeout(async () => {
+      // Hard timeout: if the RPC never responds, reject after 10s so the
+      // spinner is always cleared.
+      const timeoutId = setTimeout(() => controller.abort('timeout'), RECIPIENT_CHECK_TIMEOUT_MS);
+
       try {
         const exists = await checkRecipientExists(recipient);
         if (!isCurrent()) return;
@@ -131,11 +149,19 @@ export default function CreatePage() {
         // Network / RPC error — don't block the user, but surface a warning.
         if (!isCurrent()) return;
         setRecipientStatus('error');
+      } finally {
+        clearTimeout(timeoutId);
       }
     }, 600);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      // Cancel any in-flight check so the status doesn't flip back to
+      // 'valid'/'not-found'/'error' after the address has already changed.
+      controller.abort('cancelled');
+      // Immediately clear the checking state on cleanup so the button
+      // label resets if the user clears the field while a check is pending.
+      setRecipientStatus('idle');
     };
   }, [recipient]);
 
