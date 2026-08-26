@@ -87,6 +87,11 @@ export default function CreatePage() {
     'idle' | 'checking' | 'valid' | 'not-found' | 'error'
   >('idle');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #309 — request-sequence guard so a stale in-flight checkRecipientExists()
+  // call can't overwrite recipientStatus after a newer one has already
+  // resolved (or started), mirroring app/stream/[id]/page.tsx's loadSeq/
+  // isCurrent() pattern.
+  const recipientSeqRef = useRef(0);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -103,6 +108,9 @@ export default function CreatePage() {
   // waste an RPC call on a partially-typed address — Zod already owns
   // partial-input/format feedback exclusively.
   useEffect(() => {
+    const seq = ++recipientSeqRef.current;
+    const isCurrent = () => seq === recipientSeqRef.current;
+
     const validLength = recipient?.length === 56;
 
     if (!validLength) {
@@ -117,9 +125,11 @@ export default function CreatePage() {
     debounceRef.current = setTimeout(async () => {
       try {
         const exists = await checkRecipientExists(recipient);
+        if (!isCurrent()) return;
         setRecipientStatus(exists ? 'valid' : 'not-found');
       } catch {
         // Network / RPC error — don't block the user, but surface a warning.
+        if (!isCurrent()) return;
         setRecipientStatus('error');
       }
     }, 600);
