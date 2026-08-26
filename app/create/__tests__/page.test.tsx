@@ -5,7 +5,7 @@ import { act } from 'react';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
-const TEST_RECIPIENT = `G${'A'.repeat(55)}`;
+const TEST_RECIPIENT = 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL';
 
 vi.mock('@/contexts/WalletContext', () => ({
   useWallet: () => ({

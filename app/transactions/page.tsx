@@ -9,10 +9,15 @@ import { useWallet } from '@/contexts/WalletContext';
 
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
 
+// #312 — Success/Failed used bg-green-*/bg-red-*, neither covered by
+// CONTRIBUTING.md's delta-only text-color exception (which doesn't apply to
+// bg- at all). The status text itself ("Success"/"Pending"/"Failed") is
+// always rendered inside the pill, so gray shades plus line-through for the
+// failed state carry the distinction without color.
 const STATUS_CLASS: Record<string, string> = {
-  Success: 'text-green-700 bg-green-50',
+  Success: 'text-black bg-gray-100',
   Pending: 'text-gray-600 bg-gray-100',
-  Failed:  'text-red-700 bg-red-50',
+  Failed:  'text-gray-500 bg-gray-200 line-through',
 };
 
 export default function TransactionsPage() {
@@ -31,17 +36,17 @@ export default function TransactionsPage() {
       <h1 className="text-2xl font-black tracking-tight mb-8">Transaction History</h1>
 
       {isDemoData && (
-        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg">
           <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
           <p>
-            <span className="font-semibold">Demo data</span> — Transaction history is not yet connected to the indexer. 
+            <span className="font-semibold">Demo data</span> — Transaction history is not yet connected to the indexer.
             The rows below are placeholder examples and do not reflect your actual wallet activity.
           </p>
         </div>
       )}
 
       {!connected && (
-        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-start gap-2 p-3 mb-4 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg">
           <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
           <p>Connect your wallet to view your transaction history.</p>
         </div>
@@ -91,7 +96,12 @@ export default function TransactionsPage() {
               const isNegative = tx.type === 'Withdrawn';
               const isCancelled = tx.type === 'Cancelled';
               const sign = isPositive ? '+' : isNegative ? '-' : '';
-              const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
+              // #327 — yellow wasn't in the allowed exception at all (only
+              // green-600/red-600 for a delta), and cancelled isn't really
+              // a directional delta, so it gets no color (the '×' icon and
+              // "Cancelled" type label already distinguish it).
+              const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-black';
+              const amountAriaLabel = isPositive ? 'increase' : isNegative ? 'decrease' : undefined;
 
               return (
                 <div key={tx.hash} className="flex items-center justify-between py-4 px-4 hover:bg-gray-50 transition-colors">
@@ -108,7 +118,7 @@ export default function TransactionsPage() {
                   </div>
                   <div className="text-right flex flex-col items-end gap-1.5">
                     <div className="text-sm font-mono font-bold">
-                      <span className={amountColor}>{sign}{tx.amount}</span>{' '}
+                      <span className={amountColor} aria-label={amountAriaLabel}>{sign}{tx.amount}</span>{' '}
                       <span className="text-black">{tx.token}</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -144,13 +154,18 @@ export default function TransactionsPage() {
                   const isNegative = tx.type === 'Withdrawn';
                   const isCancelled = tx.type === 'Cancelled';
                   const sign = isPositive ? '+' : isNegative ? '-' : '';
-                  const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-yellow-500' : isCancelled ? 'text-red-600' : 'text-black';
+                  // #327 — yellow wasn't in the allowed exception at all (only
+                  // green-600/red-600 for a delta), and cancelled isn't really
+                  // a directional delta, so it gets no color (the '×' icon and
+                  // "Cancelled" type label already distinguish it).
+                  const amountColor = isPositive ? 'text-green-600' : isNegative ? 'text-red-600' : 'text-black';
+                  const amountAriaLabel = isPositive ? 'increase' : isNegative ? 'decrease' : undefined;
 
                   return (
                     <tr key={tx.hash}>
                       <td className="py-2.5 px-4 text-black font-medium">{tx.type}</td>
                       <td className="py-2.5 px-4 font-mono text-right">
-                        <span className={amountColor}>{sign}{tx.amount}</span>
+                        <span className={amountColor} aria-label={amountAriaLabel}>{sign}{tx.amount}</span>
                       </td>
                       <td className="py-2.5 px-4 font-mono text-gray-600 text-right">{tx.token}</td>
                       <td className="py-2.5 px-4 text-center">

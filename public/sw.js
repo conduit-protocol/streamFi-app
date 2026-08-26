@@ -42,7 +42,11 @@ self.addEventListener('fetch', (event) => {
   }
 
   const isAsset = ASSET_PATTERNS.some((pattern) => pattern.test(url));
-  const isStaticPage = STATIC_ASSETS.some((page) => url.includes(page));
+  // #317 — '/' is one of the STATIC_ASSETS entries, and a plain substring
+  // .includes() check matches every same-origin URL (every path contains
+  // '/'), so this used to be true for every request. Exact-match the
+  // pathname instead.
+  const isStaticPage = STATIC_ASSETS.includes(new URL(url).pathname);
   const isExternalRequest = !url.includes(self.location.origin);
 
   if (isExternalRequest) {

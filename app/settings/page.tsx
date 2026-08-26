@@ -63,7 +63,10 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight">Settings</h1>
         {saved && (
-          <span className="text-sm text-green-600 dark:text-green-400 font-medium animate-pulse">
+          <span
+            className="text-sm text-green-600 dark:text-green-400 font-medium animate-pulse"
+            aria-label="confirmation"
+          >
             Settings saved
           </span>
         )}
@@ -164,7 +167,7 @@ export default function SettingsPage() {
       <div className="flex justify-end">
         <button
           onClick={handleReset}
-          className="px-4 py-2 rounded text-sm font-medium border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+          className="px-4 py-2 rounded text-sm font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
         >
           Reset to Defaults
         </button>

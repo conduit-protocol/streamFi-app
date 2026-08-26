@@ -3,8 +3,8 @@ import { useWallet } from '@/contexts/WalletContext';
 import { withdraw } from '@/lib/stream';
 import { Button } from '@/components/ui/Button';
 import { withBoundedParallel, normalizeError } from '@/lib/safe-operations';
+import { isValidStellarAddress } from '@/lib/stellar-address';
 
-const STELLAR_ADDRESS_RE = /^[GC][A-Z0-9]{55}$/;
 const MAX_I128 = BigInt('170141183460469231731687303715884105727');
 
 export interface StreamEntry {
@@ -26,7 +26,7 @@ function isStreamValid(s: StreamEntry): s is ValidStream {
     typeof s.id === 'string' &&
     s.id.length > 0 &&
     typeof s.address === 'string' &&
-    STELLAR_ADDRESS_RE.test(s.address) &&
+    isValidStellarAddress(s.address) &&
     s.info?.withdrawable != null &&
     typeof s.info.withdrawable === 'bigint' &&
     s.info.withdrawable > 0n &&
@@ -155,7 +155,7 @@ export function BulkWithdrawButton({
       {excludedCount > 0 && !isProcessing && (
         <div
           role="status"
-          className="text-xs text-amber-600 dark:text-amber-400 mt-1"
+          className="text-xs text-gray-500 dark:text-gray-400 mt-1"
         >
           {excludedCount} stream{excludedCount === 1 ? '' : 's'} excluded due to invalid or missing data
         </div>
@@ -164,7 +164,7 @@ export function BulkWithdrawButton({
       {isProcessing && progress.total > 0 && (
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
           <div
-            className="bg-green-500 h-1.5 rounded-full transition-all duration-300"
+            className="bg-black dark:bg-white h-1.5 rounded-full transition-all duration-300"
             style={{ width: `${(progress.done / progress.total) * 100}%` }}
           />
         </div>
