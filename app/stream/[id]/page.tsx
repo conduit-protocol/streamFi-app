@@ -14,6 +14,7 @@ import { StreamActions }   from '@/components/stream/StreamActions';
 import { useWallet }       from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
+import { tokenByAddress } from '@/lib/tokens';
 import type { StreamInfo } from '@/lib/stream';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -122,6 +123,11 @@ export default function StreamPage() {
   const isSender    = !!publicKey && publicKey === info.sender;
   const isRecipient = !!publicKey && publicKey === info.recipient;
   const totalDeposited = info.withdrawn + withdrawable;
+  // #318 — info.token is the SEP-41 contract address, not a display symbol;
+  // truncateAddress(info.token) rendered e.g. "Withdraw 42.50 CDLZ…CYSC"
+  // instead of "Withdraw 42.50 XLM". Resolve to a symbol where known,
+  // falling back to the truncated address only for unrecognized tokens.
+  const tokenSymbol = tokenByAddress(info.token, 'testnet')?.symbol ?? truncateAddress(info.token);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -150,7 +156,7 @@ export default function StreamPage() {
               startBalance={withdrawable}
             />
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncateAddress(info.token)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{tokenSymbol}</p>
         </Card>
       )}
 
@@ -161,7 +167,7 @@ export default function StreamPage() {
           <p className="text-4xl font-black font-mono tabular-nums">
             {fromStroops(withdrawable)}
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{truncateAddress(info.token)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{tokenSymbol}</p>
           <p className="text-xs text-amber-600 mt-2">Stream is paused — balance frozen</p>
         </Card>
       )}
@@ -189,7 +195,7 @@ export default function StreamPage() {
           paused={info.paused}
           pausedAt={info.pausedAt}
           cancelled={info.cancelled}
-          tokenSymbol={truncateAddress(info.token)}
+          tokenSymbol={tokenSymbol}
         />
       </div>
 
@@ -231,7 +237,7 @@ export default function StreamPage() {
           isSender={isSender}
           isRecipient={isRecipient}
           withdrawable={withdrawable}
-          token={truncateAddress(info.token)}
+          token={tokenSymbol}
           onSuccess={loadStream}
         />
       )}
