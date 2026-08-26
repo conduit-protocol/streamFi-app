@@ -116,10 +116,12 @@ export default function CreatePage() {
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const exists = await checkRecipientExists(recipient);
+        // Add 10-second timeout to prevent infinite loading state (#123)
+        const exists = await checkRecipientExists(recipient, { timeoutMs: 10_000 });
         setRecipientStatus(exists ? 'valid' : 'not-found');
-      } catch {
+      } catch (err) {
         // Network / RPC error — don't block the user, but surface a warning.
+        console.error('Recipient check failed:', err);
         setRecipientStatus('error');
       }
     }, 600);
