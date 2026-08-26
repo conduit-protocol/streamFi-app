@@ -343,6 +343,7 @@ export default function DashboardPage() {
                   startTime={row.info.startTime}
                   endTime={row.info.endTime}
                   status={row.status}
+                  pausedAt={row.info.pausedAt}
                 />
               ))}
             </div>
