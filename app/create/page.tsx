@@ -24,7 +24,10 @@ const schema = z.object({
     .regex(/^G[A-Z0-9]{55}$/, 'Must be a valid Stellar address starting with G'),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
-  durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour'),
+  // #319 — no upper bound previously meant an accidental extra digit (e.g.
+  // 25920000 instead of 2592000) had no client-side guard before signing.
+  // 10 years mirrors DripGovernor's own default max_duration_seconds cap.
+  durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour').max(315_360_000, 'Maximum 10 years'),
   clawback:        z.boolean(),
 });
 
