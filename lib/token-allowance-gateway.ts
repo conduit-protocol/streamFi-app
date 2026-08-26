@@ -20,6 +20,7 @@
 
 import { Address, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128 } from './soroban';
+import { isValidStellarContract } from './stellar-address';
 import {
   withSafeOperation,
   withIdempotency,
@@ -308,7 +309,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!token || !/^C[A-Z0-9]{55}$/.test(token)) {
+    if (!token || !isValidStellarContract(token)) {
       return {
         success: false,
         error: normalizeError(
@@ -318,7 +319,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!spender || !/^C[A-Z0-9]{55}$/.test(spender)) {
+    if (!spender || !isValidStellarContract(spender)) {
       return {
         success: false,
         error: normalizeError(

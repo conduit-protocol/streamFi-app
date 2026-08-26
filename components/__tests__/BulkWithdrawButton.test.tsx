@@ -19,9 +19,9 @@ const mockUseWallet = vi.mocked(useWallet);
 const mockWithdraw = vi.mocked(withdraw);
 
 function makeStream(id: string, withdrawable: bigint) {
-  const address = id === '1' ? 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' 
-                : id === 'A' ? 'CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
-                : 'CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  const address = id === '1' ? 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526' 
+                : id === 'A' ? 'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ'
+                : 'CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3';
   return { id, address, info: { withdrawable } };
 }
 
@@ -29,7 +29,7 @@ describe('BulkWithdrawButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseWallet.mockReturnValue({
-      publicKey: 'GABC123',
+      publicKey: 'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
       signTx: vi.fn().mockResolvedValue('signed_xdr'),
       connected: true,
       connecting: false,
@@ -45,9 +45,9 @@ describe('BulkWithdrawButton', () => {
 
   it('skips streams with missing info without throwing', async () => {
     const streams = [
-      { id: undefined, address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: undefined },
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: undefined },
       makeStream('1', 100n),
-      { id: 'C_STREAM_2', address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: undefined },
+      { id: 'C_STREAM_2', address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: undefined },
     ] as any;
 
     const container = document.createElement('div');
@@ -70,8 +70,8 @@ describe('BulkWithdrawButton', () => {
 
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
-      'GABC123',
-      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
+      'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526',
       100n,
       expect.any(Function),
       expect.anything(),
@@ -85,7 +85,7 @@ describe('BulkWithdrawButton', () => {
 
   it('skips streams with missing id without throwing', async () => {
     const streams = [
-      { id: undefined, address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: { withdrawable: 50n } },
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: { withdrawable: 50n } },
       makeStream('A', 200n),
     ] as any;
 
@@ -106,8 +106,8 @@ describe('BulkWithdrawButton', () => {
 
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
-      'GABC123',
-      'CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
+      'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ',
       200n,
       expect.any(Function),
       expect.anything(),
@@ -195,8 +195,8 @@ describe('BulkWithdrawButton', () => {
 
   it('renders disabled button when no streams have withdrawable balance', () => {
     const streams = [
-      { id: 'C_A', address: 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW', info: { withdrawable: 0n } },
-      { id: 'C_B', address: 'GABC123ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVW', info: { withdrawable: 0n } },
+      { id: 'C_A', address: 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL', info: { withdrawable: 0n } },
+      { id: 'C_B', address: 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL', info: { withdrawable: 0n } },
     ] as any;
 
     const container = document.createElement('div');
@@ -340,7 +340,7 @@ describe('BulkWithdrawButton', () => {
 
   it('shows exclusion warning when some streams are filtered out', async () => {
     const streams = [
-      { id: undefined, address: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', info: { withdrawable: 100n } },
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: { withdrawable: 100n } },
       makeStream('1', 200n),
     ] as any;
 

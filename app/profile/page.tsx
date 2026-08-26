@@ -4,8 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { CopyHashButton } from "@/components/ui/CopyHashButton";
-
-const STELLAR_ADDRESS_RE = /^[GA][A-Z0-9]{55}$/;
+import { isValidStellarPublicKey } from "@/lib/stellar-address";
 
 type ConnectionState =
   | { status: "loading" }
@@ -17,7 +16,7 @@ function useConnectionState(): ConnectionState {
   const { publicKey, connected, walletName, connecting } = wallet;
 
   if (connecting) return { status: "loading" };
-  if (connected && publicKey && STELLAR_ADDRESS_RE.test(publicKey)) {
+  if (connected && publicKey && isValidStellarPublicKey(publicKey)) {
     return { status: "connected", publicKey, walletName };
   }
   return { status: "disconnected" };

@@ -15,13 +15,14 @@ import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import styles from './CreateStream.module.css';
 import { toStroops, wouldRateTruncateToZero } from '@/lib/format';
+import { isValidStellarPublicKey } from '@/lib/stellar-address';
 
 
 const schema = z.object({
   recipient:       z.string()
     .min(56, 'Must be a valid Stellar address (56 characters)')
     .max(56, 'Must be a valid Stellar address (56 characters)')
-    .regex(/^G[A-Z0-9]{55}$/, 'Must be a valid Stellar address starting with G'),
+    .refine(isValidStellarPublicKey, 'Must be a valid Stellar address starting with G'),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
   durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour'),
