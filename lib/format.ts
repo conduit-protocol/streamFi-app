@@ -14,14 +14,29 @@ export function fromStroops(stroops: bigint, decimals = 7): string {
   return `${negative ? "-" : ""}${whole}.${trimmed}`;
 }
 
-/** Convert a display amount string to stroops bigint */
+/** 
+ * Convert a display amount string to stroops bigint.
+ * 
+ * @throws Error if the fractional part has more decimals than the token supports
+ */
 export function toStroops(amount: string, decimals = 7): bigint {
   const factor = BigInt(10 ** decimals);
   const negative = amount.trim().startsWith("-");
   const raw = negative ? amount.trim().slice(1) : amount.trim();
   const [wholeRaw = "0", frac = ""] = raw.split(".");
   const whole = wholeRaw || "0";
-  const fracPadded = frac.slice(0, decimals).padEnd(decimals, "0");
+  
+  // Issue #320: Reject amounts with more decimal places than the token supports
+  // instead of silently truncating, which can lead to users submitting different
+  // amounts than they intended (e.g., 100.123456789 becomes 100.1234567 for XLM).
+  if (frac.length > decimals) {
+    throw new Error(
+      `Amount has ${frac.length} decimal places but token only supports ${decimals}. ` +
+      `Please round to ${decimals} decimals or fewer.`
+    );
+  }
+  
+  const fracPadded = frac.padEnd(decimals, "0");
   const result = BigInt(whole) * factor + BigInt(fracPadded);
   return negative ? -result : result;
 }
