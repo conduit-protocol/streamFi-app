@@ -90,10 +90,9 @@ describe('getStreamInfo', () => {
       start_time:        u64(1_700_000_000n),
       end_time:          u64(1_700_003_600n),
       withdrawn:         i128(1_000n),
-      paused:            xdr.ScVal.scvBool(false),
       paused_at:         u64(0n),
-      clawback_enabled:  xdr.ScVal.scvBool(true),
-      cancelled:         xdr.ScVal.scvBool(false),
+      // FLAG_CLAWBACK_ENABLED only
+      flags:             xdr.ScVal.scvU32(0b010),
     }));
 
     const { getStreamInfo } = await import('./stream.js');
@@ -138,13 +137,59 @@ describe('getStreamInfo', () => {
       start_time:        u64(1_700_000_000n),
       end_time:          u64(1_700_003_600n),
       withdrawn:         i128(1_000n),
-      paused:            xdr.ScVal.scvBool(false),
       paused_at:         u64(0n),
-      clawback_enabled:  xdr.ScVal.scvBool(true),
-      cancelled:         xdr.ScVal.scvBool(false),
+      flags:             xdr.ScVal.scvU32(0),
     }));
     const { getStreamInfo } = await import('./stream.js');
     await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/rate_per_second.*i128/i);
+  });
+
+  // The contract's StreamInfo has no `paused` / `clawback_enabled` /
+  // `cancelled` fields — they are bits in `flags`. Reading them as fields
+  // made getStreamInfo throw for every real stream (see #357).
+  it('derives paused / clawbackEnabled / cancelled from the flags bitmask', async () => {
+    const base = {
+      sender:          new Address(SENDER).toScVal(),
+      recipient:       new Address(RECIPIENT).toScVal(),
+      token:           new Address(TOKEN).toScVal(),
+      rate_per_second: i128(100n),
+      start_time:      u64(1_700_000_000n),
+      end_time:        u64(1_700_003_600n),
+      withdrawn:       i128(1_000n),
+      paused_at:       u64(1_700_000_500n),
+    };
+    const { getStreamInfo } = await import('./stream.js');
+
+    for (const [flags, expected] of [
+      [0b000, { paused: false, clawbackEnabled: false, cancelled: false }],
+      [0b001, { paused: true,  clawbackEnabled: false, cancelled: false }],
+      [0b010, { paused: false, clawbackEnabled: true,  cancelled: false }],
+      [0b100, { paused: false, clawbackEnabled: false, cancelled: true  }],
+      [0b111, { paused: true,  clawbackEnabled: true,  cancelled: true  }],
+    ] as const) {
+      mockSimulateReadOnly.mockResolvedValue(scvMap({ ...base, flags: xdr.ScVal.scvU32(flags) }));
+      const info = await getStreamInfo(SENDER, STREAM_ADDRESS);
+      expect({
+        paused: info.paused,
+        clawbackEnabled: info.clawbackEnabled,
+        cancelled: info.cancelled,
+      }).toEqual(expected);
+    }
+  });
+
+  it('throws when flags is missing rather than silently defaulting to false', async () => {
+    mockSimulateReadOnly.mockResolvedValue(scvMap({
+      sender:          new Address(SENDER).toScVal(),
+      recipient:       new Address(RECIPIENT).toScVal(),
+      token:           new Address(TOKEN).toScVal(),
+      rate_per_second: i128(100n),
+      start_time:      u64(1_700_000_000n),
+      end_time:        u64(1_700_003_600n),
+      withdrawn:       i128(1_000n),
+      paused_at:       u64(0n),
+    }));
+    const { getStreamInfo } = await import('./stream.js');
+    await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/Missing field: flags/);
   });
 });
 

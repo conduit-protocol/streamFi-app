@@ -9,18 +9,22 @@ import { xdr } from '@stellar/stellar-sdk';
 // each failure mode correctly), not stellar-sdk's own XDR encoding.
 
 const {
-  mockGetAccount, mockSimulate, mockSend, mockGetTransaction, mockAssemble,
+  mockGetAccount, mockSimulate, mockSend, mockGetTransaction, mockAssemble, mockGetFeeStats,
+  mockBuilderOptions,
 } = vi.hoisted(() => ({
   mockGetAccount:     vi.fn(),
   mockSimulate:       vi.fn(),
   mockSend:           vi.fn(),
   mockGetTransaction: vi.fn(),
   mockAssemble:       vi.fn(),
+  mockGetFeeStats:    vi.fn(),
+  mockBuilderOptions: vi.fn(),
 }));
 
 vi.mock('./env.js', () => ({
   getRpcUrl:            vi.fn().mockReturnValue('https://soroban-testnet.stellar.org'),
   getNetworkPassphrase: vi.fn().mockReturnValue('Test SDF Network ; September 2015'),
+  getFeeMultiplier:     vi.fn().mockReturnValue(2),
 }));
 
 vi.mock('@stellar/stellar-sdk', async () => {
@@ -32,7 +36,7 @@ vi.mock('@stellar/stellar-sdk', async () => {
   }
 
   class MockTransactionBuilder {
-    constructor(_account: unknown, _opts: unknown) {}
+    constructor(_account: unknown, opts: unknown) { mockBuilderOptions(opts); }
     addOperation(_op: unknown) { return this; }
     setTimeout(_n: number) { return this; }
     build() {
@@ -54,6 +58,7 @@ vi.mock('@stellar/stellar-sdk', async () => {
         simulateTransaction = mockSimulate;
         sendTransaction     = mockSend;
         getTransaction      = mockGetTransaction;
+        getFeeStats         = mockGetFeeStats;
       },
       assembleTransaction: mockAssemble,
     },
@@ -83,6 +88,8 @@ beforeEach(() => {
   mockSimulate.mockReset();
   mockSend.mockReset().mockResolvedValue({ status: 'PENDING', hash: 'deadbeef' });
   mockGetTransaction.mockReset();
+  mockGetFeeStats.mockReset().mockResolvedValue({ sorobanInclusionFee: { p70: '400', mode: '300' } });
+  mockBuilderOptions.mockReset();
   mockAssemble.mockReset().mockReturnValue({
     build: () => ({ toEnvelope: () => ({ toXDR: () => 'assembled-envelope-b64' }) }),
   });
@@ -143,6 +150,89 @@ describe('invokeContract', () => {
     await expect(runThroughFirstPoll(() =>
       invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx),
     )).rejects.toThrow(/Transaction failed/);
+  });
+
+  // #360 — a bid pinned to BASE_FEE (100 stroops) is the network minimum and
+  // is not selected under inclusion-fee pressure; the poll loop then ran to
+  // exhaustion and surfaced as a misleading "timed out".
+  it('prices the inclusion fee from getFeeStats instead of pinning it to BASE_FEE', async () => {
+    mockSimulate.mockResolvedValue(simSuccess());
+    mockGetTransaction.mockResolvedValue({ status: 'SUCCESS' });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract } = await import('./soroban.js');
+    await runThroughFirstPoll(() => invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx));
+
+    // p70 (400) × the configured 2× multiplier.
+    expect(mockBuilderOptions).toHaveBeenCalledWith(expect.objectContaining({ fee: '800' }));
+  });
+
+  it('falls back to a multiple of BASE_FEE when fee stats are unavailable', async () => {
+    mockGetFeeStats.mockRejectedValue(new Error('method not supported'));
+    mockSimulate.mockResolvedValue(simSuccess());
+    mockGetTransaction.mockResolvedValue({ status: 'SUCCESS' });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract } = await import('./soroban.js');
+    await runThroughFirstPoll(() => invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx));
+
+    expect(mockBuilderOptions).toHaveBeenCalledWith(expect.objectContaining({ fee: '200' }));
+  });
+
+  // #358 — the whole pipeline used to sit inside withRetry, so a transient
+  // poll error replayed simulate → sign → submit: a second wallet prompt and
+  // a second on-chain transaction (a second stream, a second withdrawal).
+  it('never re-signs or re-submits when polling hits a transient RPC error', async () => {
+    mockSimulate.mockResolvedValue(simSuccess());
+    mockGetTransaction
+      .mockRejectedValueOnce(new Error('getTransaction timed out after 30000ms'))
+      .mockResolvedValue({ status: 'SUCCESS' });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract } = await import('./soroban.js');
+    const promise = invokeContract(SOURCE, CONTRACT_ID, 'create_stream', [], signTx);
+    promise.catch(() => {});
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(await promise).toBe('deadbeef');
+    expect(signTx).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the hash as pending when the confirmation window elapses', async () => {
+    mockSimulate.mockResolvedValue(simSuccess());
+    mockGetTransaction.mockResolvedValue({ status: 'NOT_FOUND' });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract } = await import('./soroban.js');
+    const promise = invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx);
+    promise.catch(() => {});
+    await vi.advanceTimersByTimeAsync(31_000);
+
+    expect(await promise).toBe('deadbeef');
+    expect(signTx).toHaveBeenCalledTimes(1);
+    expect(mockSend).toHaveBeenCalledTimes(1);
+  });
+
+  // #359 — an on-chain revert means the RPC worked fine; counting it toward
+  // the breaker locked the whole app out of RPC (reads included) after three
+  // legitimately-reverting calls.
+  it('does not open the circuit breaker after repeated on-chain reverts', async () => {
+    mockSimulate.mockResolvedValue(simSuccess());
+    mockGetTransaction.mockResolvedValue({ status: 'FAILED' });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract, simulateReadOnly } = await import('./soroban.js');
+    for (let i = 0; i < 4; i++) {
+      await expect(runThroughFirstPoll(() =>
+        invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx),
+      )).rejects.toThrow(/Transaction failed/);
+    }
+
+    // Reads still work — the breaker never opened.
+    mockSimulate.mockResolvedValue(simSuccess(xdr.ScVal.scvU32(7)));
+    const result = await simulateReadOnly(SOURCE, CONTRACT_ID, 'stream_count', []);
+    expect(result.u32()).toBe(7);
   });
 
   // TODO.md Phase 4, item 17 — Phase 2 wired AbortController integration
