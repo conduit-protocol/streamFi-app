@@ -57,7 +57,7 @@ interface TransactionStore {
   clearTransactions: () => void;
 }
 
-export const useTransactionStore = create<TransactionStore>((set) => ({
+export const useTransactionStore = create<TransactionStore>((set, get) => ({
   transactions: {},
   order: [],
 
@@ -73,31 +73,22 @@ export const useTransactionStore = create<TransactionStore>((set) => ({
   },
 
   updateStatus: (id, status, hash, error) => {
+    const tx = get().transactions[id];
+    if (!tx) return;
+
     set((state) => {
-      const tx = state.transactions[id];
-      if (!tx) return state;
+      const currentTx = state.transactions[id];
+      if (!currentTx) return state;
 
       // Merge hash/error — only overwrite if explicitly provided, to avoid
       // silently losing a hash from an earlier call when updateStatus is
       // invoked later with only a status transition (no hash param).
       const updated: Transaction = {
-        ...tx,
+        ...currentTx,
         status,
         ...(hash !== undefined ? { hash } : {}),
         ...(error !== undefined ? { error } : {}),
       };
-
-      if (status === 'success') {
-        toast.success(`${tx.description} successful!`, { id });
-        // Automatically invalidate and refetch stream-related queries to refresh the UI
-        void refreshStreamData();
-      } else if (status === 'failed') {
-        toast.error(`Failed: ${error || 'Unknown error'}`, { id });
-      } else if (status === 'broadcasting') {
-        toast.loading('Broadcasting transaction...', { id });
-      } else if (status === 'confirming') {
-        toast.loading('Waiting for confirmation...', { id });
-      }
 
       const { transactions, order } = pruneOldestTerminal(
         { ...state.transactions, [id]: updated },
@@ -105,6 +96,18 @@ export const useTransactionStore = create<TransactionStore>((set) => ({
       );
       return { transactions, order };
     });
+
+    if (status === 'success') {
+      toast.success(`${tx.description} successful!`, { id });
+      // Automatically invalidate and refetch stream-related queries to refresh the UI
+      void refreshStreamData();
+    } else if (status === 'failed') {
+      toast.error(`Failed: ${error || 'Unknown error'}`, { id });
+    } else if (status === 'broadcasting') {
+      toast.loading('Broadcasting transaction...', { id });
+    } else if (status === 'confirming') {
+      toast.loading('Waiting for confirmation...', { id });
+    }
   },
 
   clearTransactions: () => {

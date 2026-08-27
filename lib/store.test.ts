@@ -80,4 +80,28 @@ describe('useTransactionStore — bounded growth', () => {
     expect(transactions['tx-b']).toBeUndefined();
     expect(Object.keys(transactions).length).toBeLessThan(50);
   });
+
+  it('triggers side effects (toast and refreshStreamData) when updateStatus is called', async () => {
+    const toast = (await import('react-hot-toast')).default;
+    const { refreshStreamData } = await import('./queryClient.js');
+    const { useTransactionStore } = await import('./store.js');
+    const { addTransaction, updateStatus } = useTransactionStore.getState();
+
+    addTransaction('tx-test', 'Send payment');
+    expect(toast.loading).toHaveBeenCalledWith('Send payment', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'broadcasting');
+    expect(toast.loading).toHaveBeenCalledWith('Broadcasting transaction...', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'confirming');
+    expect(toast.loading).toHaveBeenCalledWith('Waiting for confirmation...', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'success', 'hash-123');
+    expect(toast.success).toHaveBeenCalledWith('Send payment successful!', { id: 'tx-test' });
+    expect(refreshStreamData).toHaveBeenCalled();
+
+    addTransaction('tx-fail', 'Withdraw funds');
+    updateStatus('tx-fail', 'failed', undefined, 'User declined');
+    expect(toast.error).toHaveBeenCalledWith('Failed: User declined', { id: 'tx-fail' });
+  });
 });

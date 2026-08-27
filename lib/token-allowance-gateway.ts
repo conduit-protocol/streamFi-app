@@ -34,6 +34,8 @@ import {
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const DEFAULT_ALLOWANCE_TIMEOUT_MS = 30_000;
+/** Default expiration ledger: ~31 days at 5s/ledger (535,680 ledgers) */
+export const DEFAULT_EXPIRATION_LEDGER = 535_680;
 
 // ── Mutex (per-token) ─────────────────────────────────────────────────────────
 
@@ -148,6 +150,8 @@ export interface ApproveAllowanceArgs {
   amount: bigint;
   /** Stellar public key of the token holder */
   source: string;
+  /** Expiration ledger sequence (u32). Defaults to DEFAULT_EXPIRATION_LEDGER */
+  expirationLedger?: number;
   /** Wallet sign callback */
   signTx: (xdrBase64: string, signal?: AbortSignal) => Promise<string>;
   /** Optional abort signal */
@@ -362,10 +366,17 @@ export class TokenAllowanceGateway {
           }
 
           // Build the approve() XDR arguments
-          // SEP-41 approve(address spender, i128 amount)
+          // SEP-41 approve(address from, address spender, i128 amount, u32 expiration_ledger)
+          const targetExpirationLedger =
+            args.expirationLedger !== undefined && args.expirationLedger > 0
+              ? args.expirationLedger
+              : DEFAULT_EXPIRATION_LEDGER;
+
           const argsXdr: xdr.ScVal[] = [
+            new Address(source).toScVal(),
             new Address(spender).toScVal(),
             nativeToScVal(amount, { type: 'i128' }),
+            nativeToScVal(targetExpirationLedger, { type: 'u32' }),
           ];
 
           // Execute via invokeContract which already has retry + circuit breaker

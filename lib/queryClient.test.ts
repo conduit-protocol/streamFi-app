@@ -12,22 +12,41 @@ vi.mock('@tanstack/react-query', () => ({
   },
 }));
 
-import { queryClient, refreshStreamData } from './queryClient';
+import {
+  queryClient,
+  refreshStreamData,
+  makeQueryClient,
+  getQueryClient,
+} from './queryClient';
 
-describe('refreshStreamData', () => {
+describe('QueryClient isolation and helpers (#345)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvalidateQueries.mockResolvedValue(undefined);
     mockRefetchQueries.mockResolvedValue(undefined);
   });
 
+  it('makeQueryClient creates a new QueryClient instance', () => {
+    const client1 = makeQueryClient();
+    const client2 = makeQueryClient();
+    expect(client1).toBeDefined();
+    expect(client2).toBeDefined();
+    expect(client1).not.toBe(client2);
+  });
+
+  it('getQueryClient reuses the browser singleton when window is defined', () => {
+    const client1 = getQueryClient();
+    const client2 = getQueryClient();
+    expect(client1).toBe(client2);
+  });
+
   it('refetches active queries only once after a stream mutation succeeds', async () => {
     await refreshStreamData();
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(1);
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
       refetchType: 'active',
     });
-    expect(queryClient.refetchQueries).not.toHaveBeenCalled();
+    expect(mockRefetchQueries).not.toHaveBeenCalled();
   });
 });
