@@ -380,7 +380,7 @@ export class TokenAllowanceGateway {
           ];
 
           // Execute via invokeContract which already has retry + circuit breaker
-          const txHash = await invokeContract(
+          const { hash: txHash } = await invokeContract(
             source,
             token,
             'approve',

@@ -110,7 +110,7 @@ async function fillDeposit(container: HTMLElement, amount: string) {
 describe('CreatePage — zero-rate guard (issue #243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCreateStream.mockResolvedValue('tx_hash_abc');
+    mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
   });
 
@@ -180,7 +180,7 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsMock.mockReturnValue(false);
-    mockCreateStream.mockResolvedValue('tx_hash_abc');
+    mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
   });
 

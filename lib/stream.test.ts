@@ -150,7 +150,7 @@ describe('getStreamInfo', () => {
 
 describe('mutating calls', () => {
   it('withdraw() invokes withdraw with the i128 amount', async () => {
-    mockInvokeContract.mockResolvedValue('hash1');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash1' });
     const { withdraw } = await import('./stream.js');
     const signTx = vi.fn();
     const hash = await withdraw(SENDER, STREAM_ADDRESS, 5_000n, signTx);
@@ -161,7 +161,7 @@ describe('mutating calls', () => {
   });
 
   it('cancel() invokes cancel with no args', async () => {
-    mockInvokeContract.mockResolvedValue('hash2');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash2' });
     const { cancel } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await cancel(SENDER, STREAM_ADDRESS, signTx)).toBe('hash2');
@@ -169,7 +169,7 @@ describe('mutating calls', () => {
   });
 
   it('pause()/resume() invoke their respective methods', async () => {
-    mockInvokeContract.mockResolvedValue('hash3');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash3' });
     const { pause, resume } = await import('./stream.js');
     const signTx = vi.fn();
     await pause(SENDER, STREAM_ADDRESS, signTx);
@@ -179,7 +179,7 @@ describe('mutating calls', () => {
   });
 
   it('topUp() invokes top_up with the i128 amount', async () => {
-    mockInvokeContract.mockResolvedValue('hash4');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash4' });
     const { topUp } = await import('./stream.js');
     const signTx = vi.fn();
     await topUp(SENDER, STREAM_ADDRESS, 25_000n, signTx);
@@ -189,7 +189,7 @@ describe('mutating calls', () => {
   });
 
   it('clawback() invokes clawback with no args', async () => {
-    mockInvokeContract.mockResolvedValue('hash5');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash5' });
     const { clawback } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await clawback(SENDER, STREAM_ADDRESS, signTx)).toBe('hash5');

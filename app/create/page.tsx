@@ -14,7 +14,7 @@ import { refreshStreamData } from '@/lib/queryClient';
 import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import styles from './CreateStream.module.css';
-import { toStroops, wouldRateTruncateToZero } from '@/lib/format';
+import { toStroops, fromStroops, wouldRateTruncateToZero } from '@/lib/format';
 import { isValidStellarPublicKey } from '@/lib/stellar-address';
 
 
@@ -173,12 +173,27 @@ export default function CreatePage() {
   // token's own decimals rather than assume one for all of them.
   const tokenDecimals = TOKENS_TESTNET.find(t => t.symbol === token)?.decimals ?? 7;
 
-  const rate = deposit && duration
-    ? (parseFloat(deposit) * 10 ** tokenDecimals / duration).toFixed(2)
-    : '—';
+  // #364 — mirror onSubmit's exact bigint pipeline (toStroops then truncating
+  // BigInt division) instead of float math. parseFloat(deposit) * 10 **
+  // tokenDecimals loses precision for large deposits / high-decimal tokens,
+  // and float division rounds where the contract call truncates, so the
+  // preview could show a different rate than what actually gets submitted.
+  const previewRateStroops = deposit && duration
+    ? (() => {
+        try {
+          const depositStroops = toStroops(deposit, tokenDecimals);
+          if (depositStroops <= 0n || !Number.isFinite(duration) || duration <= 0) return null;
+          return depositStroops / BigInt(Math.floor(duration));
+        } catch {
+          return null;
+        }
+      })()
+    : null;
 
-  const ratePerDay = deposit && duration
-    ? (parseFloat(deposit) / (duration / 86400)).toFixed(4)
+  const rate = previewRateStroops !== null ? previewRateStroops.toString() : '—';
+
+  const ratePerDay = previewRateStroops !== null
+    ? fromStroops(previewRateStroops * 86400n, tokenDecimals)
     : null;
 
   // Live check, mirrors the exact bigint math onSubmit uses (see #243):
@@ -195,12 +210,16 @@ export default function CreatePage() {
       setError('Connect your wallet first.');
       return;
     }
-    // Reject if the on-chain check confirmed the account does not exist.
-    // (A status of 'idle' or 'checking' means the address is incomplete or
-    //  the check is still in-flight — Zod guards the shape; we only hard-block
-    //  on a definitive not-found result.)
+    // #363 — block on 'not-found' AND 'checking': the debounced RPC check
+    // can still be in flight when the user clicks Submit, and without this
+    // guard the not-found check below is bypassed entirely, letting a
+    // stream get created for a nonexistent recipient.
     if (recipientStatus === 'not-found') {
       setError('Recipient account does not exist on-chain. Please check the address.');
+      return;
+    }
+    if (recipientStatus === 'checking') {
+      setError('Still verifying the recipient address — please wait a moment and try again.');
       return;
     }
     setPending(true);
@@ -266,7 +285,7 @@ export default function CreatePage() {
         setAllowanceStage(null);
       }
 
-      const hash = await withTimeout(
+      const { hash, streamId } = await withTimeout(
         createStream({
           sender:     publicKey,
           recipient:  data.recipient,
@@ -286,7 +305,13 @@ export default function CreatePage() {
       await refreshStreamData();
 
       setTxHash(hash);
-      setTimeout(() => router.push('/streams'), 3000);
+      // #362 — createStream now decodes the confirmed transaction's return
+      // value, so we can deep-link straight to the new stream instead of
+      // redirecting to /streams and hoping the user finds it. Fall back to
+      // /streams only if the RPC/node didn't report a return value.
+      setTimeout(() => {
+        router.push(streamId !== null ? `/stream/${streamId}` : '/streams');
+      }, 3000);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Transaction failed');
     } finally {
@@ -464,7 +489,13 @@ export default function CreatePage() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={pending || !connected || rateWouldBeZero || recipientStatus === 'not-found'}
+          disabled={
+            pending ||
+            !connected ||
+            rateWouldBeZero ||
+            recipientStatus === 'not-found' ||
+            recipientStatus === 'checking'
+          }
           className="btn-primary w-full"
         >
           {pending

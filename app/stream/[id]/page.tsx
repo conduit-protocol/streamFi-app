@@ -122,7 +122,16 @@ export default function StreamPage() {
 
   const isSender    = !!publicKey && publicKey === info.sender;
   const isRecipient = !!publicKey && publicKey === info.recipient;
-  const totalDeposited = info.withdrawn + withdrawable;
+  // #361 — withdrawn + withdrawable is the amount streamed so far (already
+  // claimed plus currently claimable), not what the sender deposited: it
+  // excludes principal still escrowed in the DripStream contract that
+  // hasn't streamed yet. For fixed-duration streams the deposit is
+  // rate_per_second * duration; open-ended streams (endTime === 0) have no
+  // fixed deposit to derive this way, so fall back to the streamed-so-far
+  // total as the best available estimate.
+  const totalDeposited = info.endTime > 0
+    ? info.ratePerSecond * BigInt(info.endTime - info.startTime)
+    : info.withdrawn + withdrawable;
   // #318 — info.token is the SEP-41 contract address, not a display symbol;
   // truncateAddress(info.token) rendered e.g. "Withdraw 42.50 CDLZ…CYSC"
   // instead of "Withdraw 42.50 XLM". Resolve to a symbol where known,

@@ -128,12 +128,12 @@ describe('streamsBySender / streamsByRecipient', () => {
 });
 
 describe('createStream', () => {
-  it('invokes create_stream on the factory contract with all args', async () => {
-    mockInvokeContract.mockResolvedValue('deadbeef');
+  it('invokes create_stream on the factory contract with all args and decodes the stream_id', async () => {
+    mockInvokeContract.mockResolvedValue({ hash: 'deadbeef', returnValue: u64(7n) });
     const { createStream } = await import('./factory.js');
     const signTx = vi.fn();
 
-    const hash = await createStream({
+    const result = await createStream({
       sender:     SENDER,
       recipient:  RECIPIENT,
       token:      TOKEN,
@@ -144,11 +144,34 @@ describe('createStream', () => {
       clawback:   false,
     }, signTx);
 
-    expect(hash).toBe('deadbeef');
+    expect(result.hash).toBe('deadbeef');
+    expect(result.streamId).toBe(7n);
     expect(mockInvokeContract).toHaveBeenCalledWith(
       SENDER, FACTORY_ID, 'create_stream', expect.any(Array), signTx,
     );
     // sender, recipient, token, deposit, rate, start, end, clawback
     expect(mockInvokeContract.mock.calls[0]?.[3]).toHaveLength(8);
+  });
+
+  // Regression test for #362: older nodes / RPC responses may confirm the
+  // transaction without reporting a return value at all.
+  it('resolves streamId to null when the confirmed transaction has no returnValue', async () => {
+    mockInvokeContract.mockResolvedValue({ hash: 'deadbeef', returnValue: undefined });
+    const { createStream } = await import('./factory.js');
+    const signTx = vi.fn();
+
+    const result = await createStream({
+      sender:     SENDER,
+      recipient:  RECIPIENT,
+      token:      TOKEN,
+      deposit:    1_000_000n,
+      ratePerSec: 100n,
+      startTime:  1_700_000_000,
+      endTime:    1_700_003_600,
+      clawback:   false,
+    }, signTx);
+
+    expect(result.hash).toBe('deadbeef');
+    expect(result.streamId).toBeNull();
   });
 });

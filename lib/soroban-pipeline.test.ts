@@ -106,12 +106,30 @@ describe('invokeContract', () => {
     const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
 
     const { invokeContract } = await import('./soroban.js');
-    const hash = await runThroughFirstPoll(() =>
+    const result = await runThroughFirstPoll(() =>
       invokeContract(SOURCE, CONTRACT_ID, 'withdraw', [], signTx),
     );
 
-    expect(hash).toBe('deadbeef');
+    expect(result.hash).toBe('deadbeef');
     expect(signTx).toHaveBeenCalledWith('assembled-envelope-b64');
+  });
+
+  // Regression test for #362: the confirmed transaction's return value was
+  // being discarded, so callers like DripFactory::create_stream had no way
+  // to obtain contract-returned data (e.g. the assigned stream_id).
+  it('surfaces the confirmed transaction\'s returnValue alongside the hash', async () => {
+    mockSimulate.mockResolvedValue(simSuccess());
+    const returnValue = xdr.ScVal.scvU64(xdr.Uint64.fromString('42'));
+    mockGetTransaction.mockResolvedValue({ status: 'SUCCESS', returnValue });
+    const signTx = vi.fn().mockResolvedValue('signed-envelope-b64');
+
+    const { invokeContract } = await import('./soroban.js');
+    const result = await runThroughFirstPoll(() =>
+      invokeContract(SOURCE, CONTRACT_ID, 'create_stream', [], signTx),
+    );
+
+    expect(result.hash).toBe('deadbeef');
+    expect(result.returnValue).toBe(returnValue);
   });
 
   it('throws on simulation failure without ever calling signTx', async () => {
