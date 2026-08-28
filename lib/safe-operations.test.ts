@@ -636,6 +636,30 @@ describe('withBoundedParallel', () => {
     expect(receivedSignal!.aborted).toBe(false);
   });
 
+  // Regression test for #221: withBoundedParallel used to build
+  // `new AbortController().signal` inline per item when no outer signal was
+  // passed, so every handler got its own signal that nothing could ever
+  // abort. The fix shares one AbortController across the whole batch.
+  it('shares a single fallback signal across items when no outer signal is provided', async () => {
+    const items = [1, 2, 3];
+    const receivedSignals: AbortSignal[] = [];
+
+    await withBoundedParallel(
+      items,
+      async (_item, _index, signal) => {
+        receivedSignals.push(signal);
+        return { success: true, data: 1 } as SafeOperationResult<number>;
+      },
+      { maxConcurrency: 1 }, // force sequential execution for a deterministic order
+    );
+
+    expect(receivedSignals).toHaveLength(3);
+    // Every item must receive the exact same AbortSignal instance — not a
+    // fresh one per item, which is the bug this test guards against.
+    expect(receivedSignals[1]).toBe(receivedSignals[0]);
+    expect(receivedSignals[2]).toBe(receivedSignals[0]);
+  });
+
   it('passes the same parent signal to handlers when provided', async () => {
     const controller = new AbortController();
     const items = [1, 2];
