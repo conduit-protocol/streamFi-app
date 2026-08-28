@@ -32,7 +32,11 @@ const schema = z.object({
   clawback:        z.boolean(),
 });
 
-/** Timeout for the full create-stream pipeline (simulate + sign + submit + poll). */
+/**
+ * Timeout for the full create-stream pipeline (simulate + sign + submit + poll).
+ * Must stay well below START_TIME_BUFFER_S so that start_time is always in the
+ * future even on a congested network (see #373).
+ */
 const CREATE_STREAM_TIMEOUT_MS = 60_000;
 
 /**
@@ -222,7 +226,10 @@ export default function CreatePage() {
           'Deposit too small for this duration — increase the amount or shorten the duration.',
         );
       }
-      const startTime      = Math.floor(Date.now() / 1000) + 60; // 60s buffer
+      // 300s buffer — must exceed CREATE_STREAM_TIMEOUT_MS (60s) by a wide
+      // margin so that even on a congested network the ledger-close timestamp
+      // doesn't overtake start_time and trigger BackdatedStream (#373).
+      const startTime      = Math.floor(Date.now() / 1000) + 300;
       const endTime        = startTime + data.durationSeconds;
 
       // DripFactory::create_stream pulls the deposit from the sender via the
