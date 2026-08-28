@@ -254,15 +254,39 @@ export class TokenAllowanceGateway {
     }
 
     return new Promise<() => void>((resolve, reject) => {
+      let settled = false;
+      let cleanup: (() => void) | undefined;
+
       const entry = () => {
-        resolve(() => this._releaseConcurrency());
+        if (!settled) {
+          settled = true;
+          cleanup?.();
+          resolve(() => this._releaseConcurrency());
+        }
       };
       this._concurrencySemaphore.queue.push(entry);
 
       if (signal?.aborted) {
         const idx = this._concurrencySemaphore.queue.indexOf(entry);
         if (idx !== -1) this._concurrencySemaphore.queue.splice(idx, 1);
-        reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+        if (!settled) {
+          settled = true;
+          reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+        }
+        return;
+      }
+
+      if (signal) {
+        const onAbort = () => {
+          const idx = this._concurrencySemaphore.queue.indexOf(entry);
+          if (idx !== -1) this._concurrencySemaphore.queue.splice(idx, 1);
+          if (!settled) {
+            settled = true;
+            reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+          }
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        cleanup = () => signal.removeEventListener('abort', onAbort);
       }
     });
   }

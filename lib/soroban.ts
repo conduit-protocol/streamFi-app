@@ -31,6 +31,7 @@ import {
   normalizeError,
   OperationAbortedError,
 } from './safe-operations';
+import { isValidStellarContract } from './stellar-address';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -587,11 +588,14 @@ export function scValToU64(val: xdr.ScVal): bigint {
 }
 
 /**
- * Check whether a Stellar account exists on-chain.
+ * Check whether a Stellar address exists on-chain.
  *
- * Uses `getAccount()` against the configured Soroban RPC / Horizon endpoint.
- * Returns `true` if the account is funded and exists, `false` if the RPC
- * returns a 404-style "account not found" response.
+ * - For G… public keys: uses `getAccount()` to check if the account is funded.
+ * - For C… contract addresses: uses `getContractData()` to check if the
+ *   contract exists in the ledger.
+ *
+ * Returns `true` if the address exists, `false` if the RPC returns a
+ * 404-style "not found" response.
  *
  * Throws for any other network error so callers can distinguish
  * "definitely does not exist" from "couldn't reach the network".
@@ -601,7 +605,7 @@ export function scValToU64(val: xdr.ScVal): bigint {
  * timeoutMs so a hung RPC provider never keeps the caller waiting forever.
  * Defaults to 10s if not specified.
  *
- * @param address    Stellar G… public key
+ * @param address    Stellar public key (G…) or contract address (C…)
  * @param options    Optional signal and timeout
  */
 export async function checkRecipientExists(
@@ -613,12 +617,28 @@ export async function checkRecipientExists(
   if (options?.signal?.aborted) throw new OperationAbortedError();
 
   try {
-    await withTimeout(
-      getServer().getAccount(address),
-      timeoutMs,
-      'checkRecipientExists',
-      options?.signal,
-    );
+    if (isValidStellarContract(address)) {
+      // Contract existence check via getContractData (ledger entry lookup).
+      // We look up the contract's instance data — if the contract was
+      // deployed, this entry exists; if not, the RPC returns a 404.
+      await withTimeout(
+        getServer().getContractData(
+          address,
+          xdr.ScVal.scvLedgerKeyContractInstance(),
+        ),
+        timeoutMs,
+        'checkRecipientExists/contract',
+        options?.signal,
+      );
+    } else {
+      // Account existence check via getAccount.
+      await withTimeout(
+        getServer().getAccount(address),
+        timeoutMs,
+        'checkRecipientExists',
+        options?.signal,
+      );
+    }
     return true;
   } catch (err: unknown) {
     // Re-throw abort/cancellation so callers can distinguish it from a
@@ -626,7 +646,7 @@ export async function checkRecipientExists(
     if (err instanceof OperationAbortedError) throw err;
 
     // stellar-sdk throws an error whose message contains "404" or
-    // "Account not found" when the account has never been funded.
+    // "not found" when the account/contract has never been created.
     const message = err instanceof Error ? err.message : String(err);
     if (/not found|404/i.test(message)) return false;
     throw err;

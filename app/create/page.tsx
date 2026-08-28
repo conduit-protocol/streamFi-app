@@ -15,14 +15,14 @@ import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import styles from './CreateStream.module.css';
 import { toStroops, wouldRateTruncateToZero } from '@/lib/format';
-import { isValidStellarPublicKey } from '@/lib/stellar-address';
+import { isValidStellarAddress } from '@/lib/stellar-address';
 
 
 const schema = z.object({
   recipient:       z.string()
     .min(56, 'Must be a valid Stellar address (56 characters)')
     .max(56, 'Must be a valid Stellar address (56 characters)')
-    .refine(isValidStellarPublicKey, 'Must be a valid Stellar address starting with G'),
+    .refine(isValidStellarAddress, 'Must be a valid Stellar address (G… or C…)'),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
   // #319 — no upper bound previously meant an accidental extra digit (e.g.

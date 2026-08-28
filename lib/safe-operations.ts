@@ -61,36 +61,32 @@ export interface NormalizedError {
  */
 export function normalizeError(err: unknown, context?: string): NormalizedError {
   const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+  const msg = message.toLowerCase();
 
   // Determine error source category
   let source: NormalizedError['source'] = 'unknown';
   let retryable = false;
   const errObj = err as { name?: string; code?: string } | null | undefined;
 
-  if (err instanceof OperationAbortedError || errObj?.name === 'AbortError' || message.includes('abort')) {
+  if (err instanceof OperationAbortedError || errObj?.name === 'AbortError' || /\babort(ed|ing)?\b/i.test(message)) {
     source = 'wallet';
     retryable = true;
-  } else if (err instanceof OperationTimeoutError || message.includes('timeout') || message.includes('timed out')) {
+  } else if (err instanceof OperationTimeoutError || /\btimeout\b|\btimed?\s*out\b/i.test(message)) {
     source = 'rpc';
     retryable = true;
   } else if (err instanceof ConcurrencyLimitError || err instanceof IdempotencyConflictError) {
     source = 'wallet';
     retryable = true;
-  } else if (message.includes('Freighter') || message.includes('wallet') || message.includes('signing')) {
+  } else if (/\bFreighter\b|\bwallet\b|\bsign(ing|ed)\b/i.test(message)) {
     source = 'wallet';
     retryable = false;
-  } else if (message.includes('network') || message.includes('fetch') || message.includes('ECONNREFUSED')) {
+  } else if (/\bnetwork\b|\bfetch\b|\bECONNREFUSED\b/i.test(message)) {
     source = 'network';
     retryable = true;
-  } else if (
-    message.includes('Simulation') ||
-    message.includes('simulation') ||
-    message.includes('No result returned') ||
-    message.includes('HostError')
-  ) {
+  } else if (/\bsimulation\b|\bHostError\b|\bno\s+result\s+returned\b/i.test(message)) {
     source = 'rpc';
     retryable = false;
-  } else if (message.includes('Invalid') || message.includes('Missing') || message.includes('Malformed')) {
+  } else if (/\bInvalid\b|\bMissing\b|\bMalformed\b/i.test(message)) {
     source = 'validation';
     retryable = false;
   }
@@ -181,6 +177,16 @@ export async function withBoundedParallel<T>(
 
   const workers = Array.from({ length: maxConcurrency }, () => worker());
   await Promise.all(workers);
+
+  // Fill any un-started slots (e.g. when signal aborted mid-run) with an
+  // aborted result so callers never hit undefined holes.
+  const abortedResult: SafeOperationResult<any> = {
+    success: false,
+    error: normalizeError(new OperationAbortedError('Batch aborted before item started')),
+  };
+  for (let i = 0; i < items.length; i++) {
+    if (results[i] === undefined) results[i] = abortedResult;
+  }
 
   return results;
 }
