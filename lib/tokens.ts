@@ -92,7 +92,16 @@ import {
 } from './token-allowance-gateway';
 
 export interface AllowanceResult {
-  hasAllowance: boolean;
+  /**
+   * Whether the spender has sufficient allowance.
+   * - `true`  → allowance >= requiredAmount (checked, sufficient)
+   * - `false` → allowance < requiredAmount (checked, insufficient — needs approve)
+   * - `undefined` → allowance could not be checked (e.g. transient RPC failure).
+   *   Callers MUST check `error` first and retry the read rather than treating
+   *   `undefined` as "needs approval", otherwise a hiccup triggers an
+   *   unnecessary SEP-41 approve() transaction and fee.
+   */
+  hasAllowance: boolean | undefined;
   currentAllowance: bigint;
   error?: string;
 }
@@ -139,6 +148,12 @@ export async function getAllowance(
 /**
  * Check whether the source address has sufficient token allowance for spender.
  * Throws an explicit error on missing arguments (#348), returns structured status on check completion.
+ *
+ * IMPORTANT: On a successful RPC read, `hasAllowance` is `true`|`false` and
+ * `error` is absent. On a transient RPC/network failure, `hasAllowance` is
+ * `undefined` and `error` is set — callers must surface the error and retry
+ * the read rather than treating it as "insufficient allowance" (which would
+ * trigger an unnecessary approve() transaction and fee).
  */
 export async function checkAllowance(
   source: string,
@@ -162,7 +177,7 @@ export async function checkAllowance(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to check token allowance';
     return {
-      hasAllowance: false,
+      hasAllowance: undefined,
       currentAllowance: 0n,
       error: message,
     };
