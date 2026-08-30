@@ -13,7 +13,9 @@
  * - Exponential backoff with jitter for transient failures
  * - Timeout enforcement for each pipeline stage
  * - Idempotency key integration via safe-operations
- * - Circuit breaker pattern: after consecutive failures, back off RPC calls
+ * - Circuit breaker pattern: after consecutive transport failures, back off
+ * - Inclusion fees priced from getFeeStats() rather than pinned to BASE_FEE
+ * - Sign + submit happen exactly once; only polling is retried
  */
 
 import {
@@ -23,12 +25,13 @@ import {
   BASE_FEE,
   xdr,
 } from '@stellar/stellar-sdk';
-import { getRpcUrl, getNetworkPassphrase } from './env';
+import { getRpcUrl, getNetworkPassphrase, getFeeMultiplier } from './env';
 import {
   withIdempotency,
   normalizeError,
   OperationAbortedError,
 } from './safe-operations';
+import { isValidStellarContract } from './stellar-address';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +41,8 @@ const MAX_RETRY_MS = 5000;
 const DEFAULT_TIMEOUT_MS = 30_000; // 30s per pipeline stage
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 30;
+const FEE_STATS_TTL_MS = 30_000;   // fee stats are ledger-scoped; 30s is plenty
+const MAX_INCLUSION_FEE = 1_000_000; // 0.1 XLM — never bid more than this
 
 // Circuit breaker state
 let consecutiveFailures = 0;
@@ -63,6 +68,36 @@ function recordFailure(): void {
     const base = 10_000 * Math.pow(2, consecutiveFailures - 3);
     const jitter = Math.random() * 0.3 * base;
     circuitOpenUntil = Date.now() + base + jitter;
+  }
+}
+
+/**
+ * Errors that mean "the RPC/network misbehaved" — the only class of failure
+ * the circuit breaker exists to protect against (see #283). An on-chain
+ * revert is *not* one of them: the RPC worked perfectly, the contract simply
+ * said no, so counting it toward the breaker locked users out of all RPC
+ * (reads included) after a few legitimately-reverting calls (see #359).
+ */
+function isTransportFailure(err: unknown): boolean {
+  if (err instanceof TransactionRevertedError) return false;
+  const message = err instanceof Error ? err.message : String(err ?? '');
+  return /timeout|timed out|network|fetch|ECONNREFUSED|ECONNRESET|socket|50\d\b|Service Unavailable|Bad Gateway/i
+    .test(message);
+}
+
+/**
+ * The transaction executed on-chain and the contract reverted
+ * (NothingToWithdraw, StreamCancelled, InsufficientDeposit, …).
+ *
+ * Distinct from an RPC failure: it must never be retried and must never
+ * count toward the circuit breaker.
+ */
+export class TransactionRevertedError extends Error {
+  readonly hash: string;
+  constructor(hash: string) {
+    super(`Transaction failed: ${hash}`);
+    this.name = 'TransactionRevertedError';
+    this.hash = hash;
   }
 }
 
@@ -130,11 +165,12 @@ async function withRetry<T>(
 
       // Don't retry on last attempt
       if (attempt >= maxRetries) {
-        // Record failure for the circuit breaker — this is a retryable error
-        // that exhausted all retries (e.g., RPC timeout, network failure).
-        // Without this, the circuit breaker never opens for the actual
-        // scenario it's designed to protect against (see #283).
-        recordFailure();
+        // Record failure for the circuit breaker only when the failure is
+        // transport-level — an RPC timeout or network failure, the scenario
+        // the breaker is designed to protect against (see #283). Anything
+        // else (an on-chain revert, a malformed payload) leaves the breaker
+        // untouched because the RPC itself is healthy (see #359).
+        if (isTransportFailure(err)) recordFailure();
         throw err;
       }
 
@@ -202,6 +238,57 @@ function validateCall(
   }
 }
 
+// ── Fee pricing ───────────────────────────────────────────────────────────────
+
+let feeStatsCache: { fee: number; at: number } | undefined;
+
+/**
+ * Price the inclusion (bid) fee for a contract transaction.
+ *
+ * `assembleTransaction` adds the Soroban *resource* fee, but the inclusion
+ * fee stays at whatever the builder was given. Building at exactly BASE_FEE
+ * (100 stroops) means the network minimum bid, which is not selected under
+ * surge pricing — the submit-and-poll loop then ran to exhaustion and the
+ * user saw a misleading "timed out" instead of "fee too low" (see #360).
+ *
+ * Reads `getFeeStats()` and bids `multiplier ×` the recent p70 Soroban
+ * inclusion fee, with `multiplier × BASE_FEE` as the floor and a hard cap so
+ * a misreporting node can never drain an account. Fee stats are cached for a
+ * few ledgers, and any failure to read them falls back to the floor rather
+ * than blocking the transaction.
+ */
+async function getInclusionFee(timeoutMs: number, signal?: AbortSignal): Promise<string> {
+  const multiplier = getFeeMultiplier();
+  const floor = Math.ceil(Number(BASE_FEE) * multiplier);
+
+  const cached = feeStatsCache;
+  const recent = cached && Date.now() - cached.at < FEE_STATS_TTL_MS ? cached.fee : undefined;
+
+  let observed = recent;
+  if (observed === undefined) {
+    try {
+      const stats = await withTimeout(
+        getServer().getFeeStats(),
+        timeoutMs,
+        'getFeeStats',
+        signal,
+      );
+      const p70 = Number(stats?.sorobanInclusionFee?.p70 ?? stats?.sorobanInclusionFee?.mode);
+      if (Number.isFinite(p70) && p70 > 0) {
+        observed = p70;
+        feeStatsCache = { fee: p70, at: Date.now() };
+      }
+    } catch (err) {
+      // Fee stats are advisory — an endpoint that doesn't implement them (or
+      // is momentarily unavailable) must not block the transaction.
+      if (err instanceof OperationAbortedError) throw err;
+    }
+  }
+
+  const bid = observed === undefined ? floor : Math.ceil(observed * multiplier);
+  return String(Math.min(Math.max(bid, floor), MAX_INCLUSION_FEE));
+}
+
 // ── Core pipeline ─────────────────────────────────────────────────────────────
 
 export interface InvokeContractOptions {
@@ -239,6 +326,9 @@ export interface InvokeContractResult {
  * @param signTx     Wallet sign callback from WalletContext (supports AbortSignal)
  * @param options    Optional abort signal, timeout, and idempotency key
  * @returns          Transaction hash and the confirmed transaction's return value
+ * @returns          Transaction hash — confirmed, or (if polling could not
+ *                   reach a verdict in time) submitted-and-pending. Throws
+ *                   `TransactionRevertedError` if the contract reverted.
  */
 export async function invokeContract(
   source:     string,
@@ -259,10 +349,14 @@ export async function invokeContract(
   const operation = async (): Promise<InvokeContractResult> => {
     if (signal?.aborted) throw new OperationAbortedError();
 
-    return withRetry(async () => {
-      if (signal?.aborted) throw new OperationAbortedError();
+    const passphrase = getNetworkPassphrase();
 
-      const passphrase = getNetworkPassphrase();
+    // Only the idempotent prefix — build + simulate + assemble — is retried.
+    // Retrying past this point re-prompted the wallet and could put a second
+    // transaction on-chain (a second stream, a second withdrawal) whenever a
+    // poll hiccupped after a successful submit (see #358).
+    const assembledXdr = await withRetry(async () => {
+      if (signal?.aborted) throw new OperationAbortedError();
 
       const account = await withTimeout(
         getServer().getAccount(source),
@@ -272,9 +366,11 @@ export async function invokeContract(
       );
       if (signal?.aborted) throw new OperationAbortedError();
 
+      const fee = await getInclusionFee(timeoutMs, signal);
+
       const contract = new Contract(contractId);
       const tx = new TransactionBuilder(account, {
-        fee:                BASE_FEE,
+        fee,
         networkPassphrase:  passphrase,
       })
         .addOperation(contract.call(method, ...args))
@@ -296,47 +392,39 @@ export async function invokeContract(
 
       // Assemble
       const assembled = SorobanRpc.assembleTransaction(tx, simResult).build();
-      const xdrBase64 = assembled.toEnvelope().toXDR('base64');
+      return assembled.toEnvelope().toXDR('base64');
+    }, {
+      context: `invokeContract(${method})`,
+      signal,
+    });
 
-      // Sign via wallet (pass signal for cancellation)
-      const signedXdr = signal ? await signTx(xdrBase64, signal) : await signTx(xdrBase64);
-      if (signal?.aborted) throw new OperationAbortedError();
-      if (typeof signedXdr !== 'string' || !signedXdr) {
-        throw new TypeError('Wallet returned an invalid signed transaction');
-      }
+    // Sign via wallet (pass signal for cancellation) — exactly once.
+    const signedXdr = signal ? await signTx(assembledXdr, signal) : await signTx(assembledXdr);
+    if (signal?.aborted) throw new OperationAbortedError();
+    if (typeof signedXdr !== 'string' || !signedXdr) {
+      throw new TypeError('Wallet returned an invalid signed transaction');
+    }
 
-      const signedTx  = TransactionBuilder.fromXDR(signedXdr, passphrase);
+    const signedTx = TransactionBuilder.fromXDR(signedXdr, passphrase);
 
-      // Submit
-      const sendResult = await withTimeout(
-        getServer().sendTransaction(signedTx),
-        timeoutMs,
-        'sendTransaction',
-        signal,
-      );
-      if (signal?.aborted) throw new OperationAbortedError();
+    // Submit — exactly once. Past this line the transaction may already be
+    // on-chain, so no failure may cause a rebuild or a resubmit.
+    const sendResult = await withTimeout(
+      getServer().sendTransaction(signedTx),
+      timeoutMs,
+      'sendTransaction',
+      signal,
+    );
+    if (signal?.aborted) throw new OperationAbortedError();
 
-      if (sendResult.status === 'ERROR') {
-        throw new Error(`Submission failed: ${JSON.stringify(sendResult.errorResult)}`);
-      }
+    if (sendResult.status === 'ERROR') {
+      throw new Error(`Submission failed: ${JSON.stringify(sendResult.errorResult)}`);
+    }
 
-      // Poll with cancellation support
-      const hash = sendResult.hash;
-      if (typeof hash !== 'string' || !hash) {
-        throw new Error('Submission returned no transaction hash');
-      }
-      for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
-        if (signal?.aborted) throw new OperationAbortedError();
-
-        await sleep(POLL_INTERVAL_MS, signal);
-        if (signal?.aborted) throw new OperationAbortedError();
-
-        const status = await withTimeout(
-          getServer().getTransaction(hash),
-          timeoutMs,
-          'getTransaction',
-          signal,
-        );
+    const hash = sendResult.hash;
+    if (typeof hash !== 'string' || !hash) {
+      throw new Error('Submission returned no transaction hash');
+    }
 
         if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
           // #362 — surface the confirmed transaction's return value instead
@@ -357,12 +445,66 @@ export async function invokeContract(
       context: `invokeContract(${method})`,
       signal,
     });
+    return pollForConfirmation(hash, timeoutMs, signal);
   };
 
   if (idempotencyKey) {
     return withIdempotency(idempotencyKey, operation);
   }
   return operation();
+}
+
+/**
+ * Poll `getTransaction` until the submitted transaction resolves.
+ *
+ * Retries only the poll RPC itself — never the submission. If polling can't
+ * reach a verdict (transient RPC errors, or the confirmation window elapsing)
+ * the hash is returned as *pending* rather than replaying the transaction:
+ * it is already on-chain and the caller can look it up (see #358).
+ */
+async function pollForConfirmation(
+  hash: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
+    if (signal?.aborted) throw new OperationAbortedError();
+
+    await sleep(POLL_INTERVAL_MS, signal);
+    if (signal?.aborted) throw new OperationAbortedError();
+
+    let status;
+    try {
+      status = await withTimeout(
+        getServer().getTransaction(hash),
+        timeoutMs,
+        'getTransaction',
+        signal,
+      );
+    } catch (err) {
+      if (err instanceof OperationAbortedError) throw err;
+      // A transient poll failure says nothing about the transaction — keep
+      // polling. The circuit breaker is untouched: a single flaky read is
+      // not the sustained RPC outage it guards against.
+      continue;
+    }
+
+    if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+      // The RPC round-trip completed — the network is healthy.
+      resetCircuitBreaker();
+      return hash;
+    }
+    if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
+      // The transaction executed and the contract reverted. The RPC worked
+      // fine, so this resets the breaker like a success does (see #359).
+      resetCircuitBreaker();
+      throw new TransactionRevertedError(hash);
+    }
+    // status === 'NOT_FOUND' — keep polling
+  }
+
+  // Submitted but unconfirmed within the window — pending, not failed.
+  return hash;
 }
 
 /**
@@ -398,9 +540,10 @@ export async function simulateReadOnly(
       'simulateReadOnly/getAccount',
       signal,
     );
+    const fee = await getInclusionFee(timeoutMs, signal);
     const contract = new Contract(contractId);
     const tx = new TransactionBuilder(account, {
-      fee:             BASE_FEE,
+      fee,
       networkPassphrase: getNetworkPassphrase(),
     })
       .addOperation(contract.call(method, ...args))
@@ -477,11 +620,14 @@ export function scValToU64(val: xdr.ScVal): bigint {
 }
 
 /**
- * Check whether a Stellar account exists on-chain.
+ * Check whether a Stellar address exists on-chain.
  *
- * Uses `getAccount()` against the configured Soroban RPC / Horizon endpoint.
- * Returns `true` if the account is funded and exists, `false` if the RPC
- * returns a 404-style "account not found" response.
+ * - For G… public keys: uses `getAccount()` to check if the account is funded.
+ * - For C… contract addresses: uses `getContractData()` to check if the
+ *   contract exists in the ledger.
+ *
+ * Returns `true` if the address exists, `false` if the RPC returns a
+ * 404-style "not found" response.
  *
  * Throws for any other network error so callers can distinguish
  * "definitely does not exist" from "couldn't reach the network".
@@ -491,7 +637,7 @@ export function scValToU64(val: xdr.ScVal): bigint {
  * timeoutMs so a hung RPC provider never keeps the caller waiting forever.
  * Defaults to 10s if not specified.
  *
- * @param address    Stellar G… public key
+ * @param address    Stellar public key (G…) or contract address (C…)
  * @param options    Optional signal and timeout
  */
 export async function checkRecipientExists(
@@ -503,12 +649,28 @@ export async function checkRecipientExists(
   if (options?.signal?.aborted) throw new OperationAbortedError();
 
   try {
-    await withTimeout(
-      getServer().getAccount(address),
-      timeoutMs,
-      'checkRecipientExists',
-      options?.signal,
-    );
+    if (isValidStellarContract(address)) {
+      // Contract existence check via getContractData (ledger entry lookup).
+      // We look up the contract's instance data — if the contract was
+      // deployed, this entry exists; if not, the RPC returns a 404.
+      await withTimeout(
+        getServer().getContractData(
+          address,
+          xdr.ScVal.scvLedgerKeyContractInstance(),
+        ),
+        timeoutMs,
+        'checkRecipientExists/contract',
+        options?.signal,
+      );
+    } else {
+      // Account existence check via getAccount.
+      await withTimeout(
+        getServer().getAccount(address),
+        timeoutMs,
+        'checkRecipientExists',
+        options?.signal,
+      );
+    }
     return true;
   } catch (err: unknown) {
     // Re-throw abort/cancellation so callers can distinguish it from a
@@ -516,7 +678,7 @@ export async function checkRecipientExists(
     if (err instanceof OperationAbortedError) throw err;
 
     // stellar-sdk throws an error whose message contains "404" or
-    // "Account not found" when the account has never been funded.
+    // "not found" when the account/contract has never been created.
     const message = err instanceof Error ? err.message : String(err);
     if (/not found|404/i.test(message)) return false;
     throw err;

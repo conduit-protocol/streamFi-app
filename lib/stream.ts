@@ -16,6 +16,13 @@ function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
 }
 
+// ── Flags ─────────────────────────────────────────────────────────────────────
+
+/** Bit masks packed into StreamInfo.flags (see streamFi-contracts storage.rs). */
+const FLAG_PAUSED           = 1;
+const FLAG_CLAWBACK_ENABLED = 1 << 1;
+const FLAG_CANCELLED        = 1 << 2;
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface StreamInfo {
@@ -149,9 +156,16 @@ export async function getStreamInfo(
     return Number(scValToU64(requireType(name, 'scvU64', 'u64')));
   }
 
-  function readBool(name: string): boolean {
-    return requireType(name, 'scvBool', 'boolean').b();
+  function readU32(name: string): number {
+    return requireType(name, 'scvU32', 'u32').u32();
   }
+
+  // `paused`, `clawback_enabled` and `cancelled` are not fields on the
+  // contract's StreamInfo struct — they are bits packed into `flags`,
+  // matching StreamInfo::is_paused() / is_clawback_enabled() / is_cancelled()
+  // in streamFi-contracts. Reading them as fields threw "Missing field:
+  // paused" for every real stream (see #357).
+  const flags = readU32('flags');
 
   return {
     sender:          readAddress('sender'),
@@ -161,10 +175,10 @@ export async function getStreamInfo(
     startTime:       readU64('start_time'),
     endTime:         readU64('end_time'),
     withdrawn:       readI128('withdrawn'),
-    paused:          readBool('paused'),
+    paused:          (flags & FLAG_PAUSED) !== 0,
     pausedAt:        readU64('paused_at'),
-    clawbackEnabled: readBool('clawback_enabled'),
-    cancelled:       readBool('cancelled'),
+    clawbackEnabled: (flags & FLAG_CLAWBACK_ENABLED) !== 0,
+    cancelled:       (flags & FLAG_CANCELLED) !== 0,
   };
 }
 
