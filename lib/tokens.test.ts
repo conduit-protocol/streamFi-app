@@ -103,7 +103,7 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
   });
 
   it('approveAllowance calls SAC with 4 arguments and succeeds (#347)', async () => {
-    vi.mocked(soroban.invokeContract).mockResolvedValueOnce('tx_hash_123');
+    vi.mocked(soroban.invokeContract).mockResolvedValueOnce({ hash: 'tx_hash_123' });
     const mockSignTx = vi.fn().mockResolvedValue('signed');
 
     const result = await approveAllowance(
@@ -127,7 +127,7 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     );
 
     // Verify 4 arguments were passed to invokeContract
-    const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0][3];
+    const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0]![3];
     expect(passedArgs).toHaveLength(4);
   });
 });

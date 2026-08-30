@@ -82,8 +82,13 @@ function simError(message: string) {
   return { error: message };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers();
+  // The fee-stats cache is module-level and survives individual invokeContract
+  // calls by design — clear it so one case's populated cache can't bleed into
+  // the next (e.g. the getFeeStats-unavailable fallback case).
+  const { resetFeeStatsCache } = await import('./soroban.js');
+  resetFeeStatsCache();
   mockGetAccount.mockReset().mockResolvedValue({ accountId: () => SOURCE, sequenceNumber: () => '1' });
   mockSimulate.mockReset();
   mockSend.mockReset().mockResolvedValue({ status: 'PENDING', hash: 'deadbeef' });
@@ -212,7 +217,7 @@ describe('invokeContract', () => {
     promise.catch(() => {});
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(await promise).toBe('deadbeef');
+    expect(await promise).toEqual({ hash: 'deadbeef' });
     expect(signTx).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
@@ -227,7 +232,7 @@ describe('invokeContract', () => {
     promise.catch(() => {});
     await vi.advanceTimersByTimeAsync(31_000);
 
-    expect(await promise).toBe('deadbeef');
+    expect(await promise).toEqual({ hash: 'deadbeef' });
     expect(signTx).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledTimes(1);
   });

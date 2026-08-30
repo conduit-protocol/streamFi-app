@@ -116,6 +116,7 @@ describe('getStreamInfo', () => {
   it('throws a clear error when a field is missing rather than silently defaulting', async () => {
     mockSimulateReadOnly.mockResolvedValue(scvMap({
       sender: new Address(SENDER).toScVal(),
+      flags:  xdr.ScVal.scvU32(0),
       // recipient deliberately omitted
     }));
     const { getStreamInfo } = await import('./stream.js');
