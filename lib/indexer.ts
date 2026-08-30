@@ -1,5 +1,5 @@
 import { getStreamAddress, getStreamInfo } from './stream';
-import { streamsBySender, streamsByRecipient } from './factory';
+import { streamsBySender, streamsByRecipient, isMock } from './factory';
 
 export interface TransactionRow {
   type:   string;
@@ -34,9 +34,13 @@ const SUBGRAPH_TIMEOUT_MS = 10_000;
  * while a real network call is in-flight, the promise rejects with an
  * AbortError so the UI shows an error state instead of an infinite spinner.
  *
+ * Demo data is only ever returned in demo mode (`isMock()` — i.e.
+ * `NEXT_PUBLIC_DEMO_MODE=true`). A fully-configured production deploy has no
+ * real subgraph wired up yet, so it rejects rather than serving fabricated
+ * transactions to real users (#341), matching `lib/factory.ts`'s `isMock()`
+ * contract from #279.
+ *
  * @param publicKey - The wallet's public key to fetch transactions for.
- *                    When provided, the returned data is scoped to this wallet.
- *                    When omitted, demo data is returned (placeholder mode).
  * @param signal    - AbortSignal for cancellation
  */
 export async function fetchTransactionHistory(
@@ -61,8 +65,23 @@ export async function fetchTransactionHistory(
     //   if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
     //   return (await res.json()).data.transactions;
 
-    // Placeholder: return demo data. The page UI labels this as demo data.
-    resolve(publicKey ? DEMO_TXS : []);
+    // Demo mode only — never serve fabricated history to a configured deploy.
+    let mock: boolean;
+    try {
+      mock = isMock();
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    if (mock) {
+      resolve(publicKey ? DEMO_TXS : []);
+    } else {
+      reject(
+        new Error(
+          'Transaction history is unavailable — the subgraph/indexer is not configured yet.',
+        ),
+      );
+    }
   });
 }
 
@@ -94,15 +113,39 @@ export async function fetchTransactionHistoryWithTimeout(
   }
 }
 
+/** Page size for the factory's paginated stream-id lookups. */
+const INDEXER_PAGE_SIZE = 100;
+/** Hard cap so a misbehaving factory that never returns a short page can't
+ *  spin this loop forever. */
+const INDEXER_MAX_STREAMS = 5_000;
+
+/** Walk every page of a `streams_by_*` lookup until a short (final) page. */
+async function fetchAllStreamIds(
+  fn: (source: string, addr: string, offset: number, limit: number) => Promise<bigint[]>,
+  publicKey: string,
+): Promise<bigint[]> {
+  const ids: bigint[] = [];
+  for (let offset = 0; offset < INDEXER_MAX_STREAMS; offset += INDEXER_PAGE_SIZE) {
+    const page = await fn(publicKey, publicKey, offset, INDEXER_PAGE_SIZE);
+    ids.push(...page);
+    if (page.length < INDEXER_PAGE_SIZE) return ids;
+  }
+  console.warn(
+    `fetchStreamsFromIndexer: stopped at ${INDEXER_MAX_STREAMS} streams — some may be missing`,
+  );
+  return ids;
+}
+
 // Mock GraphQL / Indexer fetcher
 export async function fetchStreamsFromIndexer(publicKey: string, role: 'sender' | 'recipient') {
   // In a real implementation, this would be a single fetch() call to a GraphQL endpoint
   // returning all streams instantly.
   // e.g., const response = await fetch('/api/graphql', { method: 'POST', body: ... })
-  
-  const ids = role === 'sender'
-    ? await streamsBySender(publicKey, publicKey, 0, 100)
-    : await streamsByRecipient(publicKey, publicKey, 0, 100);
+
+  const ids = await fetchAllStreamIds(
+    role === 'sender' ? streamsBySender : streamsByRecipient,
+    publicKey,
+  );
 
   const rows = [];
   for (const id of ids) {
