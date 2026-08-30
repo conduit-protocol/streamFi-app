@@ -58,6 +58,15 @@ vi.mock('lucide-react', () => ({
   Check: () => React.createElement('span', null, 'check'),
 }));
 
+// CreatePage runs a debounced `checkRecipientExists()` RPC whenever the
+// recipient field holds a 56-char address, and (since #363) `onSubmit` blocks
+// while that check is in flight. Mock it to resolve "exists" immediately; the
+// tests still await the 600ms debounce via `settleRecipientCheck()`.
+const mockCheckRecipientExists = vi.fn().mockResolvedValue(true);
+vi.mock('@/lib/soroban', () => ({
+  checkRecipientExists: (...args: unknown[]) => mockCheckRecipientExists(...args),
+}));
+
 // ── Import after mocks ───────────────────────────────────────────────────────
 
 import CreatePage from '../page';
@@ -96,6 +105,19 @@ async function fillRecipient(container: HTMLElement) {
   await act(async () => {
     setFieldValue(recipientInput, TEST_RECIPIENT);
   });
+}
+
+/**
+ * Wait out CreatePage's 600ms recipient-check debounce + the (mocked, instant)
+ * checkRecipientExists() call, so `recipientStatus` settles to 'valid' before a
+ * submit. Without this, onSubmit short-circuits with "Still verifying the
+ * recipient address" (#363).
+ */
+async function settleRecipientCheck(container: HTMLElement) {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 700));
+  });
+  expect(container.textContent).not.toContain('Still verifying the recipient address');
 }
 
 async function fillDeposit(container: HTMLElement, amount: string) {
@@ -156,6 +178,7 @@ describe('CreatePage — zero-rate guard (issue #243)', () => {
     await fillRecipient(container);
     // 1000 XLM over the default 30-day duration -> ~3858 stroops/s, well above zero.
     await fillDeposit(container, '1000');
+    await settleRecipientCheck(container);
 
     expect(container.textContent).not.toContain('Deposit too small for this duration');
 
@@ -188,6 +211,7 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
     await fillRecipient(container);
     // 1000 XLM over the default 30-day duration -> well above the zero-rate floor.
     await fillDeposit(container, '1000');
+    await settleRecipientCheck(container);
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {
       form.requestSubmit();

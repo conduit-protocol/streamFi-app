@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter }        from 'next/navigation';
 import { useForm }          from 'react-hook-form';
-import { z, ZodType } from 'zod';
+import { zodResolver }      from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { ArrowRight, Info } from 'lucide-react';
 import { useWallet }        from '@/contexts/WalletContext';
 import { createStream, isMock } from '@/lib/factory';
@@ -15,7 +16,7 @@ import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import styles from './CreateStream.module.css';
 import { toStroops, fromStroops, wouldRateTruncateToZero } from '@/lib/format';
-import { isValidStellarPublicKey } from '@/lib/stellar-address';
+import { isValidStellarAddress } from '@/lib/stellar-address';
 
 
 const schema = z.object({
@@ -53,23 +54,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       (err) => { clearTimeout(timer); reject(err); },
     );
   });
-}
-
-function zodResolver<T extends ZodType>(schema: T) {
-  return async (values: Record<string, unknown>) => {
-    const result = await schema.safeParseAsync(values);
-    if (result.success) {
-      return { values: result.data, errors: {} };
-    }
-    const errors: Record<string, { message?: string; type?: string }> = {};
-    for (const issue of result.error.issues) {
-      const path = issue.path.join('.');
-      if (!errors[path]) {
-        errors[path] = { message: issue.message, type: issue.code };
-      }
-    }
-    return { values: {}, errors };
-  };
 }
 
 type FormValues = z.infer<typeof schema>;
