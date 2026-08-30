@@ -55,42 +55,64 @@ export class Mutex {
 
   async acquire(abortSignal?: AbortSignal): Promise<() => void> {
     return new Promise<() => void>((resolve, reject) => {
-      let entry: ((release: () => void) => void) | undefined;
-
-      // If already locked, queue the request
-      if (this._locked) {
-        entry = (release: () => void) => {
-          if (abortSignal?.aborted) {
-            reject(new Error('Operation aborted'));
-            return;
-          }
-          resolve(release);
-        };
-        this._queue.push(entry);
-      } else {
+      // Fast path: nothing holds the lock.
+      if (!this._locked) {
         this._locked = true;
-        resolve(() => this._release());
+        resolve(this._makeRelease());
+        return;
       }
 
-      if (abortSignal && entry) {
-        const queuedEntry = entry;
-        abortSignal.addEventListener('abort', () => {
-          // Remove this entry from queue if it hasn't been resolved yet
-          if (entry) {
-            const idx = this._queue.indexOf(entry);
-            if (idx !== -1) this._queue.splice(idx, 1);
-          }
+      // Slow path: queue, and clean up the abort listener on either outcome
+      // so a completed acquire doesn't leave a dead listener on a long-lived
+      // AbortSignal (#390).
+      let onAbort: (() => void) | undefined;
+      const cleanup = () => {
+        if (onAbort && abortSignal) {
+          abortSignal.removeEventListener('abort', onAbort);
+          onAbort = undefined;
+        }
+      };
+
+      const entry = (release: () => void) => {
+        cleanup();
+        if (abortSignal?.aborted) {
           reject(new Error('Operation aborted'));
-        }, { once: true });
+          return;
+        }
+        resolve(release);
+      };
+      this._queue.push(entry);
+
+      if (abortSignal) {
+        onAbort = () => {
+          const idx = this._queue.indexOf(entry);
+          if (idx !== -1) this._queue.splice(idx, 1);
+          cleanup();
+          reject(new Error('Operation aborted'));
+        };
+        abortSignal.addEventListener('abort', onAbort);
       }
     });
   }
 
-  
+  /**
+   * Build a one-shot release function. Calling it more than once is a no-op,
+   * so a `finally { release() }` plus an explicit or retried call can't hand
+   * the lock to two waiters (#388).
+   */
+  private _makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._release();
+    };
+  }
+
   private _release() {
     const next = this._queue.shift();
     if (next) {
-      next(() => this._release());
+      next(this._makeRelease());
     } else {
       this._locked = false;
     }
@@ -116,12 +138,21 @@ export class Semaphore {
   async acquire(signal?: AbortSignal): Promise<() => void> {
     if (this._available > 0) {
       this._available--;
-      return () => this._release();
+      return this._makeRelease();
     }
 
     return new Promise<() => void>((resolve, reject) => {
+      let onAbort: (() => void) | undefined;
+      const cleanup = () => {
+        if (onAbort && signal) {
+          signal.removeEventListener('abort', onAbort);
+          onAbort = undefined;
+        }
+      };
+
       const entry = {
         resolver: (release: () => void) => {
+          cleanup();
           if (signal?.aborted) {
             reject(new Error('Operation aborted'));
             return;
@@ -137,10 +168,12 @@ export class Semaphore {
         this._dequeue(entry);
         reject(new Error('Operation aborted'));
       } else if (signal) {
-        signal.addEventListener('abort', () => {
+        onAbort = () => {
           this._dequeue(entry);
+          cleanup();
           reject(new Error('Operation aborted'));
-        }, { once: true });
+        };
+        signal.addEventListener('abort', onAbort);
       }
     });
   }
@@ -150,10 +183,23 @@ export class Semaphore {
     if (idx !== -1) this._queue.splice(idx, 1);
   }
 
+  /**
+   * Build a one-shot release function. A second call is a no-op, so a double
+   * `release()` can't over-increment `_available` past `maxConcurrent` (#388).
+   */
+  private _makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._release();
+    };
+  }
+
   private _release() {
     const next = this._queue.shift();
     if (next) {
-      next.resolver(() => this._release());
+      next.resolver(this._makeRelease());
     } else {
       this._available++;
     }
