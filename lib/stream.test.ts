@@ -116,7 +116,9 @@ describe('getStreamInfo', () => {
   it('throws a clear error when a field is missing rather than silently defaulting', async () => {
     mockSimulateReadOnly.mockResolvedValue(scvMap({
       sender: new Address(SENDER).toScVal(),
-      // recipient deliberately omitted
+      // recipient deliberately omitted — flags included so the missing-recipient
+      // path is exercised first (flags is now read before sender/recipient).
+      flags: xdr.ScVal.scvU32(0),
     }));
     const { getStreamInfo } = await import('./stream.js');
     await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/Missing field: recipient/);

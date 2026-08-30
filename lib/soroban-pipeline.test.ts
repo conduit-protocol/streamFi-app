@@ -82,7 +82,7 @@ function simError(message: string) {
   return { error: message };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers();
   mockGetAccount.mockReset().mockResolvedValue({ accountId: () => SOURCE, sequenceNumber: () => '1' });
   mockSimulate.mockReset();
@@ -93,6 +93,10 @@ beforeEach(() => {
   mockAssemble.mockReset().mockReturnValue({
     build: () => ({ toEnvelope: () => ({ toXDR: () => 'assembled-envelope-b64' }) }),
   });
+  // Clear the inclusion-fee cache so the "falls back to BASE_FEE" test
+  // doesn't see a cached p70 from the previous test's successful fetch.
+  const { __clearFeeStatsCache } = await import('./soroban.js');
+  __clearFeeStatsCache();
 });
 
 afterEach(() => {
@@ -212,7 +216,7 @@ describe('invokeContract', () => {
     promise.catch(() => {});
     await vi.advanceTimersByTimeAsync(2000);
 
-    expect(await promise).toBe('deadbeef');
+    expect(await promise).toEqual(expect.objectContaining({ hash: 'deadbeef' }));
     expect(signTx).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
@@ -227,7 +231,7 @@ describe('invokeContract', () => {
     promise.catch(() => {});
     await vi.advanceTimersByTimeAsync(31_000);
 
-    expect(await promise).toBe('deadbeef');
+    expect(await promise).toEqual(expect.objectContaining({ hash: 'deadbeef' }));
     expect(signTx).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledTimes(1);
   });

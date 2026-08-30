@@ -102,8 +102,21 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     expect(result.currentAllowance).toBe(1000n);
   });
 
+  it('checkAllowance distinguishes RPC failure from insufficient allowance (hasAllowance undefined, not false)', async () => {
+    vi.mocked(soroban.simulateReadOnly).mockRejectedValueOnce(new Error('Network request timed out'));
+    const result = await checkAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER, 500n);
+    // Must NOT be `false` — false means "checked, insufficient" and would
+    // trigger an unnecessary approve() and fee. Undefined means "couldn't check".
+    expect(result.hasAllowance).toBeUndefined();
+    expect(result.currentAllowance).toBe(0n);
+    expect(result.error).toMatch(/Network request timed out/);
+    // Callers must check error first; a falsy check `!hasAllowance` would
+    // still be true for undefined, so the correct guard is `hasAllowance === false`.
+    expect(result.hasAllowance === false).toBe(false);
+  });
+
   it('approveAllowance calls SAC with 4 arguments and succeeds (#347)', async () => {
-    vi.mocked(soroban.invokeContract).mockResolvedValueOnce('tx_hash_123');
+    vi.mocked(soroban.invokeContract).mockResolvedValueOnce({ hash: 'tx_hash_123' } as any);
     const mockSignTx = vi.fn().mockResolvedValue('signed');
 
     const result = await approveAllowance(
@@ -127,7 +140,7 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     );
 
     // Verify 4 arguments were passed to invokeContract
-    const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0][3];
+    const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0]![3] as unknown[];
     expect(passedArgs).toHaveLength(4);
   });
 });

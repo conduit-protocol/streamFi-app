@@ -121,6 +121,12 @@ function getServer(): SorobanRpc.Server {
  */
 export function resetServer(): void {
   serverInstance = undefined;
+  feeStatsCache = undefined;
+}
+
+/** Test-only: clear the inclusion-fee cache so fee-stats tests are isolated. */
+export function __clearFeeStatsCache(): void {
+  feeStatsCache = undefined;
 }
 
 // ── Retry / Backoff ───────────────────────────────────────────────────────────
@@ -426,25 +432,6 @@ export async function invokeContract(
       throw new Error('Submission returned no transaction hash');
     }
 
-        if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
-          // #362 — surface the confirmed transaction's return value instead
-          // of discarding it. Contract functions like DripFactory::create_stream
-          // return data (the assigned stream_id) that callers otherwise have
-          // no way to obtain without a separate re-query.
-          return { hash, returnValue: status.returnValue };
-        }
-        if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
-          // Non-retryable — transaction executed and failed on-chain
-          recordFailure();
-          throw new Error(`Transaction failed: ${hash}`);
-        }
-        // status === 'NOT_FOUND' — keep polling
-      }
-      throw new Error(`Transaction timed out after ${MAX_POLL_ATTEMPTS}s: ${hash}`);
-    }, {
-      context: `invokeContract(${method})`,
-      signal,
-    });
     return pollForConfirmation(hash, timeoutMs, signal);
   };
 
@@ -461,12 +448,16 @@ export async function invokeContract(
  * reach a verdict (transient RPC errors, or the confirmation window elapsing)
  * the hash is returned as *pending* rather than replaying the transaction:
  * it is already on-chain and the caller can look it up (see #358).
+ *
+ * On SUCCESS the confirmed transaction's return value is surfaced so callers
+ * like DripFactory::create_stream can obtain the assigned stream_id without
+ * a separate re-query (see #362).
  */
 async function pollForConfirmation(
   hash: string,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<InvokeContractResult> {
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
     if (signal?.aborted) throw new OperationAbortedError();
 
@@ -492,7 +483,7 @@ async function pollForConfirmation(
     if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
       // The RPC round-trip completed — the network is healthy.
       resetCircuitBreaker();
-      return hash;
+      return { hash, returnValue: status.returnValue };
     }
     if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {
       // The transaction executed and the contract reverted. The RPC worked
@@ -504,7 +495,7 @@ async function pollForConfirmation(
   }
 
   // Submitted but unconfirmed within the window — pending, not failed.
-  return hash;
+  return { hash };
 }
 
 /**

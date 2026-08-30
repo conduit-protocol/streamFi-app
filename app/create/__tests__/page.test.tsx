@@ -51,6 +51,15 @@ vi.mock('@/lib/token-allowance-gateway', () => ({
   }),
 }));
 
+const mockCheckRecipientExists = vi.fn().mockResolvedValue(true);
+vi.mock('@/lib/soroban', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/soroban')>('@/lib/soroban');
+  return {
+    ...actual,
+    checkRecipientExists: (...args: unknown[]) => mockCheckRecipientExists(...args),
+  };
+});
+
 vi.mock('lucide-react', () => ({
   ArrowRight: () => React.createElement('span', null, '→'),
   Info: () => React.createElement('span', null, 'i'),
@@ -96,6 +105,11 @@ async function fillRecipient(container: HTMLElement) {
   await act(async () => {
     setFieldValue(recipientInput, TEST_RECIPIENT);
   });
+  // Recipient existence check is debounced 600ms + RPC; wait for it to settle
+  // so the form isn't blocked by `recipientStatus === 'checking'`.
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 700));
+  });
 }
 
 async function fillDeposit(container: HTMLElement, amount: string) {
@@ -110,6 +124,7 @@ async function fillDeposit(container: HTMLElement, amount: string) {
 describe('CreatePage — zero-rate guard (issue #243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCheckRecipientExists.mockResolvedValue(true);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
   });
@@ -179,6 +194,7 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCheckRecipientExists.mockResolvedValue(true);
     mockIsMock.mockReturnValue(false);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
