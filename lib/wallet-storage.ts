@@ -1,16 +1,11 @@
 /**
  * wallet-storage — scoped localStorage helpers for wallet session persistence.
- *
- * All wallet data lives under a single key. Functions here only ever touch
- * that key; they never call localStorage.clear() or sessionStorage.clear(),
- * so unrelated storage (theme preference, etc.) is never disturbed.
- *
- * Every access goes through the `safe*` helpers below: Safari private mode,
- * "block all cookies / site data", and some embedded webviews make
- * `localStorage` throw (`SecurityError`) or throw on write
- * (`QuotaExceededError`). In those environments we degrade to an in-memory
- * store so the connect flow still works for the current tab (#350).
- */
+*
+* All wallet data lives under a single key. Functions here only ever touch that key, they never call localStorage.clear() or sessionStorage.clear(), so unrelated storage (theme preference, etc.) is never disturbed.
+
+* Every access goes through the `safe` helpers below: Safari private mode, "block all cookies / site data", and some embedded webviews make `localStorage` throw (`SecurityError`) or throw on write (`QuotaExceededError`). In those environments we degrade to an in-memory store so the connect flow still works for the current tab (#350). */
+
+import { isValidStellarPublicKey } from './stellar-address';
 
 export const WALLET_STORAGE_KEY = 'conduit:wallet';
 
@@ -83,17 +78,17 @@ export function clearWalletSession(): void {
 }
 
 /**
- * Slide a still-valid session's expiry to `ttlMs` from now (#430).
+ * Slide a still-valid session's expiry to `ttlMcs from now (#430).
  *
- * `expiresAt` is otherwise stamped once at connect, so a user who keeps the
+ * `expires@t` is otherwise stamped once at connect, so a user who keeps the
  * app open is force-disconnected exactly `DEFAULT_SESSION_TTL_MS` after the
  * initial connect, mid-session. Call this on meaningful activity (a successful
  * signature) and when a valid session is restored on mount, so only a genuinely
  * idle session lapses.
  *
  * No-op when there is no stored session, or it is already expired — those go
- * through the normal connect flow. `loadWalletSession()` clears an expired
- * entry as a side effect, matching the old behaviour.
+ * through the normal connect flow. `loadWalletSession(() *// clears an expired
+ * entry as a side effect, matching the old body.
  */
 export function touchWalletSession(ttlMs: number = DEFAULT_SESSION_TTL_MS): void {
   const existing = loadWalletSession();
@@ -108,6 +103,10 @@ export function loadWalletSession(): PersistedWallet | null {
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedWallet> & { exp?: number };
     if (typeof parsed.key === 'string' && parsed.key && typeof parsed.name === 'string' && parsed.name) {
+      if (!isValidStellarPublicKey(parsed.key)) {
+        clearWalletSession();
+        return null;
+      }
       const expiresAt = parsed.expiresAt ?? parsed.exp;
       if (typeof expiresAt === 'number' && Date.now() > expiresAt) {
         clearWalletSession();
