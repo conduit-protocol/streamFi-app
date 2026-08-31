@@ -84,6 +84,64 @@ export function tokenLogoUrl(symbol: string, network: 'mainnet' | 'testnet' | 'l
   return tokenBySymbol(symbol, network)?.logoUrl ?? '/tokens/generic.svg';
 }
 
+/**
+ * Symbol used as the safe fallback when a previously-selected token is not
+ * available on the active network (#429). It is present on every network list.
+ */
+export const DEFAULT_TOKEN_SYMBOL = 'XLM';
+
+export interface TokenResolution {
+  /** The resolved token — never `undefined`; falls back to {@link DEFAULT_TOKEN_SYMBOL}. */
+  token: TokenMeta;
+  /** `true` when `symbol` was absent on `network` and the default was substituted. */
+  wasReset: boolean;
+}
+
+/**
+ * Resolve a token by symbol on a network, falling back to that network's
+ * default token (XLM) instead of returning `undefined`.
+ *
+ * The testnet and mainnet symbol sets differ — testnet has EURC, mainnet does
+ * not (#429) — so a symbol carried over from a previous network selection can
+ * be missing on the new one, leaving `TokenSelector` with no selection and
+ * breaking `/create` / top-up flows that assume a resolved `TokenMeta`.
+ * Callers that need a concrete token should use this and surface `wasReset`
+ * (e.g. a toast) rather than dereferencing a possibly-`undefined` lookup.
+ */
+export function resolveTokenBySymbol(
+  symbol: string,
+  network: 'mainnet' | 'testnet' | 'local',
+): TokenResolution {
+  const match = tokenBySymbol(symbol, network);
+  if (match) return { token: match, wasReset: false };
+
+  const list = getTokens(network);
+  const fallback = list.find(t => t.symbol === DEFAULT_TOKEN_SYMBOL) ?? list[0];
+  if (!fallback) {
+    throw new Error(`No tokens configured for network "${network}"`);
+  }
+  return { token: fallback, wasReset: true };
+}
+
+/**
+ * The networks on which `symbol` is a known token. Lets the UI say "EURC
+ * exists on testnet but not mainnet" instead of a bare "unknown token".
+ */
+export function networksForSymbol(symbol: string): Array<'mainnet' | 'testnet'> {
+  const networks: Array<'mainnet' | 'testnet'> = [];
+  if (TOKENS_MAINNET.some(t => t.symbol === symbol)) networks.push('mainnet');
+  if (TOKENS_TESTNET.some(t => t.symbol === symbol)) networks.push('testnet');
+  return networks;
+}
+
+/** Companion to {@link networksForSymbol} for the address-based selector. */
+export function networksForAddress(address: string): Array<'mainnet' | 'testnet'> {
+  const networks: Array<'mainnet' | 'testnet'> = [];
+  if (TOKENS_MAINNET.some(t => t.address === address)) networks.push('mainnet');
+  if (TOKENS_TESTNET.some(t => t.address === address)) networks.push('testnet');
+  return networks;
+}
+
 // ── Token Allowance Helpers (SEP-41) ──────────────────────────────────────────
 
 import {
