@@ -97,6 +97,25 @@ export function resetCircuitBreaker(scope?: string): void {
 }
 
 /**
+ * Return a snapshot of every circuit breaker scope, sorted by scope name.
+ */
+export function getCircuitBreakerStates(): CircuitBreakerState[] {
+  const now = Date.now();
+  const entries: CircuitBreakerState[] = [];
+  for (const [key, state] of circuitBreakers.entries()) {
+    const isOpen = state.circuitOpenUntil > now;
+    entries.push({
+      scope: key,
+      consecutiveFailures: state.consecutiveFailures,
+      circuitOpenUntil: state.circuitOpenUntil,
+      isOpen,
+      remainingMs: isOpen ? Math.max(0, state.circuitOpenUntil - now) : 0,
+    });
+  }
+  return entries.sort((a, b) => a.scope.localeCompare(b.scope));
+}
+
+/**
  * Check if the circuit breaker is open for a given scope/endpoint.
  */
 export function isCircuitOpen(scope?: string): boolean {
