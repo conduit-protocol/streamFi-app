@@ -9,6 +9,9 @@ import {
   getAllowance,
   checkAllowance,
   approveAllowance,
+  resolveTokenBySymbol,
+  networksForSymbol,
+  networksForAddress,
 } from './tokens';
 import { StrKey, Keypair } from '@stellar/stellar-sdk';
 import { resetTokenAllowanceGateway } from './token-allowance-gateway';
@@ -142,5 +145,35 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     // Verify 4 arguments were passed to invokeContract
     const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0]![3] as unknown[];
     expect(passedArgs).toHaveLength(4);
+  });
+});
+describe('resolveTokenBySymbol / cross-network helpers (#429)', () => {
+  it('resolves a symbol that exists on the network without resetting', () => {
+    const { token, wasReset } = resolveTokenBySymbol('USDC', 'mainnet');
+    expect(token.symbol).toBe('USDC');
+    expect(wasReset).toBe(false);
+  });
+
+  it('falls back to XLM with wasReset when the symbol is missing on the network', () => {
+    // EURC is only in the testnet list.
+    const { token, wasReset } = resolveTokenBySymbol('EURC', 'mainnet');
+    expect(token.symbol).toBe('XLM');
+    expect(wasReset).toBe(true);
+  });
+
+  it('does not reset for a symbol that does exist on the target network', () => {
+    expect(resolveTokenBySymbol('EURC', 'testnet').wasReset).toBe(false);
+  });
+
+  it('reports which networks a symbol belongs to', () => {
+    expect(networksForSymbol('EURC')).toEqual(['testnet']);
+    expect(networksForSymbol('USDC').sort()).toEqual(['mainnet', 'testnet']);
+    expect(networksForSymbol('DOGE')).toEqual([]);
+  });
+
+  it('reports which networks an address belongs to', () => {
+    const eurc = TOKENS_TESTNET.find(t => t.symbol === 'EURC');
+    expect(networksForAddress(eurc!.address!)).toEqual(['testnet']);
+    expect(networksForAddress('CNOTATOKEN')).toEqual([]);
   });
 });
