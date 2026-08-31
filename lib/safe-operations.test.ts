@@ -406,18 +406,16 @@ describe('safePercent', () => {
     expect(safePercent(150, 100, 100)).toBe(0);
   });
 
-  // BUG: safePercent returns a 0-1 ratio instead of the documented 0-100
-  // percentage. The final `/ 100` division should not exist.
-  it('returns 0.5 for midpoint (BUG: should be 50, but returns 0.5 due to final / 100)', () => {
-    expect(safePercent(50, 0, 100)).toBe(0.5);
+  it('returns 50 for midpoint', () => {
+    expect(safePercent(50, 0, 100)).toBe(50);
   });
 
-  it('returns 0.25 for 25% (BUG: should be 25)', () => {
-    expect(safePercent(25, 0, 100)).toBe(0.25);
+  it('returns 25 for 25%', () => {
+    expect(safePercent(25, 0, 100)).toBe(25);
   });
 
-  it('handles non-integer boundaries on 0-1 scale', () => {
-    expect(safePercent(15.5, 10, 20)).toBeCloseTo(0.55, 2);
+  it('handles non-integer boundaries', () => {
+    expect(safePercent(15.5, 10, 20)).toBeCloseTo(55, 2);
   });
 });
 

@@ -266,11 +266,7 @@ export function safePercent(current: number, start: number, end: number): number
   if (end <= start) return 0;
   if (current <= start) return 0;
   if (current >= end) return 100;
-  // Compute as (current - start) / (end - start) * 100 using high-precision
-  const elapsed = current - start;
-  const total = end - start;
-  // Use 64-bit integer arithmetic to avoid float rounding
-  return Number((BigInt(Math.round(elapsed * 1_000_000)) * 100n) / BigInt(Math.round(total * 1_000_000))) / 100;
+  return ((current - start) / (end - start)) * 100;
 }
 
 // ── Request ID / Idempotency Key ─────────────────────────────────────────────
