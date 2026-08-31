@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { tokenByAddress, type TokenMeta } from '@/lib/tokens';
+import { tokenByAddress, networksForAddress, type TokenMeta } from '@/lib/tokens';
 
 /**
  * Stellar Soroban contract addresses are base32-encoded with the RFC 4648
@@ -55,6 +55,9 @@ export function TokenSelector({
   const [status, setStatus]   = useState<ResolveStatus>('idle');
   const [token, setToken]     = useState<TokenMeta | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Networks (other than the current one) on which an otherwise-unknown
+  // address IS a known token — so the message can point the user there (#429).
+  const [otherNetworks, setOtherNetworks] = useState<Array<'mainnet' | 'testnet'>>([]);
 
   // Ref to the AbortController for the current in-flight metadata lookup.
   // Replaced on every new lookup so the previous one can be cancelled.
@@ -70,6 +73,7 @@ export function TokenSelector({
       setStatus('loading');
       setToken(null);
       setErrorMsg(null);
+      setOtherNetworks([]);
 
       try {
         // Simulate async resolution — allows a future upgrade to a real RPC
@@ -84,6 +88,11 @@ export function TokenSelector({
 
         setToken(found);
         setStatus(found ? 'resolved' : 'unknown');
+        if (!found) {
+          setOtherNetworks(
+            networksForAddress(address).filter(n => n !== network),
+          );
+        }
         onTokenResolved?.(found);
       } catch (err: unknown) {
         if (controller.signal.aborted) return;
@@ -103,6 +112,7 @@ export function TokenSelector({
       setStatus('idle');
       setToken(null);
       setErrorMsg(null);
+      setOtherNetworks([]);
       if (value.length > 0) {
         // Non-empty but invalid — the error state is shown by the validation
         // message below rather than as a resolve error.
@@ -177,7 +187,10 @@ export function TokenSelector({
 
       {!showValidationError && status === 'unknown' && (
         <p className="text-xs text-gray-400 mt-1" role="status" aria-live="polite">
-          Contract address not in the known token list — it may still be valid on-chain.
+          {otherNetworks.length > 0
+            ? `This contract is a known token on ${otherNetworks.join(' and ')}, but not on ` +
+              `${network}. Switch networks or choose a different token.`
+            : 'Contract address not in the known token list — it may still be valid on-chain.'}
         </p>
       )}
 
