@@ -83,16 +83,16 @@ export function clearWalletSession(): void {
 }
 
 /**
- * Slide a still-valid session's expiry to `ttlMcs from now (#430).
+ * Slide a still-valid session's expiry to `ttlMs` from now (#430).
  *
- * `expires@t` is otherwise stamped once at connect, so a user who keeps the
+ * `expiresAt` is otherwise stamped once at connect, so a user who keeps the
  * app open is force-disconnected exactly `DEFAULT_SESSION_TTL_MS` after the
  * initial connect, mid-session. Call this on meaningful activity (a successful
  * signature) and when a valid session is restored on mount, so only a genuinely
  * idle session lapses.
  *
  * No-op when there is no stored session, or it is already expired — those go
- * through the normal connect flow. `loadWalletSession(() *// clears an expired
+ * through the normal connect flow. `loadWalletSession()` clears an expired
  * entry as a side effect, matching the old body.
  */
 export function touchWalletSession(ttlMs: number = DEFAULT_SESSION_TTL_MS): void {
