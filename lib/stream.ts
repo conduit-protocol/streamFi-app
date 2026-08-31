@@ -354,14 +354,3 @@ export async function revokeOperator(
   if (isMock()) return 'mock_tx_hash_revoke_operator';
   return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
 }
-
-
-export async function revokeOperator(
-  sender:        string,
-  streamAddress: string,
-  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
-  signal?:       AbortSignal,
-): Promise<string> {
-  if (isMock()) return 'mock_tx_hash_revoke_operator';
-  return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
-}

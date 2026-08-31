@@ -17,7 +17,7 @@ import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import { useDebounce } from '@/hooks/useDebounce';
 import styles from './CreateStream.module.css';
 import { toStroops, fromStroops, wouldRateTruncateToZero } from '@/lib/format';
-import { isValidStellarAddress, isValidStellarContract } from '@/lib/stellar-address';
+import { isValidStellarAddress, isValidStellarContract, isValidStellarPublicKey } from '@/lib/stellar-address';
 import { withTimeout } from '@/lib/with-timeout';
 
 
@@ -25,7 +25,10 @@ const schema = z.object({
   recipient:       z.string()
     .min(56, 'Must be a valid Stellar address (56 characters)')
     .max(56, 'Must be a valid Stellar address (56 characters)')
-    .refine(isValidStellarPublicKey, 'Must be a valid Stellar public key (G…)'),
+    .refine(
+      (v) => isValidStellarPublicKey(v) || isValidStellarContract(v),
+      'Must be a valid Stellar address (G… account or C… contract)',
+    ),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
   // #319 — no upper bound previously meant an accidental extra digit (e.g.

@@ -8,12 +8,10 @@ interface RateTickerProps {
   ratePerSecond: bigint;
   /** Current withdrawable balance in stroops (fetched from contract) */
   startBalance: bigint;
-  /** Unix timestamp when accrual stops; 0 means no fixed end */
+  /** Unix timestamp when the stream ends (0 = open-ended). Ticker freezes past this (#398). */
   endTime: number;
   /** Decimal places to display (default: 7 for XLM) */
   decimals?: number;
-  /** Unix timestamp when the stream ends (0 = open-ended). Ticker freezes past this. */
-  endTime?: number;
 }
 
 /**

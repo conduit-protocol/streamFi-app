@@ -12,7 +12,6 @@ import { StreamTimeline }  from '@/components/stream/StreamTimeline';
 import { StreamFlowChart } from '@/components/stream/StreamFlowChart';
 import { StreamActions }   from '@/components/stream/StreamActions';
 import { OperatorInfo }    from '@/components/stream/OperatorInfo';
-import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { useWallet }       from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
 import { useNetworkStatus }                                from '@/hooks/useNetworkStatus';
@@ -56,6 +55,7 @@ export default function StreamPage() {
   const [nowSeconds,    setNowSeconds]            = useState(() => Math.floor(Date.now() / 1000));
   const [loading,       setLoading]               = useState(true);
   const [error,         setError]                 = useState<string | null>(null);
+  const [status,        setStatus]                = useState<StreamStatus>('active');
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -114,6 +114,10 @@ export default function StreamPage() {
   }, [id, publicKey]);
 
   useEffect(() => { loadStream(); }, [loadStream]);
+
+  useEffect(() => {
+    if (info) setStatus(deriveStatus(info, nowSeconds));
+  }, [info, nowSeconds]);
 
   useEffect(() => {
     if (!info || status !== 'active' || info.endTime === 0) return;

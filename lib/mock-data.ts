@@ -22,6 +22,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '2': {
     sender: RECIPIENT,
@@ -35,6 +36,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
   '3': {
     sender: SENDER,
@@ -48,6 +50,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '4': {
     sender: RECIPIENT,
@@ -61,6 +64,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: false,
     cancelled: true,
+    operator: null,
   },
   '5': {
     sender: SENDER,
@@ -74,6 +78,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
 };
 

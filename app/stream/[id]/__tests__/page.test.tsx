@@ -73,6 +73,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
     paused: false,
     pausedAt: 0,
     clawbackEnabled: false,
+    operator: null,
     ...overrides,
   };
 }

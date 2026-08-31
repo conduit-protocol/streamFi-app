@@ -107,7 +107,7 @@ function setFieldValue(el: HTMLInputElement | HTMLSelectElement, value: string) 
 async function fillRecipient(container: HTMLElement, address: string = TEST_RECIPIENT) {
   const recipientInput = container.querySelector('input[placeholder="G…"]') as HTMLInputElement;
   await act(async () => {
-    setFieldValue(recipientInput, TEST_RECIPIENT);
+    setFieldValue(recipientInput, address);
     await new Promise((resolve) => setTimeout(resolve, 650));
   });
 }

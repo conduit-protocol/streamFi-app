@@ -94,10 +94,10 @@ describe('WalletContext', () => {
   it('restores a valid stored wallet session on mount', () => {
     localStorage.setItem(
       'conduit:wallet',
-      JSON.stringify({ key: 'GVALID123', name: 'Freighter', expiresAt: Date.now() + 60000 }),
+      JSON.stringify({ key: 'GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR', name: 'Freighter', expiresAt: Date.now() + 60000 }),
     );
     const { stateRef, container } = mountWallet();
-    expect(stateRef.current?.publicKey).toBe('GVALID123');
+    expect(stateRef.current?.publicKey).toBe('GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR');
     document.body.removeChild(container);
   });
 
@@ -375,7 +375,7 @@ describe('WalletContext', () => {
     const { container, stateRef, rerender } = mountWalletWithRoot();
     await act(async () => { await stateRef.current.connect(); });
 
-    const staleWatcher = watchInstances[watchInstances.length - 1];
+    const staleWatcher = watchInstances[watchInstances.length - 1]!;
 
     // Re-render the provider so the watcher effect tears down and re-subscribes
     // (the component stays mounted, so isMountedRef alone would not catch this).
