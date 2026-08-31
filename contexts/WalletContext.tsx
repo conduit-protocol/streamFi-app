@@ -40,6 +40,7 @@ import {
   clearWalletSession,
   loadWalletSession,
   saveWalletSession,
+  touchWalletSession,
 } from '@/lib/wallet-storage';
 import toast from 'react-hot-toast';
 
@@ -327,6 +328,10 @@ export function WalletProvider({
     if (stored) {
       setPublicKey(stored.key);
       setWalletName(stored.name);
+      // A returning user with a still-valid session is active — slide the
+      // expiry so an open tab isn't force-disconnected 24h after the first
+      // connect (#430).
+      touchWalletSession();
     }
 
     return () => {
@@ -529,6 +534,9 @@ export function WalletProvider({
         if (error || !signedTxXdr) {
           throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
         }
+        // A successful signature is meaningful activity — keep the session
+        // alive rather than let it lapse mid-use (#430).
+        touchWalletSession();
         return signedTxXdr;
       } finally {
         release();
