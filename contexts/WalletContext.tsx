@@ -480,9 +480,17 @@ export function WalletProvider({
   // `publicKey` and every cached on-chain query pointed at the old account,
   // silently showing stale data (fixes #88).
   useEffect(() => {
+    // `WatchWalletChanges.stop()` only flips an internal flag; a poll
+    // iteration already awaiting Freighter when we call it still runs to
+    // completion and fires this callback one last time (and schedules one
+    // more `setTimeout` we cannot clear from out here). `active` is a
+    // per-effect-instance latch so that trailing tick — and any tick after
+    // an unmount or a dependency-triggered re-subscribe — is ignored instead
+    // of mutating state on a torn-down tree.
+    let active = true;
     const watcher = new WatchWalletChanges();
     watcher.watch(({ address }) => {
-      if (!isMountedRef.current) return;
+      if (!active || !isMountedRef.current) return;
       if (!publicKeyRef.current) return; // no active session to keep in sync
 
       if (!address) {
@@ -507,7 +515,10 @@ export function WalletProvider({
       toast(`Switched to ${truncateAddress(address)}`, { icon: '🔄' });
     });
 
-    return () => watcher.stop();
+    return () => {
+      active = false;
+      watcher.stop();
+    };
   }, [clearTransactions, disconnect]);
 
   // ── signTx ─────────────────────────────────────────────────────────────────

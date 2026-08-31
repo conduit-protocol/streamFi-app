@@ -8,6 +8,7 @@ import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo } from "@/lib/stream";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
@@ -58,6 +59,9 @@ async function loadRows(
 
 export default function StreamsPage() {
   const { publicKey, connected } = useWallet();
+  // The global NetworkTroubleBanner already covers RPC-down / fetch-failure
+  // cases, so suppress this page's own error row when it's showing.
+  const { status: networkStatus } = useNetworkStatus();
 
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
@@ -149,7 +153,7 @@ export default function StreamsPage() {
       </div>
 
       {/* Content */}
-      {error && (
+      {error && networkStatus === "ok" && (
         <div
           role="alert"
           aria-live="polite"
@@ -167,6 +171,10 @@ export default function StreamsPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <StreamCardSkeleton key={i} />
           ))}
+        </div>
+      ) : displayed.length === 0 && error && networkStatus === "trouble" ? (
+        <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
+          Your streams will appear here once the connection is back.
         </div>
       ) : displayed.length === 0 ? (
         <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
