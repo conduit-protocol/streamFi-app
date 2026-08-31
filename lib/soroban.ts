@@ -53,6 +53,18 @@ interface CircuitState {
   circuitOpenUntil: number;
 }
 
+/** A per-scope circuit-breaker snapshot returned by {@link getCircuitBreakerStates}. */
+export interface CircuitBreakerState {
+  /** The circuit key: the RPC URL, optionally suffixed with `::<scope>`. */
+  scope: string;
+  consecutiveFailures: number;
+  circuitOpenUntil: number;
+  /** True while `circuitOpenUntil` is still in the future. */
+  isOpen: boolean;
+  /** Milliseconds until the circuit half-opens, or 0 when closed. */
+  remainingMs: number;
+}
+
 const circuitBreakers = new Map<string, CircuitState>();
 
 function getCircuitKey(scope?: string): string {

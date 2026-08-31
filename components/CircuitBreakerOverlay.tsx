@@ -1,15 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCircuitBreakerStates } from '@/lib/soroban';
-
-interface CircuitBreakerState {
-  scope: string;
-  consecutiveFailures: number;
-  circuitOpenUntil: number;
-  isOpen: boolean;
-  remainingMs: number;
-}
+import { getCircuitBreakerStates, type CircuitBreakerState } from '@/lib/soroban';
 
 /**
  * Dev-only overlay that surfaces per-endpoint circuit-breaker state.
@@ -42,7 +34,7 @@ export function CircuitBreakerOverlay() {
             </span>
             <span className={s.isOpen ? 'font-bold text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-400'}>
               {s.isOpen
-                ? `OPEN (${Math.ceil(s.remainingMs / 1000)}s)`,
+                ? `OPEN (${Math.ceil(s.remainingMs / 1000)}s)`
                 : `closed (${s.consecutiveFailures})`}
             </span>
           </li>

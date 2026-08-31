@@ -6,8 +6,8 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const title = `Stream #${id} — Conduit`;
-  const description = `View payment stream #${id} on Conduit — progress, rate, and status.`;
+  const title = `Stream #${id} â€” Conduit`;
+  const description = `View payment stream #${id} on Conduit â€” progress, rate, and status.`;
   return {
     title,
     description,
