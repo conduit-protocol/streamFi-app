@@ -37,6 +37,8 @@ export interface StreamInfo {
   pausedAt:        number;
   clawbackEnabled: boolean;
   cancelled:       boolean;
+  /** Delegated operator, if the sender has set one. `null` when unset. */
+  operator:        string | null;
 }
 
 // ── Read-only ─────────────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export async function getStreamInfo(
       pausedAt: 0,
       clawbackEnabled: false,
       cancelled: false,
+      operator: null,
     };
     return entry ? (MOCK_STREAMS[entry[0]] ?? fallback) : fallback;
   }
@@ -146,6 +149,22 @@ export async function getStreamInfo(
 
   function readAddress(name: string): string {
     return Address.fromScVal(requireType(name, 'scvAddress', 'an address')).toString();
+  }
+
+  // `operator` — best-effort: no prior wiring for a delegated operator
+  // exists in this repo (issue #473), so the exact field name/shape on the
+  // live contract is unconfirmed against streamFi-contracts. Tolerant on
+  // purpose: absent field, scvVoid (Option::None), or anything unexpected
+  // all read as "no operator set" rather than throwing, so a wrong guess
+  // here degrades to hiding the operator UI instead of breaking the page.
+  function readOptionalAddress(name: string): string | null {
+    const field = fields.find(e => e.key().sym()?.toString() === name)?.val();
+    if (!field || field.switch().name !== 'scvAddress') return null;
+    try {
+      return Address.fromScVal(field).toString();
+    } catch {
+      return null;
+    }
   }
 
   function readI128(name: string): bigint {
@@ -179,6 +198,7 @@ export async function getStreamInfo(
     pausedAt:        readU64('paused_at'),
     clawbackEnabled: (flags & FLAG_CLAWBACK_ENABLED) !== 0,
     cancelled:       (flags & FLAG_CANCELLED) !== 0,
+    operator:        readOptionalAddress('operator'),
   };
 }
 
@@ -315,4 +335,33 @@ export async function transferRecipient(
   if (isMock()) return 'mock_tx_hash_transfer_recipient';
   const args = [new Address(newRecipient).toScVal()];
   return mutate(sender, streamAddress, 'transfer_recipient', args, signTx, signal);
+}
+
+/**
+ * Revoke the delegated operator on a stream (sender only).
+ *
+ * NOTE: `revoke_operator` is a best-match guess for this contract method,
+ * following this file's naming convention (cancel/pause/resume all match
+ * their contract method 1:1). Not confirmed against streamFi-contracts —
+ * please verify before merging (see PR description).
+ */
+export async function revokeOperator(
+  sender:        string,
+  streamAddress: string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_revoke_operator';
+  return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
+}
+
+
+export async function revokeOperator(
+  sender:        string,
+  streamAddress: string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_revoke_operator';
+  return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
 }

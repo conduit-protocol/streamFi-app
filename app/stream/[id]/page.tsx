@@ -11,6 +11,8 @@ import { RateTicker }      from '@/components/stream/RateTicker';
 import { StreamTimeline }  from '@/components/stream/StreamTimeline';
 import { StreamFlowChart } from '@/components/stream/StreamFlowChart';
 import { StreamActions }   from '@/components/stream/StreamActions';
+import { OperatorInfo }    from '@/components/stream/OperatorInfo';
+import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { useWallet }       from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
@@ -306,6 +308,29 @@ export default function StreamPage() {
           token={tokenSymbol}
           onSuccess={loadStream}
         />
+      )}
+
+      {/* Delegated operator — shown when the stream has one set (#473) */}
+      {info.operator && (
+        <div className="mt-4">
+          <OperatorInfo
+            streamAddress={streamAddress}
+            operator={info.operator}
+            isSender={isSender}
+            onSuccess={loadStream}
+          />
+        </div>
+      )}
+
+      {info.operator && (
+        <div className="mt-4">
+          <OperatorInfo
+            streamAddress={streamAddress}
+            operator={info.operator}
+            isSender={isSender}
+            onSuccess={loadStream}
+          />
+        </div>
       )}
 
       {/* Clawback warning */}
