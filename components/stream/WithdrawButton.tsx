@@ -8,6 +8,7 @@ import { useWallet }            from '@/contexts/WalletContext';
 import { withdraw }             from '@/lib/stream';
 import { CopyHashButton }       from '@/components/ui/CopyHashButton';
 import { queryClient }          from '@/lib/queryClient';
+import { invalidateStreamMutation } from '@/lib/query-keys';
 
 type Step = 'idle' | 'signing' | 'submitting' | 'done' | 'error';
 
@@ -50,9 +51,10 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
       if (!mounted.current) return;
       setTxHash(hash);
       setStep('done');
-      // Withdrawn balance just changed on-chain — invalidate cached reads
-      // (e.g. a Profile Page's balance query) so they refetch (fixes #193).
-      await queryClient.invalidateQueries();
+      // Withdrawn balance just changed on-chain — invalidate only the stream,
+      // list/dashboard, transactions, and wallet-balance trees rather than
+      // every query in the app (fixes #193, narrowed per #431).
+      await invalidateStreamMutation(queryClient, streamAddress);
       onSuccess?.();
     } catch (e) {
       // Always clear the loading state, even if the RPC provider timed out

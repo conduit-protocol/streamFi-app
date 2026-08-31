@@ -9,6 +9,7 @@ import { Input }             from '@/components/ui/Input';
 import * as streamLib        from '@/lib/stream';
 import { safeToStroops }     from '@/lib/safe-operations';
 import { queryClient }       from '@/lib/queryClient';
+import { invalidateStreamMutation } from '@/lib/query-keys';
 
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
@@ -56,10 +57,11 @@ export function StreamActions({
     try {
       await fn();
       if (!mounted.current) return;
-      // The stream's on-chain state just changed — invalidate any cached
-      // reads (e.g. a Profile Page's balance/status query) so they don't
-      // keep showing pre-action data (fixes #193).
-      await queryClient.invalidateQueries();
+      // The stream's on-chain state just changed — invalidate only what this
+      // action touched (this stream's reads, the streams list / dashboard,
+      // the transactions list, the wallet balance) rather than every query in
+      // the app (fixes #193, narrowed per #431).
+      await invalidateStreamMutation(queryClient, streamAddress);
       onSuccess?.();
     } catch (e) {
       if (!mounted.current) return;
