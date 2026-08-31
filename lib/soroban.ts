@@ -34,6 +34,7 @@ import {
 } from './safe-operations';
 import { withTimeout } from './with-timeout';
 import { isValidStellarContract, isValidStellarPublicKey } from './stellar-address';
+import { reportRpcFailure, reportRpcSuccess } from './network-status';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,10 @@ function getCircuitState(key: string): CircuitState {
  * Useful on wallet disconnect, network switch, or after manual retry.
  */
 export function resetCircuitBreaker(scope?: string): void {
+  // Any path that clears the breaker considers the RPC healthy — a successful
+  // round-trip, an on-chain revert, or a wallet/network switch that starts
+  // fresh. Clear the global "network trouble" banner to match.
+  reportRpcSuccess();
   if (scope) {
     const key = getCircuitKey(scope);
     circuitBreakers.delete(key);
@@ -200,6 +205,7 @@ async function withRetry<T>(
     if (isCircuitOpen(scope)) {
       const key = getCircuitKey(scope);
       const state = getCircuitState(key);
+      reportRpcFailure();
       throw new Error(
         `Circuit breaker open — too many consecutive failures. ` +
         `Retry in ${Math.ceil((state.circuitOpenUntil - Date.now()) / 1000)}s.`,
@@ -227,7 +233,13 @@ async function withRetry<T>(
         // the breaker is designed to protect against (see #283). Anything
         // else (an on-chain revert, a malformed payload) leaves the breaker
         // untouched because the RPC itself is healthy (see #359).
-        if (isTransportFailure(err)) recordFailure(scope);
+        if (isTransportFailure(err)) {
+          recordFailure(scope);
+          // Surface the outage to the UI immediately — a single failed
+          // round-trip is enough to show the banner, without waiting for the
+          // breaker to trip after three.
+          reportRpcFailure();
+        }
         throw err;
       }
 

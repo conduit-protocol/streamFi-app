@@ -15,6 +15,7 @@ import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { useWallet }       from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
+import { useNetworkStatus }                                from '@/hooks/useNetworkStatus';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
 import { tokenByAddress } from '@/lib/tokens';
 import type { StreamInfo } from '@/lib/stream';
@@ -42,6 +43,10 @@ const STREAM_REFRESH_MS = 20_000;
 export default function StreamPage() {
   const { id }                                    = useParams<{ id: string }>();
   const { publicKey, connected }                  = useWallet();
+  // RPC-down / fetch-failure messaging is handled globally by
+  // NetworkTroubleBanner — defer to it rather than printing a raw
+  // "circuit breaker open" string here.
+  const { status: networkStatus }                 = useNetworkStatus();
   const mounted                                   = useRef(true);
   const loadSeq                                   = useRef(0);
 
@@ -163,7 +168,13 @@ export default function StreamPage() {
       <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
-      <p className="text-sm text-gray-500 dark:text-gray-400">{error ?? 'Stream not found.'}</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        {error
+          ? networkStatus === 'trouble'
+            ? "Can't reach the network right now — this stream will load once the connection is back."
+            : error
+          : 'Stream not found.'}
+      </p>
     </div>
   );
 

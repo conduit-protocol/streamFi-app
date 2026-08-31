@@ -311,6 +311,90 @@ describe('WalletContext', () => {
     document.body.removeChild(container);
   });
 
+  // ── watcher teardown ──────────────────────────────────────────────────────
+
+  function mountWalletWithRoot() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const stateRef = { current: null as any };
+    function TestComponent() {
+      const wallet = useWallet();
+      useEffect(() => { stateRef.current = wallet; }, [wallet]);
+      return null;
+    }
+    act(() => {
+      root.render(
+        <WalletProvider>
+          <TestComponent />
+        </WalletProvider>,
+      );
+    });
+    const rerender = () => {
+      act(() => {
+        root.render(
+          <WalletProvider>
+            <TestComponent />
+          </WalletProvider>,
+        );
+      });
+    };
+    return { root, container, stateRef, rerender };
+  }
+
+  it('stops the wallet-change watcher on unmount and ignores its trailing poll', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GAFIRSTACCOUNT', error: null } as any);
+
+    const { root, container, stateRef } = mountWalletWithRoot();
+    await act(async () => { await stateRef.current.connect(); });
+    expect(stateRef.current?.publicKey).toBe('GAFIRSTACCOUNT');
+
+    const watcher = watchInstances[watchInstances.length - 1];
+
+    act(() => { root.unmount(); });
+    expect(watcher?.stopped).toBe(true);
+
+    // A poll already in flight when stop() ran still fires the callback once;
+    // it must not mutate caches or storage on the detached tree.
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    act(() => {
+      watcher?.cb?.({ address: 'GALATEACCOUNT', network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
+    });
+
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('conduit:wallet')!).key).toBe('GAFIRSTACCOUNT');
+
+    document.body.removeChild(container);
+  });
+
+  it('ignores a stale watcher callback after the subscription is replaced', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GAFIRSTACCOUNT', error: null } as any);
+
+    const { container, stateRef, rerender } = mountWalletWithRoot();
+    await act(async () => { await stateRef.current.connect(); });
+
+    const staleWatcher = watchInstances[watchInstances.length - 1];
+
+    // Re-render the provider so the watcher effect tears down and re-subscribes
+    // (the component stays mounted, so isMountedRef alone would not catch this).
+    rerender();
+
+    expect(staleWatcher.stopped).toBe(true);
+    expect(watchInstances[watchInstances.length - 1]).not.toBe(staleWatcher);
+
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    act(() => {
+      staleWatcher.cb?.({ address: 'GASTALEACCOUNT', network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
+    });
+
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(stateRef.current?.publicKey).toBe('GAFIRSTACCOUNT');
+
+    document.body.removeChild(container);
+  });
+
   it('rejects signTx with error when the account changes while signing is in flight', async () => {
     let resolveSign: (value: { signedTxXdr: string; signerAddress: string; error: null }) => void;
     const signPromise = new Promise<{ signedTxXdr: string; signerAddress: string; error: null }>((resolve) => {

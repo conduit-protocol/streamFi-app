@@ -11,6 +11,7 @@ import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo, getWithdrawable } from "@/lib/stream";
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
@@ -118,6 +119,11 @@ async function loadRows(
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWallet();
+  // When the RPC is unreachable, a global banner (NetworkTroubleBanner)
+  // already explains the situation — suppress the per-page error card and the
+  // partial-load bar so the user isn't told the same thing twice.
+  const { status: networkStatus } = useNetworkStatus();
+  const networkTrouble = networkStatus === "trouble";
 
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
@@ -135,15 +141,20 @@ export default function DashboardPage() {
   const loadSeqRef = useRef(0);
   const activeControllerRef = useRef<AbortController | null>(null);
   const lastFetchAtRef = useRef(0);
+  // Guards the manual refresh controls: while a fetch is in flight, extra
+  // clicks are ignored rather than piling up overlapping requests.
+  const inFlightRef = useRef(false);
 
   const fetchStreams = useCallback(async (signal: AbortSignal) => {
     if (!publicKey) return;
+    inFlightRef.current = true;
     const seq = ++loadSeqRef.current;
     const isCurrent = () => seq === loadSeqRef.current;
     const now = Math.floor(Date.now() / 1000);
     setLoading(true);
-    setError(null);
-    setPartialError(null);
+    // The previous error / partial-load notices stay on screen (with their
+    // Retry control disabled) until this refresh settles, rather than blinking
+    // out and back — the `loading` flag is what signals work is in progress.
     try {
       const [recv, sent] = await Promise.all([
         loadRows(publicKey, "recipient", now, signal),
@@ -153,11 +164,12 @@ export default function DashboardPage() {
         setReceiving(recv.rows);
         setSending(sent.rows);
         const totalFailed = recv.failedCount + sent.failedCount;
-        if (totalFailed > 0) {
-          setPartialError(
-            `${totalFailed} stream${totalFailed === 1 ? "" : "s"} could not be loaded — some data may be missing.`,
-          );
-        }
+        setPartialError(
+          totalFailed > 0
+            ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} could not be loaded — some data may be missing.`
+            : null,
+        );
+        setError(null);
         lastFetchAtRef.current = Date.now();
       }
     } catch (e) {
@@ -166,11 +178,19 @@ export default function DashboardPage() {
         setError("Failed to load streams. Please try again.");
       }
     } finally {
-      if (!signal.aborted && isCurrent()) setLoading(false);
+      // Only the most recent fetch clears the in-flight latch — an older,
+      // superseded fetch resolving late must not re-open the gate.
+      if (isCurrent()) {
+        inFlightRef.current = false;
+        if (!signal.aborted) setLoading(false);
+      }
     }
   }, [publicKey]);
 
-  const refetch = useCallback(() => {
+  const refetch = useCallback((force = false) => {
+    // Ignore manual triggers while a refresh is already running. `force` is
+    // for callers that must always re-read (wallet switch, post-withdraw).
+    if (!force && inFlightRef.current) return;
     activeControllerRef.current?.abort();
     const controller = new AbortController();
     activeControllerRef.current = controller;
@@ -185,7 +205,7 @@ export default function DashboardPage() {
       setPartialError(null);
       return;
     }
-    refetch();
+    refetch(true);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -277,21 +297,22 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {error && (
-        <div className="card text-center py-4 mb-6 text-sm text-red-500 dark:text-red-400">
+      {error && !networkTrouble && (
+        <div className="card text-center py-4 mb-6 text-sm text-gray-600 dark:text-gray-400">
           {error}
         </div>
       )}
 
-      {partialError && !error && (
-        <div className="card text-center py-3 mb-6 text-sm text-amber-600 dark:text-amber-400 flex items-center justify-center gap-2">
+      {partialError && !error && !networkTrouble && (
+        <div className="card text-center py-3 mb-6 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
           {partialError}
           <button
-            onClick={refetch}
-            className="underline font-semibold hover:text-black dark:hover:text-white ml-1"
+            onClick={() => refetch()}
+            disabled={loading}
+            className="underline font-semibold hover:text-black dark:hover:text-white ml-1 disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
-            Retry
+            {loading ? "Retrying…" : "Retry"}
           </button>
         </div>
       )}
@@ -338,7 +359,9 @@ export default function DashboardPage() {
                     }))}
                   onComplete={async () => {
                     await refreshStreamData();
-                    refetch();
+                    // Balances just changed — bypass the in-flight guard so
+                    // this refresh always lands.
+                    refetch(true);
                   }}
                 />
               </div>
@@ -351,17 +374,21 @@ export default function DashboardPage() {
                 <StreamCardSkeleton key={i} />
               ))}
             </div>
-          ) : error ? (
+          ) : error && !networkTrouble ? (
             <div className="card py-8 px-6 flex flex-col items-center gap-4 text-center">
               <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" aria-hidden="true" />
               <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
               <button
-                onClick={refetch}
+                onClick={() => refetch()}
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
                 Retry
               </button>
+            </div>
+          ) : displayed.length === 0 && error ? (
+            <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
+              Your streams will appear here once the connection is back.
             </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
