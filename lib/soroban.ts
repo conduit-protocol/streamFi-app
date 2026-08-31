@@ -561,45 +561,40 @@ export async function simulateReadOnly(
   validateTimeout(timeoutMs);
   if (signal?.aborted) throw new OperationAbortedError();
 
-  return withRetry(async () => {
-    const account  = await withTimeout(
-      getServer().getAccount(source),
-      timeoutMs,
-      'simulateReadOnly/getAccount',
-      signal,
-    );
-    const fee = await getInclusionFee(timeoutMs, signal);
-    const contract = new Contract(contractId);
-    const tx = new TransactionBuilder(account, {
-      fee,
-      networkPassphrase: getNetworkPassphrase(),
-    })
-      .addOperation(contract.call(method, ...args))
-      .setTimeout(60)
-      .build();
-
-    if (signal?.aborted) throw new OperationAbortedError();
-
-    const result = await withTimeout(
-      getServer().simulateTransaction(tx),
-      timeoutMs,
-      'simulateTransaction',
-      signal,
-    );
-
-    if (signal?.aborted) throw new OperationAbortedError();
-
-    if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation error: ${result.error}`);
-    }
-    const retval = result.result?.retval;
-    if (!retval) throw new Error('No result returned from simulation');
-
-    return xdr.ScVal.fromXDR(retval.toXDR());
-  }, {
-    context: `simulateReadOnly(${method})`,
+  const account  = await withTimeout(
+    getServer().getAccount(source),
+    timeoutMs,
+    'simulateReadOnly/getAccount',
     signal,
-  });
+  );
+  const fee = await getInclusionFee(timeoutMs, signal);
+  const contract = new Contract(contractId);
+  const tx = new TransactionBuilder(account, {
+    fee,
+    networkPassphrase: getNetworkPassphrase(),
+  })
+    .addOperation(contract.call(method, ...args))
+    .setTimeout(60)
+    .build();
+
+  if (signal?.aborted) throw new OperationAbortedError();
+
+  const result = await withTimeout(
+    getServer().simulateTransaction(tx),
+    timeoutMs,
+    'simulateTransaction',
+    signal,
+  );
+
+  if (signal?.aborted) throw new OperationAbortedError();
+
+  if (SorobanRpc.Api.isSimulationError(result)) {
+    throw new Error(`Simulation error: ${result.error}`);
+  }
+  const retval = result.result?.retval;
+  if (!retval) throw new Error('No result returned from simulation');
+
+  return xdr.ScVal.fromXDR(retval.toXDR());
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
