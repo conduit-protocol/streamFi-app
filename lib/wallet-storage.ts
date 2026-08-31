@@ -82,6 +82,25 @@ export function clearWalletSession(): void {
   safeRemove(WALLET_STORAGE_KEY);
 }
 
+/**
+ * Slide a still-valid session's expiry to `ttlMs` from now (#430).
+ *
+ * `expiresAt` is otherwise stamped once at connect, so a user who keeps the
+ * app open is force-disconnected exactly `DEFAULT_SESSION_TTL_MS` after the
+ * initial connect, mid-session. Call this on meaningful activity (a successful
+ * signature) and when a valid session is restored on mount, so only a genuinely
+ * idle session lapses.
+ *
+ * No-op when there is no stored session, or it is already expired — those go
+ * through the normal connect flow. `loadWalletSession()` clears an expired
+ * entry as a side effect, matching the old behaviour.
+ */
+export function touchWalletSession(ttlMs: number = DEFAULT_SESSION_TTL_MS): void {
+  const existing = loadWalletSession();
+  if (!existing) return;
+  saveWalletSession({ key: existing.key, name: existing.name }, ttlMs);
+}
+
 /** Load a previously-persisted wallet session, or null if none exists, malformed, or expired. */
 export function loadWalletSession(): PersistedWallet | null {
   const raw = safeGet(WALLET_STORAGE_KEY);
