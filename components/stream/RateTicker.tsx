@@ -52,7 +52,7 @@ export function RateTicker({ ratePerSecond, startBalance, endTime, decimals = 7 
   }, [ratePerSecond, endTime, decimals]);
 
   return (
-    <span className="amount">
+    <span className="amount" suppressHydrationWarning>
       {display}
     </span>
   );
