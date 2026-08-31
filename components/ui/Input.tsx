@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes } from 'react';
+import { forwardRef, useId, type InputHTMLAttributes } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?:   string;
@@ -8,7 +8,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, hint, error, id, className = '', ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    const reactId = useId();
+    const inputId = id ?? reactId;
     return (
       <div className="space-y-1">
         {label && (
