@@ -368,7 +368,6 @@ export interface InvokeContractResult {
  * @param args       XDR ScVal arguments
  * @param signTx     Wallet sign callback from WalletContext (supports AbortSignal)
  * @param options    Optional abort signal, timeout, and idempotency key
- * @returns          Transaction hash and the confirmed transaction's return value
  * @returns          Transaction hash — confirmed, or (if polling could not
  *                   reach a verdict in time) submitted-and-pending. Throws
  *                   `TransactionRevertedError` if the contract reverted.
