@@ -10,7 +10,13 @@ import { NetworkTroubleBanner } from '@/components/NetworkTroubleBanner';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+      storageKey="streamfi-theme"
+    >
       <ReactQueryProvider>
         <WalletProvider>
           <ServiceWorkerRegistrar />
