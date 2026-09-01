@@ -394,6 +394,17 @@ export default function DashboardPage() {
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
               Your streams will appear here once the connection is back.
             </div>
+          ) : displayed.length === 0 && partialError ? (
+            <div className="card text-center py-12 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mb-2">{partialError}.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={loading}
+                className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                {loading ? "Retrying…" : "Retry"}
+              </button>
+            </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
               No {tab} streams yet.
