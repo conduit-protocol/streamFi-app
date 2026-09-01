@@ -14,18 +14,29 @@ export interface TransactionRow {
 const BASE_NOW = 1784630000; // Static timestamp to prevent SSR hydration mismatch
 
 const DEMO_TXS: TransactionRow[] = [
-  { type: 'Stream Created', amount: '1,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 3600,   hash: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0' },
-  { type: 'Withdrawn',      amount: '50.42',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 7200,   hash: 'b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1' },
-  { type: 'Withdrawn',      amount: '25.00',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 14400,  hash: 'c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2' },
-  { type: 'Stream Created', amount: '500.00',   token: 'USDC',  status: 'Pending',  date: BASE_NOW - 600,    hash: 'd4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3' },
-  { type: 'Cancelled',      amount: '200.00',   token: 'XLM',   status: 'Failed',   date: BASE_NOW - 86400,  hash: 'e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4' },
-  { type: 'Withdrawn',      amount: '10.00',    token: 'USDC',  status: 'Failed',   date: BASE_NOW - 1800,   hash: 'f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5' },
-  { type: 'Stream Created', amount: '3,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 172800, hash: 'g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6' },
-  { type: 'Withdrawn',      amount: '100.00',   token: 'XLM',   status: 'Success',  date: BASE_NOW - 36000,  hash: 'h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7' },
+  { type: 'Stream Created', amount: '1,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 3600,   hash: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2' },
+  { type: 'Withdrawn',      amount: '50.42',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 7200,   hash: 'b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3' },
+  { type: 'Withdrawn',      amount: '25.00',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 14400,  hash: 'c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4' },
+  { type: 'Stream Created', amount: '500.00',   token: 'USDC',  status: 'Pending',  date: BASE_NOW - 600,    hash: 'd4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5' },
+  { type: 'Cancelled',      amount: '200.00',   token: 'XLM',   status: 'Failed',   date: BASE_NOW - 86400,  hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6' },
+  { type: 'Withdrawn',      amount: '10.00',    token: 'USDC',  status: 'Failed',   date: BASE_NOW - 1800,   hash: 'f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7' },
+  { type: 'Stream Created', amount: '3,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 172800, hash: 'a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8' },
+  { type: 'Withdrawn',      amount: '100.00',   token: 'XLM',   status: 'Success',  date: BASE_NOW - 36000,  hash: 'b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9' },
 ];
 
 /** How long to wait for the subgraph before treating it as unavailable. */
 const SUBGRAPH_TIMEOUT_MS = 10_000;
+
+export class IndexerNotConfiguredError extends Error {
+  constructor() {
+    super('Transaction history is unavailable — the subgraph/indexer is not configured yet.');
+    this.name = 'IndexerNotConfiguredError';
+  }
+}
+
+export function isIndexerNotConfiguredError(error: unknown): error is IndexerNotConfiguredError {
+  return error instanceof IndexerNotConfiguredError;
+}
 
 /**
  * Fetch transaction history from the subgraph/indexer.
@@ -87,13 +98,7 @@ export async function fetchTransactionHistory(
     if (mock) {
       settle(() => resolve(publicKey ? [] : DEMO_TXS));
     } else {
-      settle(() =>
-        reject(
-          new Error(
-            'Transaction history is unavailable — the subgraph/indexer is not configured yet.',
-          ),
-        ),
-      );
+      settle(() => reject(new IndexerNotConfiguredError()));
     }
   });
 }

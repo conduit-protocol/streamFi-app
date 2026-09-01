@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
 
 type Currency = "USD" | "EUR" | "XLM";
@@ -40,9 +40,19 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsState>(loadSettings);
   const [saved, setSaved] = useState(false);
+  const didMount = useRef(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Storage can be unavailable in private browsing or embedded webviews.
+    }
   }, [settings]);
 
   const updateSetting = useCallback(<K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {

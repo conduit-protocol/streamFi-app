@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter }        from 'next/navigation';
 import { useForm }          from 'react-hook-form';
 import { zodResolver }      from '@hookform/resolvers/zod';
@@ -14,9 +14,10 @@ import { checkRecipientExists } from '@/lib/soroban';
 import { refreshStreamData } from '@/lib/queryClient';
 import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
+import { useDebounce } from '@/hooks/useDebounce';
 import styles from './CreateStream.module.css';
 import { toStroops, fromStroops, wouldRateTruncateToZero } from '@/lib/format';
-import { isValidStellarAddress, isValidStellarContract } from '@/lib/stellar-address';
+import { isValidStellarAddress, isValidStellarContract, isValidStellarPublicKey } from '@/lib/stellar-address';
 import { withTimeout } from '@/lib/with-timeout';
 
 
@@ -24,7 +25,10 @@ const schema = z.object({
   recipient:       z.string()
     .min(56, 'Must be a valid Stellar address (56 characters)')
     .max(56, 'Must be a valid Stellar address (56 characters)')
-    .refine(isValidStellarAddress, 'Must be a valid Stellar address (G… or C…)'),
+    .refine(
+      (v) => isValidStellarPublicKey(v) || isValidStellarContract(v),
+      'Must be a valid Stellar address (G… account or C… contract)',
+    ),
   token:           z.string().min(1, 'Select a token'),
   depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
   // #319 — no upper bound previously meant an accidental extra digit (e.g.
@@ -89,12 +93,6 @@ export default function CreatePage() {
   const [recipientStatus, setRecipientStatus] = useState<
     'idle' | 'checking' | 'valid' | 'not-found' | 'error'
   >('idle');
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // #309 — request-sequence guard so a stale in-flight checkRecipientExists()
-  // call can't overwrite recipientStatus after a newer one has already
-  // resolved (or started), mirroring app/stream/[id]/page.tsx's loadSeq/
-  // isCurrent() pattern.
-  const recipientSeqRef = useRef(0);
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -121,7 +119,10 @@ export default function CreatePage() {
     setValue('acknowledgeContractRecipient', false);
   }, [recipient, setValue]);
 
-  // Debounced async on-chain account existence check. Only fires once the
+  // Debounce the recipient input with a 600ms delay to reduce RPC calls
+  const debouncedRecipient = useDebounce(recipient, 600);
+
+  // Async on-chain account existence check. Only fires once the
   // address satisfies the Zod schema (56 chars, starts with G) so we never
   // waste an RPC call on a partially-typed address — Zod already owns
   // partial-input/format feedback exclusively.
@@ -135,10 +136,7 @@ export default function CreatePage() {
   //   3. If the component unmounts mid-flight the state update is suppressed.
   const RECIPIENT_CHECK_TIMEOUT_MS = 10_000;
   useEffect(() => {
-    const seq = ++recipientSeqRef.current;
-    const isCurrent = () => seq === recipientSeqRef.current;
-
-    const validLength = recipient?.length === 56;
+    const validLength = debouncedRecipient?.length === 56;
 
     if (!validLength) {
       setRecipientStatus('idle');
@@ -147,44 +145,34 @@ export default function CreatePage() {
 
     setRecipientStatus('checking');
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
     const controller = new AbortController();
+    let isMounted = true;
 
-    debounceRef.current = setTimeout(async () => {
+    (async () => {
+      // Hard timeout: if the RPC never responds, reject after 10s so the
+      // spinner is always cleared.
+      const timeoutId = setTimeout(() => controller.abort('timeout'), RECIPIENT_CHECK_TIMEOUT_MS);
+
       try {
-        // checkRecipientExists owns both the deadline (so the spinner is
-        // always cleared, #123) and the cancellation — the controller's
-        // signal is now actually passed through, where before it was created
-        // per effect run and never handed to anything.
-        const exists = await checkRecipientExists(recipient, {
-          timeoutMs: RECIPIENT_CHECK_TIMEOUT_MS,
-          signal:    controller.signal,
-        });
-        if (!isCurrent()) return;
+        // Add a 10-second timeout to prevent an infinite loading state (#123)
+        const exists = await checkRecipientExists(debouncedRecipient, { timeoutMs: 10_000 });
+        if (!isMounted) return;
         setRecipientStatus(exists ? 'valid' : 'not-found');
       } catch (err) {
-        // Cancellation isn't a failure — the cleanup that aborted this check
-        // already reset the status for the address that replaced it.
-        if (controller.signal.aborted || !isCurrent()) return;
-        // Anything else means the check couldn't be made (#391): a hung or
-        // misconfigured RPC, a proxy error page. Warn, but never claim the
-        // recipient doesn't exist on this evidence.
+        // Network / RPC error — don't block the user, but surface a warning.
+        if (!isMounted) return;
         console.error('Recipient check failed:', err);
         setRecipientStatus('error');
       }
-    }, 600);
+    })();
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      isMounted = false;
       // Cancel any in-flight check so the status doesn't flip back to
       // 'valid'/'not-found'/'error' after the address has already changed.
       controller.abort('cancelled');
-      // Immediately clear the checking state on cleanup so the button
-      // label resets if the user clears the field while a check is pending.
-      setRecipientStatus('idle');
     };
-  }, [recipient]);
+  }, [debouncedRecipient]);
 
   // Tokens aren't all 7 decimals (the native XLM/SAC convention) — this app
   // supports arbitrary TOKENS_TESTNET entries, so the preview must use each
@@ -390,7 +378,7 @@ export default function CreatePage() {
             className="input font-mono"
           />
           {errors.recipient && (
-            <p className="text-xs text-red-600 mt-1">{errors.recipient.message}</p>
+            <p className="text-xs text-red-600 mt-1">{String(errors.recipient.message)}</p>
           )}
           {/* On-chain existence feedback — only shown once the address passes
               the Zod format check (no redundancy with live Zod validation) */}

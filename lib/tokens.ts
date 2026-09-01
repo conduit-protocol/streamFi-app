@@ -63,8 +63,12 @@ export const TOKENS_MAINNET: TokenMeta[] = [
   },
 ];
 
+export const TOKENS_LOCAL: TokenMeta[] = [];
+
 export function getTokens(network: 'mainnet' | 'testnet' | 'local'): TokenMeta[] {
-  return network === 'mainnet' ? TOKENS_MAINNET : TOKENS_TESTNET;
+  if (network === 'mainnet') return TOKENS_MAINNET;
+  if (network === 'local') return TOKENS_LOCAL;
+  return TOKENS_TESTNET;
 }
 
 export function tokenByAddress(address: string, network: 'mainnet' | 'testnet' | 'local'): TokenMeta | undefined {
@@ -284,4 +288,3 @@ export async function approveAllowance(
     txHash: res.data,
   };
 }
-

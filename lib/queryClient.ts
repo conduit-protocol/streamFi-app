@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from './query-keys';
+import toast from 'react-hot-toast';
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({
@@ -47,5 +48,6 @@ export async function refreshStreamData(): Promise<void> {
     ]);
   } catch (error) {
     console.warn('Failed to refresh stream data after a transaction.', error);
+    toast.error('Failed to refresh data. Please refresh the page manually.');
   }
 }

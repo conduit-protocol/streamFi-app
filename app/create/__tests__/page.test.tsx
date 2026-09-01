@@ -42,6 +42,10 @@ vi.mock('@/lib/env', () => ({
   getFactoryContractId: () => FACTORY_ID,
 }));
 
+vi.mock('@/lib/soroban', () => ({
+  checkRecipientExists: vi.fn().mockResolvedValue(true),
+}));
+
 const mockCheckAllowance = vi.fn();
 const mockApprove = vi.fn();
 vi.mock('@/lib/token-allowance-gateway', () => ({
@@ -104,11 +108,7 @@ async function fillRecipient(container: HTMLElement, address: string = TEST_RECI
   const recipientInput = container.querySelector('input[placeholder="G…"]') as HTMLInputElement;
   await act(async () => {
     setFieldValue(recipientInput, address);
-  });
-  // Recipient existence check is debounced 600ms + RPC; wait for it to settle
-  // so the form isn't blocked by `recipientStatus === 'checking'`.
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((resolve) => setTimeout(resolve, 650));
   });
 }
 

@@ -1,8 +1,16 @@
 'use client';
 
 import { useTheme } from 'next-themes';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Monitor } from 'lucide-react';
 import { useEffect, useState } from 'react';
+
+type ThemeChoice = 'light' | 'dark' | 'system';
+
+export function getNextTheme(theme?: string): ThemeChoice {
+  if (theme === 'light') return 'dark';
+  if (theme === 'dark') return 'system';
+  return 'light';
+}
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -28,14 +36,28 @@ export function ThemeToggle() {
   }
 
   const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+  const nextTheme = getNextTheme(theme);
+  const label =
+    nextTheme === 'system'
+      ? 'Match system theme'
+      : nextTheme === 'dark'
+        ? 'Switch to dark mode'
+        : 'Switch to light mode';
 
   return (
     <button
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      onClick={() => setTheme(nextTheme)}
       className="inline-flex items-center justify-center w-9 h-9 rounded text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={label}
+      title={label}
     >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      {theme === 'system' ? (
+        <Monitor className="w-4 h-4" />
+      ) : isDark ? (
+        <Sun className="w-4 h-4" />
+      ) : (
+        <Moon className="w-4 h-4" />
+      )}
     </button>
   );
 }

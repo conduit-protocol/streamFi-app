@@ -34,6 +34,7 @@ import {
 } from './safe-operations';
 import { withTimeout } from './with-timeout';
 import { isValidStellarContract, isValidStellarPublicKey } from './stellar-address';
+import { reportRpcFailure, reportRpcSuccess } from './network-status';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,18 @@ const MAX_INCLUSION_FEE = 1_000_000; // 0.1 XLM — never bid more than this
 interface CircuitState {
   consecutiveFailures: number;
   circuitOpenUntil: number;
+}
+
+/** A per-scope circuit-breaker snapshot returned by {@link getCircuitBreakerStates}. */
+export interface CircuitBreakerState {
+  /** The circuit key: the RPC URL, optionally suffixed with `::<scope>`. */
+  scope: string;
+  consecutiveFailures: number;
+  circuitOpenUntil: number;
+  /** True while `circuitOpenUntil` is still in the future. */
+  isOpen: boolean;
+  /** Milliseconds until the circuit half-opens, or 0 when closed. */
+  remainingMs: number;
 }
 
 const circuitBreakers = new Map<string, CircuitState>();
@@ -78,6 +91,10 @@ function getCircuitState(key: string): CircuitState {
  * Useful on wallet disconnect, network switch, or after manual retry.
  */
 export function resetCircuitBreaker(scope?: string): void {
+  // Any path that clears the breaker considers the RPC healthy — a successful
+  // round-trip, an on-chain revert, or a wallet/network switch that starts
+  // fresh. Clear the global "network trouble" banner to match.
+  reportRpcSuccess();
   if (scope) {
     const key = getCircuitKey(scope);
     circuitBreakers.delete(key);
@@ -89,6 +106,25 @@ export function resetCircuitBreaker(scope?: string): void {
   } else {
     circuitBreakers.clear();
   }
+}
+
+/**
+ * Return a snapshot of every circuit breaker scope, sorted by scope name.
+ */
+export function getCircuitBreakerStates(): CircuitBreakerState[] {
+  const now = Date.now();
+  const entries: CircuitBreakerState[] = [];
+  for (const [key, state] of circuitBreakers.entries()) {
+    const isOpen = state.circuitOpenUntil > now;
+    entries.push({
+      scope: key,
+      consecutiveFailures: state.consecutiveFailures,
+      circuitOpenUntil: state.circuitOpenUntil,
+      isOpen,
+      remainingMs: isOpen ? Math.max(0, state.circuitOpenUntil - now) : 0,
+    });
+  }
+  return entries.sort((a, b) => a.scope.localeCompare(b.scope));
 }
 
 /**
@@ -200,6 +236,7 @@ async function withRetry<T>(
     if (isCircuitOpen(scope)) {
       const key = getCircuitKey(scope);
       const state = getCircuitState(key);
+      reportRpcFailure();
       throw new Error(
         `Circuit breaker open — too many consecutive failures. ` +
         `Retry in ${Math.ceil((state.circuitOpenUntil - Date.now()) / 1000)}s.`,
@@ -227,7 +264,13 @@ async function withRetry<T>(
         // the breaker is designed to protect against (see #283). Anything
         // else (an on-chain revert, a malformed payload) leaves the breaker
         // untouched because the RPC itself is healthy (see #359).
-        if (isTransportFailure(err)) recordFailure(scope);
+        if (isTransportFailure(err)) {
+          recordFailure(scope);
+          // Surface the outage to the UI immediately — a single failed
+          // round-trip is enough to show the banner, without waiting for the
+          // breaker to trip after three.
+          reportRpcFailure();
+        }
         throw err;
       }
 
@@ -356,7 +399,6 @@ export interface InvokeContractResult {
  * @param args       XDR ScVal arguments
  * @param signTx     Wallet sign callback from WalletContext (supports AbortSignal)
  * @param options    Optional abort signal, timeout, and idempotency key
- * @returns          Transaction hash and the confirmed transaction's return value
  * @returns          Transaction hash — confirmed, or (if polling could not
  *                   reach a verdict in time) submitted-and-pending. Throws
  *                   `TransactionRevertedError` if the contract reverted.
@@ -549,45 +591,40 @@ export async function simulateReadOnly(
   validateTimeout(timeoutMs);
   if (signal?.aborted) throw new OperationAbortedError();
 
-  return withRetry(async () => {
-    const account  = await withTimeout(
-      getServer().getAccount(source),
-      timeoutMs,
-      'simulateReadOnly/getAccount',
-      signal,
-    );
-    const fee = await getInclusionFee(timeoutMs, signal);
-    const contract = new Contract(contractId);
-    const tx = new TransactionBuilder(account, {
-      fee,
-      networkPassphrase: getNetworkPassphrase(),
-    })
-      .addOperation(contract.call(method, ...args))
-      .setTimeout(60)
-      .build();
-
-    if (signal?.aborted) throw new OperationAbortedError();
-
-    const result = await withTimeout(
-      getServer().simulateTransaction(tx),
-      timeoutMs,
-      'simulateTransaction',
-      signal,
-    );
-
-    if (signal?.aborted) throw new OperationAbortedError();
-
-    if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation error: ${result.error}`);
-    }
-    const retval = result.result?.retval;
-    if (!retval) throw new Error('No result returned from simulation');
-
-    return xdr.ScVal.fromXDR(retval.toXDR());
-  }, {
-    context: `simulateReadOnly(${method})`,
+  const account  = await withTimeout(
+    getServer().getAccount(source),
+    timeoutMs,
+    'simulateReadOnly/getAccount',
     signal,
-  });
+  );
+  const fee = await getInclusionFee(timeoutMs, signal);
+  const contract = new Contract(contractId);
+  const tx = new TransactionBuilder(account, {
+    fee,
+    networkPassphrase: getNetworkPassphrase(),
+  })
+    .addOperation(contract.call(method, ...args))
+    .setTimeout(60)
+    .build();
+
+  if (signal?.aborted) throw new OperationAbortedError();
+
+  const result = await withTimeout(
+    getServer().simulateTransaction(tx),
+    timeoutMs,
+    'simulateTransaction',
+    signal,
+  );
+
+  if (signal?.aborted) throw new OperationAbortedError();
+
+  if (SorobanRpc.Api.isSimulationError(result)) {
+    throw new Error(`Simulation error: ${result.error}`);
+  }
+  const retval = result.result?.retval;
+  if (!retval) throw new Error('No result returned from simulation');
+
+  return xdr.ScVal.fromXDR(retval.toXDR());
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

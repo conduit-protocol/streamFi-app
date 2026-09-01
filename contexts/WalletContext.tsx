@@ -480,9 +480,17 @@ export function WalletProvider({
   // `publicKey` and every cached on-chain query pointed at the old account,
   // silently showing stale data (fixes #88).
   useEffect(() => {
+    // `WatchWalletChanges.stop()` only flips an internal flag; a poll
+    // iteration already awaiting Freighter when we call it still runs to
+    // completion and fires this callback one last time (and schedules one
+    // more `setTimeout` we cannot clear from out here). `active` is a
+    // per-effect-instance latch so that trailing tick — and any tick after
+    // an unmount or a dependency-triggered re-subscribe — is ignored instead
+    // of mutating state on a torn-down tree.
+    let active = true;
     const watcher = new WatchWalletChanges();
     watcher.watch(({ address }) => {
-      if (!isMountedRef.current) return;
+      if (!active || !isMountedRef.current) return;
       if (!publicKeyRef.current) return; // no active session to keep in sync
 
       if (!address) {
@@ -507,7 +515,10 @@ export function WalletProvider({
       toast(`Switched to ${truncateAddress(address)}`, { icon: '🔄' });
     });
 
-    return () => watcher.stop();
+    return () => {
+      active = false;
+      watcher.stop();
+    };
   }, [clearTransactions, disconnect]);
 
   // ── signTx ─────────────────────────────────────────────────────────────────
@@ -529,48 +540,49 @@ export function WalletProvider({
     const globalAbortCleanup = () => {
       operationAbortController.abort();
     };
-    abortControllerRef.current?.signal.addEventListener('abort', globalAbortCleanup, { once: true });
+    const globalAbortSignal = abortControllerRef.current?.signal;
+    globalAbortSignal?.addEventListener('abort', globalAbortCleanup, { once: true });
 
-    // Acquire a semaphore permit — limits concurrent Freighter popups
-    const release = await semaphoreRef.current.acquire(combinedSignal);
+    try {
+      // Acquire a semaphore permit — limits concurrent Freighter popups
+      const release = await semaphoreRef.current.acquire(combinedSignal);
 
-    return trackOperation(async () => {
-      try {
-        if (combinedSignal.aborted) {
-          throw new Error('Operation aborted');
+      return await trackOperation(async () => {
+        try {
+          if (combinedSignal.aborted) {
+            throw new Error('Operation aborted');
+          }
+
+          const requestId = pendingRequestIdRef.current;
+          const currentPublicKey = publicKeyRef.current;
+          const { signedTxXdr, error } = await withTimeout(
+            signTransaction(xdr, {
+              networkPassphrase: getNetworkPassphrase(),
+              address:           currentPublicKey ?? undefined,
+            }),
+            WALLET_CONNECT_TIMEOUT_MS,
+            'Freighter signing',
+          );
+
+          if (combinedSignal.aborted) {
+            throw new Error('Operation aborted');
+          }
+
+          if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKeyRef.current) {
+            throw new Error('Wallet state changed during signing. Please retry the operation.');
+          }
+
+          if (error || !signedTxXdr) {
+            throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
+          }
+          return signedTxXdr;
+        } finally {
+          release();
         }
-
-        const requestId = pendingRequestIdRef.current;
-        const currentPublicKey = publicKeyRef.current;
-        const { signedTxXdr, error } = await withTimeout(
-          signTransaction(xdr, {
-            networkPassphrase: getNetworkPassphrase(),
-            address:           currentPublicKey ?? undefined,
-          }),
-          WALLET_CONNECT_TIMEOUT_MS,
-          { label: 'Freighter signing', onTimeout: walletTimeoutError },
-        );
-
-        if (combinedSignal.aborted) {
-          throw new Error('Operation aborted');
-        }
-
-        if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKeyRef.current) {
-          throw new Error('Wallet state changed during signing. Please retry the operation.');
-        }
-
-        if (error || !signedTxXdr) {
-          throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
-        }
-        // A successful signature is meaningful activity — keep the session
-        // alive rather than let it lapse mid-use (#430).
-        touchWalletSession();
-        return signedTxXdr;
-      } finally {
-        release();
-        abortControllerRef.current?.signal.removeEventListener('abort', globalAbortCleanup);
-      }
-    });
+      });
+    } finally {
+      globalAbortSignal?.removeEventListener('abort', globalAbortCleanup);
+    }
   }, [publicKey, trackOperation]);
 
   // ── Memoized context value ─────────────────────────────────────────────────

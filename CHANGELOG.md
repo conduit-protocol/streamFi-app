@@ -23,15 +23,10 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 - `force_cancel()` action in `StreamActions` for recipients (once contract support is merged)
 
 ### Fixed
-- `withBoundedParallel` no longer manufactures and discards a fresh `AbortController` per item when the caller passes no outer signal — every handler in the batch now receives one shared, referenceable `AbortSignal` instead of a definitionally-dead one (#221)
-- `checkRecipientExists` now reads the recipient's ledger entry directly and treats only an empty
-  result as "does not exist"; an unrelated RPC failure (a JSON-RPC `Method not found`, a 404 from a
-  mistyped `NEXT_PUBLIC_SOROBAN_RPC_URL`, a proxy error page) is reported as "couldn't check"
-  instead of telling the user the recipient account doesn't exist. The create form's recipient
-  check also passes its abort signal through, which it previously created and never used
-- `Mutex`/`Semaphore` in `WalletContext` no longer lose the lock/permit when a queued waiter is
-  aborted in the same tick that dequeues it — after enough of those races the semaphore was
-  permanently exhausted and every `signTx` hung, and `connect()` deadlocked outright
+- Wallet session reads now prefer the in-memory fallback over stale localStorage values when storage writes fail
+- ErrorBoundary schedules circuit-breaker recovery after committed updates instead of during render
+- Settings persistence now ignores unavailable localStorage writes and skips the initial re-write on mount
+- Local network token lookup no longer returns testnet contract addresses when local tokens are not configured
 - `refreshStreamData` now invalidates active queries once instead of immediately refetching the same queries a second time
 - Removed the unused multisig transaction scaffold, which had no callers or tests and discarded the clipboard success result
 - `scValToU64`/`scValToI128` and `streamsBySender`/`streamsByRecipient` now boundary-check the RPC

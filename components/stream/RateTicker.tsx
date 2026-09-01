@@ -8,10 +8,10 @@ interface RateTickerProps {
   ratePerSecond: bigint;
   /** Current withdrawable balance in stroops (fetched from contract) */
   startBalance: bigint;
+  /** Unix timestamp when the stream ends (0 = open-ended). Ticker freezes past this (#398). */
+  endTime: number;
   /** Decimal places to display (default: 7 for XLM) */
   decimals?: number;
-  /** Unix timestamp when the stream ends (0 = open-ended). Ticker freezes past this. */
-  endTime?: number;
 }
 
 /**
@@ -19,7 +19,7 @@ interface RateTickerProps {
  * Increments every 100ms based on ratePerSecond without any contract calls.
  * Freezes at endTime so the ticker doesn't overshoot the contract balance (#398).
  */
-export function RateTicker({ ratePerSecond, startBalance, decimals = 7, endTime = 0 }: RateTickerProps) {
+export function RateTicker({ ratePerSecond, startBalance, endTime, decimals = 7 }: RateTickerProps) {
   const startRef  = useRef<{ ts: number; balance: bigint }>({
     ts:      Date.now(),
     balance: startBalance,
@@ -32,27 +32,25 @@ export function RateTicker({ ratePerSecond, startBalance, decimals = 7, endTime 
   }, [startBalance]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      const elapsedMs = Date.now() - startRef.current.ts;
-      let elapsedSec = BigInt(Math.floor(elapsedMs / 1000));
-
-      if (endTime > 0) {
-        const endMs = endTime * 1000;
-        const remainingMs = endMs - startRef.current.ts;
-        const remainingSec = BigInt(Math.max(0, Math.floor(remainingMs / 1000)));
-        if (elapsedSec > remainingSec) elapsedSec = remainingSec;
-      }
-
-      if (elapsedSec < 0n) elapsedSec = 0n;
-
-      const current = startRef.current.balance + elapsedSec * ratePerSecond;
+    const update = () => {
+      const now = endTime > 0 ? Math.min(Date.now(), endTime * 1000) : Date.now();
+      const elapsed = BigInt(Math.max(0, Math.floor((now - startRef.current.ts) / 1000)));
+      const current = startRef.current.balance + elapsed * ratePerSecond;
       setDisplay(fromStroops(current, decimals));
+    };
+
+    update();
+    if (endTime > 0 && Date.now() >= endTime * 1000) return;
+
+    const id = setInterval(() => {
+      update();
+      if (endTime > 0 && Date.now() >= endTime * 1000) clearInterval(id);
     }, 100);
     return () => clearInterval(id);
-  }, [ratePerSecond, decimals, endTime]);
+  }, [ratePerSecond, endTime, decimals]);
 
   return (
-    <span className="amount" aria-live="polite" aria-atomic="true">
+    <span className="amount" suppressHydrationWarning>
       {display}
     </span>
   );

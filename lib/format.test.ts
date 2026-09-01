@@ -3,6 +3,7 @@ import {
   fromStroops,
   toStroops,
   formatDuration,
+  formatTimestamp,
   truncateAddress,
   wouldRateTruncateToZero,
 } from './format.js';
@@ -67,6 +68,11 @@ describe('fromStroops', () => {
   it('renders negative whole amounts correctly', () => {
     expect(fromStroops(-100_000_000n)).toBe('-10.00');
   });
+
+  it('handles tokens with >15 decimals without precision loss (issue #337)', () => {
+    expect(fromStroops(10_000_000_000_000_000_000n, 18)).toBe('10.00');
+    expect(fromStroops(1_234_567_890_123_456_789n, 18)).toBe('1.234567890123456789');
+  });
 });
 
 describe('toStroops', () => {
@@ -93,6 +99,41 @@ describe('toStroops', () => {
   it('handles negative whole-only correctly', () => {
     expect(toStroops('-3')).toBe(-30_000_000n);
   });
+
+  it('handles tokens with >15 decimals without precision loss (issue #337)', () => {
+    expect(toStroops('10.00', 18)).toBe(10_000_000_000_000_000_000n);
+    expect(toStroops('1.234567890123456789', 18)).toBe(1_234_567_890_123_456_789n);
+  });
+
+  describe('input validation and scientific notation (issue #338)', () => {
+    it('parses scientific notation', () => {
+      expect(toStroops('1e5')).toBe(1_000_000_000_000n);
+      expect(toStroops('1.5e2')).toBe(1_500_000_000n);
+      expect(toStroops('-1.5e2')).toBe(-1_500_000_000n);
+      expect(toStroops('1e7')).toBe(100_000_000_000_000n);
+    });
+
+    it('throws descriptive error on non-numeric input', () => {
+      expect(() => toStroops('abc')).toThrow('Invalid amount');
+      expect(() => toStroops('5-2')).toThrow('Invalid amount');
+      expect(() => toStroops('')).toThrow('Invalid amount');
+      expect(() => toStroops('   ')).toThrow('Invalid amount');
+    });
+
+    it('throws error when fractional part exceeds token decimals (issue #320)', () => {
+      expect(() => toStroops('1.12345678', 7)).toThrow(
+        'Amount has 8 decimal places but token only supports 7',
+      );
+    });
+  });
+});
+
+describe('formatTimestamp', () => {
+  it('formats unix timestamp with UTC timezone to prevent hydration mismatches (issue #339)', () => {
+    // 1700000000 = Tuesday, November 14, 2023 10:13:20 PM UTC
+    const formatted = formatTimestamp(1700000000);
+    expect(formatted).toBe('Nov 14, 2023, 10:13 PM');
+  });
 });
 
 describe('formatDuration', () => {
@@ -114,6 +155,18 @@ describe('formatDuration', () => {
 
   it('formats weeks', () => {
     expect(formatDuration(86400 * 14)).toBe('2w');
+  });
+
+  it('clamps negatives to 0 (issue #340)', () => {
+    expect(formatDuration(-5)).toBe('0s');
+    expect(formatDuration(-3600)).toBe('0s');
+    expect(formatDuration(0)).toBe('0s');
+  });
+
+  it('returns a placeholder for non-finite input (issue #340)', () => {
+    expect(formatDuration(Number.NaN)).toBe('—');
+    expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('—');
+    expect(formatDuration(Number.NEGATIVE_INFINITY)).toBe('—');
   });
 });
 
