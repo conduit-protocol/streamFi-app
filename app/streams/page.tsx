@@ -7,9 +7,8 @@ import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo } from "@/lib/stream";
+import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
-import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
