@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { fromStroops, formatTimestamp } from '@/lib/format';
 
 export interface StreamFlowChartProps {
@@ -40,12 +40,20 @@ export function StreamFlowChart({
 }: StreamFlowChartProps) {
   const [hoverPoint, setHoverPoint] = useState<DataPoint | null>(null);
 
+  // Client-only wall-clock snapshot to avoid SSR hydration mismatch.
+  // Use startTime as the SSR-safe default; the real time is set in
+  // useEffect after hydration — matching the StreamTimeline pattern.
+  const [now, setNow] = useState(() => (startTime > 0 ? startTime : Math.floor(Date.now() / 1000)));
+
+  useEffect(() => {
+    setNow(Math.floor(Date.now() / 1000));
+  }, [startTime]);
+
   const padding = { top: 20, right: 30, bottom: 30, left: 50 };
   const graphWidth = width - padding.left - padding.right;
   const graphHeight = height - padding.top - padding.bottom;
 
   const chartData = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
     const start = startTime > 0 ? startTime : now - 86400;
     const end = endTime > 0 ? endTime : start + 86400 * 7;
     const effectiveEnd = Math.max(end, start + 3600);
@@ -92,7 +100,7 @@ export function StreamFlowChart({
     });
 
     return { points, maxAmount, start, end: effectiveEnd };
-  }, [startTime, endTime, ratePerSecond, withdrawn, withdrawable, paused, pausedAt, cancelled, graphWidth, graphHeight, padding.left, padding.top]);
+  }, [startTime, endTime, ratePerSecond, withdrawn, withdrawable, paused, pausedAt, cancelled, graphWidth, graphHeight, padding.left, padding.top, now]);
 
   const { points, maxAmount, start, end } = chartData;
 
