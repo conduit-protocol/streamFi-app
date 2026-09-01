@@ -22,7 +22,7 @@
  * For paused / ended / cancelled streams the bar is static (no animation).
  */
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface StreamProgressBarProps {
   /** Unix timestamp (seconds) when the stream started */
@@ -46,9 +46,19 @@ export function StreamProgressBar({
 }: StreamProgressBarProps) {
   const fillRef = useRef<HTMLDivElement>(null);
 
-  // Derive a stable snapshot of the bar's position at mount time.
-  // We never call setState — the DOM ref carries the animation forward.
+  // Client-only wall-clock snapshot to avoid SSR hydration mismatch.
+  // Use startTime (safe SSR value) as the default; the real time is set in
+  // useEffect after hydration — matching the StreamTimeline pattern.
+  const [referenceSec, setReferenceSec] = useState(() =>
+    status === 'paused' && pausedAt ? pausedAt : startTime,
+  );
+
   useEffect(() => {
+    // Update to real wall-clock time after hydration
+    if (status !== 'paused') {
+      setReferenceSec(Math.floor(Date.now() / 1_000));
+    }
+
     const el = fillRef.current;
     if (!el) return;
 
@@ -98,11 +108,11 @@ export function StreamProgressBar({
     el.style.animationIterationCount = '1';
   }, [startTime, endTime, status, pausedAt]);
 
-  // Derive aria value for accessibility (computed once on render, not on tick)
-  const totalSec      = endTime > 0 ? endTime - startTime : 0;
-  const referenceSec  = status === 'paused' && pausedAt ? pausedAt : Math.floor(Date.now() / 1_000);
-  const elapsedSec    = totalSec > 0 ? Math.max(0, referenceSec - startTime) : 0;
-  const ariaNow        = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
+  // Derive aria value for accessibility (computed from referenceSec state,
+  // which is SSR-safe and updated to wall-clock time after hydration)
+  const totalSec    = endTime > 0 ? endTime - startTime : 0;
+  const elapsedSec  = totalSec > 0 ? Math.max(0, referenceSec - startTime) : 0;
+  const ariaNow     = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
 
   return (
     <>
@@ -117,12 +127,14 @@ export function StreamProgressBar({
         <div
           ref={fillRef}
           className="absolute inset-y-0 left-0 bg-black dark:bg-white rounded-full will-change-[width]"
-          /* Initial inline style prevents a flash of 0% before useEffect fires */
+          /* Initial inline style uses SSR-safe referenceSec (startTime on
+             mount, updated to wall-clock in useEffect). Prevents a flash
+             of 0% before the CSS animation kicks in without causing a
+             hydration mismatch. */
           style={{
             width: (() => {
               if (endTime === 0) return '0%';
-              const referenceSecInline = status === 'paused' && pausedAt ? pausedAt : Date.now() / 1_000;
-              const t = (referenceSecInline - startTime) / (endTime - startTime);
+              const t = (referenceSec - startTime) / (endTime - startTime);
               return `${Math.min(100, Math.max(0, t * 100)).toFixed(2)}%`;
             })(),
           }}
