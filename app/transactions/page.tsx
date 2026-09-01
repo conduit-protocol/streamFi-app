@@ -3,6 +3,7 @@
 import { AlertCircle, RefreshCw, Info, Download } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
+import { TransactionCardSkeleton } from '@/components/TransactionCardSkeleton';
 import { formatTimestamp, truncateAddress } from '@/lib/format';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import {
@@ -97,12 +98,7 @@ export default function TransactionsPage() {
       )}
 
       {status === 'pending' ? (
-        <Card>
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
-            <RefreshCw className="w-6 h-6 animate-spin" aria-hidden="true" />
-            <span className="text-sm">Loading transactions…</span>
-          </div>
-        </Card>
+        <TransactionCardSkeleton />
       ) : isIndexerComingSoon ? (
         <Card>
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
