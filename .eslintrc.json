@@ -1,4 +1,25 @@
 {
   "root": true,
-  "extends": "next/core-web-vitals"
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "FunctionDeclaration[id.name='withTimeout']",
+        "message": "Use withTimeout from @/lib/with-timeout instead of defining a local copy."
+      },
+      {
+        "selector": "VariableDeclarator[id.name='withTimeout'][init.type='FunctionExpression'], VariableDeclarator[id.name='withTimeout'][init.type='ArrowFunctionExpression']",
+        "message": "Use withTimeout from @/lib/with-timeout instead of assigning a local copy."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["lib/with-timeout.ts"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 }
