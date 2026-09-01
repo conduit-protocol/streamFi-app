@@ -61,8 +61,9 @@ export async function fetchTransactionHistory(
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
   return new Promise<TransactionRow[]>((resolve, reject) => {
+    let onAbort: (() => void) | undefined;
     if (signal) {
-      const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+      onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
       signal.addEventListener('abort', onAbort, { once: true });
     }
 
@@ -76,18 +77,28 @@ export async function fetchTransactionHistory(
     //   if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
     //   return (await res.json()).data.transactions;
 
+    const settle = (fn: () => void) => {
+      // Always clean up the abort listener to avoid leaking when the signal
+      // is reused across many calls — { once: true } only fires if the
+      // signal actually aborts, not on normal resolution (#355).
+      if (signal && onAbort) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      fn();
+    };
+
     // Demo mode only — never serve fabricated history to a configured deploy.
     let mock: boolean;
     try {
       mock = isMock();
     } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))));
       return;
     }
     if (mock) {
-      resolve(publicKey ? [] : DEMO_TXS);
+      settle(() => resolve(publicKey ? [] : DEMO_TXS));
     } else {
-      reject(new IndexerNotConfiguredError());
+      settle(() => reject(new IndexerNotConfiguredError()));
     }
   });
 }
