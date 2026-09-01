@@ -1,13 +1,36 @@
 'use client';
 
-import { AlertCircle, RefreshCw, Info } from 'lucide-react';
+import { AlertCircle, RefreshCw, Info, Download } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
 import { formatTimestamp, truncateAddress } from '@/lib/format';
-import { fetchTransactionHistoryWithTimeout, type TransactionRow } from '@/lib/indexer';
+import { toCsv, downloadCsv } from '@/lib/csv';
+import {
+  fetchTransactionHistoryWithTimeout,
+  isIndexerNotConfiguredError,
+  type TransactionRow,
+} from '@/lib/indexer';
 import { useWallet } from '@/contexts/WalletContext';
 
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
+
+const CSV_HEADERS = ['Type', 'Amount', 'Token', 'Status', 'Date (UTC)', 'Transaction Hash'] as const;
+
+/** Build the CSV text for the on-screen transaction rows. */
+function transactionsToCsv(txs: TransactionRow[]): string {
+  return toCsv(
+    CSV_HEADERS,
+    txs.map((tx) => [
+      tx.type,
+      // Drop the display thousands-separators so the column stays numeric.
+      tx.amount.replace(/,/g, ''),
+      tx.token,
+      tx.status,
+      new Date(tx.date * 1000).toISOString(),
+      tx.hash,
+    ]),
+  );
+}
 
 // #312 — Success/Failed used bg-green-*/bg-red-*, neither covered by
 // CONTRIBUTING.md's delta-only text-color exception (which doesn't apply to
@@ -26,14 +49,35 @@ export default function TransactionsPage() {
     queryKey: [...TRANSACTIONS_QUERY_KEY, publicKey],
     queryFn: () => fetchTransactionHistoryWithTimeout(publicKey),
     staleTime: 1000 * 30,
-    retry: 1,
+    retry: (failureCount, queryError) =>
+      !isIndexerNotConfiguredError(queryError) && failureCount < 1,
   });
 
   const isDemoData = connected && txs.length > 0;
+  const isIndexerComingSoon = status === 'error' && isIndexerNotConfiguredError(error);
+  const canExport = txs.length > 0;
+
+  const handleExport = () => {
+    if (!canExport) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`conduit-transactions-${stamp}.csv`, transactionsToCsv(txs));
+  };
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-black tracking-tight mb-8">Transaction History</h1>
+      <div className="flex items-center justify-between gap-4 mb-8">
+        <h1 className="text-2xl font-black tracking-tight">Transaction History</h1>
+        {canExport && (
+          <button
+            type="button"
+            onClick={handleExport}
+            className="btn-secondary text-sm shrink-0"
+          >
+            <Download className="w-4 h-4" aria-hidden="true" />
+            Export CSV
+          </button>
+        )}
+      </div>
 
       {isDemoData && (
         <div className="flex items-start gap-2 p-3 mb-4 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg">
@@ -59,10 +103,24 @@ export default function TransactionsPage() {
             <span className="text-sm">Loading transactions…</span>
           </div>
         </Card>
+      ) : isIndexerComingSoon ? (
+        <Card>
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <Info className="w-8 h-8 text-gray-400" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-black dark:text-white">
+                Transaction history is coming soon
+              </p>
+              <p className="text-xs text-gray-500 mt-1">
+                The indexer is not configured yet, so history will appear here once it is available.
+              </p>
+            </div>
+          </div>
+        </Card>
       ) : status === 'error' ? (
         <Card>
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <AlertCircle className="w-8 h-8 text-red-500" aria-hidden="true" />
+            <AlertCircle className="w-8 h-8 text-gray-500" aria-hidden="true" />
             <div>
               <p className="text-sm font-semibold text-black dark:text-white">
                 Couldn&apos;t load transaction history

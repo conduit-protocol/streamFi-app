@@ -65,10 +65,10 @@ describe('getStreamAddress', () => {
     expect(await getStreamAddress(SENDER, 999n)).toBeNull();
   });
 
-  it('returns null (not throw) when the underlying call rejects', async () => {
+  it('lets failures propagate so callers can tell "not found" from "RPC down"', async () => {
     mockSimulateReadOnly.mockRejectedValue(new Error('rpc down'));
     const { getStreamAddress } = await import('./stream.js');
-    expect(await getStreamAddress(SENDER, 1n)).toBeNull();
+    await expect(getStreamAddress(SENDER, 1n)).rejects.toThrow('rpc down');
   });
 });
 
@@ -110,13 +110,14 @@ describe('getStreamInfo', () => {
       pausedAt:        0,
       clawbackEnabled: true,
       cancelled:       false,
+      operator:        null,
     });
   });
 
   it('throws a clear error when a field is missing rather than silently defaulting', async () => {
     mockSimulateReadOnly.mockResolvedValue(scvMap({
       sender: new Address(SENDER).toScVal(),
-      flags:  xdr.ScVal.scvU32(0),
+      flags: xdr.ScVal.scvU32(0),
       // recipient deliberately omitted
     }));
     const { getStreamInfo } = await import('./stream.js');
@@ -202,7 +203,7 @@ describe('mutating calls', () => {
     const hash = await withdraw(SENDER, STREAM_ADDRESS, 5_000n, signTx);
     expect(hash).toBe('hash1');
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx,
+      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx, undefined,
     );
   });
 
@@ -211,7 +212,7 @@ describe('mutating calls', () => {
     const { cancel } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await cancel(SENDER, STREAM_ADDRESS, signTx)).toBe('hash2');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx);
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx, undefined);
   });
 
   it('pause()/resume() invoke their respective methods', async () => {
@@ -219,9 +220,9 @@ describe('mutating calls', () => {
     const { pause, resume } = await import('./stream.js');
     const signTx = vi.fn();
     await pause(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx);
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx, undefined);
     await resume(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx);
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx, undefined);
   });
 
   it('topUp() invokes top_up with the i128 amount', async () => {
@@ -230,7 +231,7 @@ describe('mutating calls', () => {
     const signTx = vi.fn();
     await topUp(SENDER, STREAM_ADDRESS, 25_000n, signTx);
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx,
+      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx, undefined,
     );
   });
 
@@ -239,6 +240,6 @@ describe('mutating calls', () => {
     const { clawback } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await clawback(SENDER, STREAM_ADDRESS, signTx)).toBe('hash5');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx);
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx, undefined);
   });
 });

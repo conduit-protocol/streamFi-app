@@ -11,8 +11,10 @@ import { RateTicker }      from '@/components/stream/RateTicker';
 import { StreamTimeline }  from '@/components/stream/StreamTimeline';
 import { StreamFlowChart } from '@/components/stream/StreamFlowChart';
 import { StreamActions }   from '@/components/stream/StreamActions';
+import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { useWallet }       from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
+import { useNetworkStatus }                                from '@/hooks/useNetworkStatus';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
 import { tokenByAddress } from '@/lib/tokens';
 import type { StreamInfo } from '@/lib/stream';
@@ -21,31 +23,49 @@ import type { StreamInfo } from '@/lib/stream';
 
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
-function deriveStatus(info: StreamInfo): StreamStatus {
+/** Derive the badge status from stream state and the *current* wall clock —
+ *  `nowSeconds` is passed in (not read here) so the page can re-derive it on a
+ *  tick and reflect the `active → ended` transition without a reload (#401). */
+function deriveStatus(info: StreamInfo, nowSeconds: number): StreamStatus {
   if (info.cancelled) return 'cancelled';
   if (info.paused)    return 'paused';
-  const now = Math.floor(Date.now() / 1000);
-  if (info.endTime > 0 && now >= info.endTime) return 'ended';
+  if (info.endTime > 0 && nowSeconds >= info.endTime) return 'ended';
   return 'active';
 }
+
+/** How often to re-fetch stream state so a pause/cancel done from another
+ *  device/tab shows up without a manual reload. */
+const STREAM_REFRESH_MS = 20_000;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StreamPage() {
   const { id }                                    = useParams<{ id: string }>();
   const { publicKey, connected }                  = useWallet();
+  // RPC-down / fetch-failure messaging is handled globally by
+  // NetworkTroubleBanner — defer to it rather than printing a raw
+  // "circuit breaker open" string here.
+  const { status: networkStatus }                 = useNetworkStatus();
   const mounted                                   = useRef(true);
   const loadSeq                                   = useRef(0);
 
   const [streamAddress, setStreamAddress]         = useState<string | null>(null);
   const [info,          setInfo]                  = useState<StreamInfo | null>(null);
   const [withdrawable,  setWithdrawable]          = useState<bigint>(0n);
-  const [status,        setStatus]                = useState<StreamStatus>('active');
+  const [nowSeconds,    setNowSeconds]            = useState(() => Math.floor(Date.now() / 1000));
   const [loading,       setLoading]               = useState(true);
   const [error,         setError]                 = useState<string | null>(null);
+  const [status,        setStatus]                = useState<StreamStatus>('active');
 
   useEffect(() => {
     return () => { mounted.current = false; };
+  }, []);
+
+  // Tick the clock every second so a time-based `active → ended` transition
+  // (and RateTicker) update while the tab stays open (#401).
+  useEffect(() => {
+    const t = setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1_000);
+    return () => clearInterval(t);
   }, []);
 
   const loadStream = useCallback(async () => {
@@ -53,7 +73,6 @@ export default function StreamPage() {
       setStreamAddress(null);
       setInfo(null);
       setWithdrawable(0n);
-      setStatus('active');
       setLoading(false);
       setError(null);
       return;
@@ -65,20 +84,27 @@ export default function StreamPage() {
     setLoading(true);
     setError(null);
     try {
+      if (!/^\d+$/.test(id)) {
+        if (isCurrent()) setError('Invalid stream ID.');
+        return;
+      }
+
       const addr = await getStreamAddress(publicKey, BigInt(id));
       if (!isCurrent()) return;
       if (!addr) { setError('Stream not found.'); return; }
 
-      const [streamInfo, wAmt] = await Promise.all([
-        getStreamInfo(publicKey, addr),
-        getWithdrawable(publicKey, addr),
-      ]);
-
+      const streamInfo = await getStreamInfo(publicKey, addr);
       if (!isCurrent()) return;
+
       setStreamAddress(addr);
       setInfo(streamInfo);
-      setWithdrawable(wAmt);
-      setStatus(deriveStatus(streamInfo));
+
+      try {
+        const wAmt = await getWithdrawable(publicKey, addr);
+        if (isCurrent()) setWithdrawable(wAmt);
+      } catch {
+        if (isCurrent()) setWithdrawable(0n);
+      }
     } catch (e) {
       if (!isCurrent()) return;
       setError(e instanceof Error ? e.message : 'Failed to load stream.');
@@ -88,6 +114,36 @@ export default function StreamPage() {
   }, [id, publicKey]);
 
   useEffect(() => { loadStream(); }, [loadStream]);
+
+  useEffect(() => {
+    if (info) setStatus(deriveStatus(info, nowSeconds));
+  }, [info, nowSeconds]);
+
+  useEffect(() => {
+    if (!info || status !== 'active' || info.endTime === 0) return;
+
+    const endAt = info.endTime * 1000;
+    let id: ReturnType<typeof setTimeout>;
+    let active = true;
+    const scheduleEnd = () => {
+      const remaining = endAt - Date.now();
+      if (remaining <= 0) {
+        setStatus('ended');
+        if (publicKey && streamAddress) {
+          void getWithdrawable(publicKey, streamAddress)
+            .then((amount) => { if (active) setWithdrawable(amount); })
+            .catch(() => { /* keep the last known balance on refresh failure */ });
+        }
+        return;
+      }
+      id = setTimeout(scheduleEnd, Math.min(remaining, 2_147_483_647));
+    };
+    scheduleEnd();
+    return () => {
+      active = false;
+      clearTimeout(id);
+    };
+  }, [info, status, publicKey, streamAddress]);
 
   // ── Render states ─────────────────────────────────────────────────────────
 
@@ -116,7 +172,13 @@ export default function StreamPage() {
       <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
-      <p className="text-sm text-gray-500 dark:text-gray-400">{error ?? 'Stream not found.'}</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400">
+        {error
+          ? networkStatus === 'trouble'
+            ? "Can't reach the network right now — this stream will load once the connection is back."
+            : error
+          : 'Stream not found.'}
+      </p>
     </div>
   );
 
@@ -163,7 +225,19 @@ export default function StreamPage() {
             <RateTicker
               ratePerSecond={info.ratePerSecond}
               startBalance={withdrawable}
+              endTime={info.endTime}
             />
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{tokenSymbol}</p>
+        </Card>
+      )}
+
+      {/* Ended — show the final claimable balance */}
+      {status === 'ended' && (
+        <Card className="mb-6 text-center">
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Final balance, ready to withdraw</p>
+          <p className="text-4xl font-black font-mono tabular-nums">
+            {fromStroops(withdrawable)}
           </p>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{tokenSymbol}</p>
         </Card>
@@ -249,6 +323,29 @@ export default function StreamPage() {
           token={tokenSymbol}
           onSuccess={loadStream}
         />
+      )}
+
+      {/* Delegated operator — shown when the stream has one set (#473) */}
+      {info.operator && (
+        <div className="mt-4">
+          <OperatorInfo
+            streamAddress={streamAddress}
+            operator={info.operator}
+            isSender={isSender}
+            onSuccess={loadStream}
+          />
+        </div>
+      )}
+
+      {info.operator && (
+        <div className="mt-4">
+          <OperatorInfo
+            streamAddress={streamAddress}
+            operator={info.operator}
+            isSender={isSender}
+            onSuccess={loadStream}
+          />
+        </div>
       )}
 
       {/* Clawback warning */}

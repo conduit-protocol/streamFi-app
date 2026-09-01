@@ -5,16 +5,28 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 ## [Unreleased]
 
 ### Added
+- Create form warns when the recipient is a contract (`C…`) address and blocks submit until the
+  user confirms the contract can call `withdraw()` — a SAC, token contract, or vault without that
+  call path would otherwise lock the whole deposit with no client-side warning
 - `/transactions` — responsive transaction history page (card layout on mobile, table on desktop)
 - Demo data layer — pages render without deployed contracts when env vars are empty
 
 ### Changed
+- One shared `withTimeout` in `lib/with-timeout.ts` replaces the three near-identical copies that
+  had drifted apart in `app/create/page.tsx`, `contexts/WalletContext.tsx` and `lib/soroban.ts`;
+  the shared helper is `AbortSignal`-aware, validates its deadline, and never leaves an abort
+  listener behind. Operation error types moved to `lib/errors.ts` (re-exported from
+  `lib/safe-operations.ts`, so existing imports are unchanged)
 - Stream cards responsive layout with truncated addresses and progress indicator
 - `/stream/[id]/history` — event log tab showing all past withdrawals, pauses, and top-ups
 - Mobile layout improvements for stream detail page
 - `force_cancel()` action in `StreamActions` for recipients (once contract support is merged)
 
 ### Fixed
+- Wallet session reads now prefer the in-memory fallback over stale localStorage values when storage writes fail
+- ErrorBoundary schedules circuit-breaker recovery after committed updates instead of during render
+- Settings persistence now ignores unavailable localStorage writes and skips the initial re-write on mount
+- Local network token lookup no longer returns testnet contract addresses when local tokens are not configured
 - `refreshStreamData` now invalidates active queries once instead of immediately refetching the same queries a second time
 - Removed the unused multisig transaction scaffold, which had no callers or tests and discarded the clipboard success result
 - `scValToU64`/`scValToI128` and `streamsBySender`/`streamsByRecipient` now boundary-check the RPC

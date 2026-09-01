@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@conduit-protocol/sdk": "github:conduit-protocol/conduit-sdk",
+    "@conduit-protocol/sdk": "https://codeload.github.com/conduit-protocol/streamFi-sdk/tar.gz/5de4fce26d3d3c73cf56f81e0bd54965dcf831a1",
     "@hookform/resolvers": "^5.4.0",
     "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^12.0.0",
@@ -29,6 +29,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.102.8",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20.14.0",

@@ -18,6 +18,9 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Reject non-standard registry URLs
+        run: '! grep -q "registry.npmmirror.com" package-lock.json'
+
       - run: npm ci
 
       - name: Lint
@@ -37,6 +40,9 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Reject non-standard registry URLs
+        run: '! grep -q "registry.npmmirror.com" package-lock.json'
+
       - run: npm ci
       - run: npm test
 
@@ -51,6 +57,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Reject non-standard registry URLs
+        run: '! grep -q "registry.npmmirror.com" package-lock.json'
 
       - run: npm ci
 

@@ -1,9 +1,9 @@
 import type { StreamInfo } from './stream';
 
-const SENDER    = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
-const RECIPIENT = 'GBV4ZDEPVQQ4HX6Z3V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7';
-const TOKEN_XLM  = 'CAS3J7GYLGX6UWJ6V7R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6';
-const TOKEN_USDC = 'CCW67TSZV3SSYUZQ5S7Y5T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6';
+const SENDER    = 'GBBJNFWGYQJ6NYQUKCHNF4737FWAK4CLI33JMSUMM7ZGOMDKN6TE2T4E';
+const RECIPIENT = 'GADUAJ5BWNIF4DJGCJ6DZ34C7KFVQDPNRSC54MHVCOV4EGZ3EIOETOSC';
+const TOKEN_XLM  = 'GAV5WUSJY4V4A6CHW6G2ZU5XYMIAKBRZNQDFQXQIKIEC5HDPKCKAA4GD';
+const TOKEN_USDC = 'GA5FYQQE7NZZQOSLDLQLBBQZXFQUQLV3FRGAECH6YVI6BXK7YTOCRLXG';
 
 export const MOCK_STREAM_IDS = [1n, 2n, 3n, 4n, 5n];
 
@@ -22,6 +22,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '2': {
     sender: RECIPIENT,
@@ -35,6 +36,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
   '3': {
     sender: SENDER,
@@ -48,6 +50,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '4': {
     sender: RECIPIENT,
@@ -61,6 +64,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: false,
     cancelled: true,
+    operator: null,
   },
   '5': {
     sender: SENDER,
@@ -74,20 +78,18 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
 };
 
-// #316 correction — the previous fix here still left entry '4' at 57
-// characters (one too many), so demo mode was still silently filtering that
-// stream out. Every real Stellar StrKey address (accounts and contracts) is
-// exactly 56 characters; these are genuinely 56-character, StrKey-valid
-// contract addresses (verified via @stellar/stellar-sdk's StrKey.encodeContract).
+// Valid 56-character StrKey contract addresses generated via
+// @stellar/stellar-sdk's StrKey.encodeContract (verified checksums).
 export const MOCK_ADDRESSES: Record<string, string> = {
-  '1': 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526',
-  '2': 'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ',
-  '3': 'CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3',
-  '4': 'CACAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAINCW',
-  '5': 'CACQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQLC2U',
+  '1': 'CCDT45LNPDPGPJGWNMWN7F3D7QNLBE2SZN4YY7GDKMLS4YVFV7QIB7N6',
+  '2': 'CBREE3IT5EDCMQRUIAATY5ZZUOACGBQE766RXNZP5WGSNKQSNCA2DUAN',
+  '3': 'CDWX3C3Y2FNA5ROZ54PAS7W7OKDZGHW5NHBCIE2SO5R4MVI6AC3APKNF',
+  '4': 'CDTNN743Z42NSVOM6QUUOY3FN5526R3LZY6A5LHFEVWWFNFFVKY5FMO2',
+  '5': 'CC25TYP47KHLCL4ODF6JSDUHTVWF7GWT3HNL2T5FDXAKJ4KOLVL4RDQN',
 };
 
 export const SENDER_STREAM_IDS = [1n, 3n, 5n];

@@ -335,47 +335,38 @@ describe('safeToStroops', () => {
     });
   });
 
-  // ── Regression test markers for known bugs ─────────────────────────
+  // ── Regression tests for resolved bugs ─────────────────────────
 
-  // BUG: safeToStroops('-5.25') returns -47_500_000n instead of -52_500_000n.
-  // BigInt('-5') * factor = -50_000_000, then + BigInt('2500000') = -47_500_000.
-  // The fractional part is always positive, so it cancels instead of adding to
-  // the negative whole part. Fix: strip sign, compute as positive, re-apply.
-  it.todo(
-    'correctly handles negative fractional amounts (BUG: sign cancellation on frac part)',
-  );
+  it('correctly handles negative fractional amounts', () => {
+    expect(safeToStroops('-5.25')).toBe(-52_500_000n);
+    expect(safeToStroops('-0.5')).toBe(-5_000_000n);
+  });
 
-  // BUG: safeToStroops('.5') returns null instead of 5_000_000n.
-  // Destructure defaults only apply when element is undefined, but
-  // '.5'.split('.') = ['', '5'] — whole = '' (not '0'), fails the regex.
-  // Fix: replace destructure default with `const whole = parts[0] || '0'`.
-  it.todo(
-    'correctly handles leading-dot input (BUG: empty-string whole bypasses default)',
-  );
+  it('correctly handles leading-dot input', () => {
+    expect(safeToStroops('.5')).toBe(5_000_000n);
+    expect(safeToStroops('-.5')).toBe(-5_000_000n);
+  });
 
-  describe('scientific notation (regression tests)', () => {
-    // BUG: safeToStroops('1e7') returns 1n instead of 100_000_000_000_000n.
-    // The ?? chain calls safeToStroops('1', 0) first (7 - 7 = 0).
-    // safeToStroops('1', 0) returns 1n, which is not null, so the correct
-    // safeToStroops('1', 7) call never runs.
-    // Fix: use || instead of ??, or only fall back if first call returns null.
-    it.todo(
-      'handles positive exponent: 1e7 (BUG: ?? short-circuits before correct fallback)',
-    );
+  describe('scientific notation', () => {
+    it('handles positive exponent: 1e7', () => {
+      expect(safeToStroops('1e7')).toBe(100_000_000_000_000n);
+    });
 
-    // BUG: safeToStroops('1.5e2') returns 150_000n instead of 1_500_000_000n.
-    // Same cause: safeToStroops('1.5', 5) returns 150_000n (non-null),
-    // short-circuiting the correct safeToStroops('1.5', 7) call.
-    it.todo(
-      'handles scientific notation with decimal: 1.5e2 (BUG: ?? short-circuits)',
-    );
+    it('handles scientific notation with decimal: 1.5e2', () => {
+      expect(safeToStroops('1.5e2')).toBe(1_500_000_000n);
+      expect(safeToStroops('-1.5e2')).toBe(-1_500_000_000n);
+    });
 
     it('handles scientific notation for small values: 1e-7', () => {
-      // Regex only matches /e(\d+)$/, so negative exponents fall through
-      // to normal parsing which can't handle '1e-7'.
+      // Regex only matches positive exponents, so negative exponents return null
       const result = safeToStroops('1e-7');
       expect(result).toBeNull();
     });
+  });
+
+  it('handles tokens with >15 decimals without precision loss', () => {
+    expect(safeToStroops('10.00', 18)).toBe(10_000_000_000_000_000_000n);
+    expect(safeToStroops('1.234567890123456789', 18)).toBe(1_234_567_890_123_456_789n);
   });
 });
 
@@ -406,18 +397,16 @@ describe('safePercent', () => {
     expect(safePercent(150, 100, 100)).toBe(0);
   });
 
-  // BUG: safePercent returns a 0-1 ratio instead of the documented 0-100
-  // percentage. The final `/ 100` division should not exist.
-  it('returns 0.5 for midpoint (BUG: should be 50, but returns 0.5 due to final / 100)', () => {
-    expect(safePercent(50, 0, 100)).toBe(0.5);
+  it('returns 50 for midpoint', () => {
+    expect(safePercent(50, 0, 100)).toBe(50);
   });
 
-  it('returns 0.25 for 25% (BUG: should be 25)', () => {
-    expect(safePercent(25, 0, 100)).toBe(0.25);
+  it('returns 25 for 25%', () => {
+    expect(safePercent(25, 0, 100)).toBe(25);
   });
 
-  it('handles non-integer boundaries on 0-1 scale', () => {
-    expect(safePercent(15.5, 10, 20)).toBeCloseTo(0.55, 2);
+  it('handles non-integer boundaries', () => {
+    expect(safePercent(15.5, 10, 20)).toBeCloseTo(55, 2);
   });
 });
 
@@ -826,25 +815,18 @@ describe('safeToStroops — scientific notation', () => {
     expect(safeToStroops('5.123', 7)).toBe(51_230_000n);
   });
 
-  it('parses scientific notation with positive effective decimals', () => {
-    // decimals(7) - exp(2) = 5
-    expect(safeToStroops('5e2', 7)).toBe(500_000n);
-    expect(safeToStroops('5.123e2', 7)).toBe(512_300n);
+  it('parses scientific notation with exponent', () => {
+    expect(safeToStroops('5e2', 7)).toBe(5_000_000_000n);
+    expect(safeToStroops('5.123e2', 7)).toBe(5_123_000_000n);
   });
 
-  it('parses scientific notation with negative effective decimals correctly (large exponents)', () => {
-    // decimals(7) - exp(10) = -3
-    expect(safeToStroops('5e10', 7)).toBe(50_000_000_000n);
-    
-    // decimals(7) - exp(8) = -1 (small negative effective decimals edge case)
-    expect(safeToStroops('5e8', 7)).toBe(500_000_000n);
-    
-    // fractional base
-    expect(safeToStroops('5.123e10', 7)).toBe(51_230_000_000n);
+  it('parses scientific notation with large exponents', () => {
+    expect(safeToStroops('5e10', 7)).toBe(500_000_000_000_000_000n);
+    expect(safeToStroops('5e8', 7)).toBe(5_000_000_000_000_000n);
+    expect(safeToStroops('5.123e10', 7)).toBe(512_300_000_000_000_000n);
   });
 
   it('safely handles an absurdly large exponent without crashing, returning null', () => {
-    // exp(150) -> effective decimals -143 (power = 143 > 100)
     expect(safeToStroops('5e150', 7)).toBeNull();
   });
 

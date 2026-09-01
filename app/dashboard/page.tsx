@@ -11,6 +11,7 @@ import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo, getWithdrawable } from "@/lib/stream";
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
@@ -31,12 +32,17 @@ function deriveStatus(info: StreamInfo, now: number): StreamStatus {
   return "active";
 }
 
+interface LoadRowsResult {
+  rows: StreamRow[];
+  failedCount: number;
+}
+
 async function loadRows(
   publicKey: string,
   role: "sender" | "recipient",
   now: number,
   signal: AbortSignal,
-): Promise<StreamRow[]> {
+): Promise<LoadRowsResult> {
   let ids: bigint[];
   try {
     ids =
@@ -44,53 +50,87 @@ async function loadRows(
         ? await streamsBySender(publicKey, publicKey, 0, 50, { signal })
         : await streamsByRecipient(publicKey, publicKey, 0, 50, { signal });
   } catch {
-    return [];
+    return { rows: [], failedCount: 0 };
   }
 
-  if (!ids || !Array.isArray(ids)) return [];
+  if (!ids || !Array.isArray(ids)) return { rows: [], failedCount: 0 };
 
-  const rows: StreamRow[] = [];
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (signal.aborted) return [];
-    if (typeof id !== "bigint") continue;
-    const rowId = id.toString();
-    if (seen.has(rowId)) continue;
-    try {
-      const addr = await getStreamAddress(publicKey, id, { signal });
-      if (!addr || typeof addr !== "string") continue;
-      const [info, withdrawable] = await Promise.all([
-        getStreamInfo(publicKey, addr, { signal }),
-        getWithdrawable(publicKey, addr, { signal }),
-      ]);
-      if (!info || typeof info !== "object") continue;
-      if (typeof info.ratePerSecond !== "bigint") continue;
-      if (signal.aborted) return [];
-      rows.push({
-        id: rowId,
-        address: addr,
-        info,
-        withdrawable,
-        status: deriveStatus(info, now),
-      });
-      seen.add(rowId);
-    } catch {
-      /* skip invalid streams */
+  const uniqueIds = [...new Set(ids.filter((id): id is bigint => typeof id === "bigint"))];
+
+  // Phase 1: resolve all stream addresses in parallel
+  const addrResults = await Promise.allSettled(
+    uniqueIds.map((id) => getStreamAddress(publicKey, id, { signal })),
+  );
+
+  const addrPairs: { id: bigint; rowId: string; addr: string }[] = [];
+  let failedCount = 0;
+  for (let i = 0; i < uniqueIds.length; i++) {
+    const r = addrResults[i];
+    if (signal.aborted) return { rows: [], failedCount: 0 };
+    if (r && r.status === "fulfilled" && r.value && typeof r.value === "string") {
+      addrPairs.push({ id: uniqueIds[i]!, rowId: uniqueIds[i]!.toString(), addr: r.value });
+    } else {
+      failedCount++;
     }
   }
-  return rows;
+
+  // Phase 2: fetch info+withdrawable in bounded-parallel batches
+  const BATCH_SIZE = 5;
+  const rows: StreamRow[] = [];
+
+  for (let start = 0; start < addrPairs.length; start += BATCH_SIZE) {
+    if (signal.aborted) return { rows: [], failedCount: 0 };
+    const batch = addrPairs.slice(start, start + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(({ addr }) =>
+        Promise.all([
+          getStreamInfo(publicKey, addr, { signal }),
+          getWithdrawable(publicKey, addr, { signal }),
+        ]),
+      ),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      const pair = batch[j]!;
+      if (
+        r &&
+        r.status === "fulfilled" &&
+        r.value[0] &&
+        typeof r.value[0] === "object" &&
+        typeof r.value[0].ratePerSecond === "bigint"
+      ) {
+        rows.push({
+          id: pair.rowId,
+          address: pair.addr,
+          info: r.value[0],
+          withdrawable: r.value[1],
+          status: deriveStatus(r.value[0], now),
+        });
+      } else {
+        failedCount++;
+      }
+    }
+  }
+
+  return { rows, failedCount };
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { publicKey, connected } = useWallet();
+  // When the RPC is unreachable, a global banner (NetworkTroubleBanner)
+  // already explains the situation — suppress the per-page error card and the
+  // partial-load bar so the user isn't told the same thing twice.
+  const { status: networkStatus } = useNetworkStatus();
+  const networkTrouble = networkStatus === "trouble";
 
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
   // #307 — loadSeqRef is the ordering guard: each fetch captures its own
   // seq and only commits state if it's still the most recent request by the
   // time it resolves, the same pattern app/stream/[id]/page.tsx uses.
@@ -100,22 +140,37 @@ export default function DashboardPage() {
   // one, instead of each site spinning up its own untracked controller.
   const loadSeqRef = useRef(0);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const lastFetchAtRef = useRef(0);
+  // Guards the manual refresh controls: while a fetch is in flight, extra
+  // clicks are ignored rather than piling up overlapping requests.
+  const inFlightRef = useRef(false);
 
   const fetchStreams = useCallback(async (signal: AbortSignal) => {
     if (!publicKey) return;
+    inFlightRef.current = true;
     const seq = ++loadSeqRef.current;
     const isCurrent = () => seq === loadSeqRef.current;
     const now = Math.floor(Date.now() / 1000);
     setLoading(true);
-    setError(null);
+    // The previous error / partial-load notices stay on screen (with their
+    // Retry control disabled) until this refresh settles, rather than blinking
+    // out and back — the `loading` flag is what signals work is in progress.
     try {
       const [recv, sent] = await Promise.all([
         loadRows(publicKey, "recipient", now, signal),
         loadRows(publicKey, "sender", now, signal),
       ]);
       if (!signal.aborted && isCurrent()) {
-        setReceiving(recv);
-        setSending(sent);
+        setReceiving(recv.rows);
+        setSending(sent.rows);
+        const totalFailed = recv.failedCount + sent.failedCount;
+        setPartialError(
+          totalFailed > 0
+            ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} could not be loaded — some data may be missing.`
+            : null,
+        );
+        setError(null);
+        lastFetchAtRef.current = Date.now();
       }
     } catch (e) {
       if (!signal.aborted && isCurrent()) {
@@ -123,11 +178,19 @@ export default function DashboardPage() {
         setError("Failed to load streams. Please try again.");
       }
     } finally {
-      if (!signal.aborted && isCurrent()) setLoading(false);
+      // Only the most recent fetch clears the in-flight latch — an older,
+      // superseded fetch resolving late must not re-open the gate.
+      if (isCurrent()) {
+        inFlightRef.current = false;
+        if (!signal.aborted) setLoading(false);
+      }
     }
   }, [publicKey]);
 
-  const refetch = useCallback(() => {
+  const refetch = useCallback((force = false) => {
+    // Ignore manual triggers while a refresh is already running. `force` is
+    // for callers that must always re-read (wallet switch, post-withdraw).
+    if (!force && inFlightRef.current) return;
     activeControllerRef.current?.abort();
     const controller = new AbortController();
     activeControllerRef.current = controller;
@@ -139,12 +202,15 @@ export default function DashboardPage() {
       setReceiving([]);
       setSending([]);
       setError(null);
+      setPartialError(null);
       return;
     }
-    refetch();
+    refetch(true);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        // Skip refetch if the last fetch was less than 5s ago
+        if (Date.now() - lastFetchAtRef.current < 5_000) return;
         refetch();
       }
     };
@@ -231,9 +297,23 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {error && (
-        <div className="card text-center py-4 mb-6 text-sm text-red-500 dark:text-red-400">
+      {error && !networkTrouble && (
+        <div className="card text-center py-4 mb-6 text-sm text-gray-600 dark:text-gray-400">
           {error}
+        </div>
+      )}
+
+      {partialError && !error && !networkTrouble && (
+        <div className="card text-center py-3 mb-6 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          {partialError}
+          <button
+            onClick={() => refetch()}
+            disabled={loading}
+            className="underline font-semibold hover:text-black dark:hover:text-white ml-1 disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+          >
+            {loading ? "Retrying…" : "Retry"}
+          </button>
         </div>
       )}
 
@@ -279,7 +359,9 @@ export default function DashboardPage() {
                     }))}
                   onComplete={async () => {
                     await refreshStreamData();
-                    refetch();
+                    // Balances just changed — bypass the in-flight guard so
+                    // this refresh always lands.
+                    refetch(true);
                   }}
                 />
               </div>
@@ -292,17 +374,21 @@ export default function DashboardPage() {
                 <StreamCardSkeleton key={i} />
               ))}
             </div>
-          ) : error ? (
+          ) : error && !networkTrouble ? (
             <div className="card py-8 px-6 flex flex-col items-center gap-4 text-center">
               <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" aria-hidden="true" />
               <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
               <button
-                onClick={refetch}
+                onClick={() => refetch()}
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
                 Retry
               </button>
+            </div>
+          ) : displayed.length === 0 && error ? (
+            <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
+              Your streams will appear here once the connection is back.
             </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">

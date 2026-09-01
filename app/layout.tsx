@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Providers } from '@/components/Providers';
 import { Navbar }    from '@/components/Navbar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { CircuitBreakerOverlay } from '@/components/CircuitBreakerOverlay';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
             </ErrorBoundary>
           </main>
+          {process.env.NODE_ENV === 'development' && <CircuitBreakerOverlay />}
           <footer className="border-t border-gray-200 dark:border-gray-800 py-8 mt-16">
             <div className="max-w-5xl mx-auto px-4 flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
               <span>Conduit Protocol — MIT License</span>

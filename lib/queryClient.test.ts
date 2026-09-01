@@ -40,11 +40,22 @@ describe('QueryClient isolation and helpers (#345)', () => {
     expect(client1).toBe(client2);
   });
 
-  it('refetches active queries only once after a stream mutation succeeds', async () => {
+  it('invalidates only the stream-related trees (active) after a stream mutation', async () => {
     await refreshStreamData();
 
-    expect(mockInvalidateQueries).toHaveBeenCalledTimes(1);
+    // Scoped to the stream / dashboard / transactions trees — never a blanket
+    // app-wide invalidation (#215 / #354 / #431).
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(3);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['stream'],
+      refetchType: 'active',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['dashboard'],
+      refetchType: 'active',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['transactions'],
       refetchType: 'active',
     });
     expect(mockRefetchQueries).not.toHaveBeenCalled();

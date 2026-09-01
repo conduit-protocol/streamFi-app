@@ -94,10 +94,10 @@ describe('WalletContext', () => {
   it('restores a valid stored wallet session on mount', () => {
     localStorage.setItem(
       'conduit:wallet',
-      JSON.stringify({ key: 'GVALID123', name: 'Freighter', expiresAt: Date.now() + 60000 }),
+      JSON.stringify({ key: 'GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR', name: 'Freighter', expiresAt: Date.now() + 60000 }),
     );
     const { stateRef, container } = mountWallet();
-    expect(stateRef.current?.publicKey).toBe('GVALID123');
+    expect(stateRef.current?.publicKey).toBe('GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR');
     document.body.removeChild(container);
   });
 
@@ -311,6 +311,90 @@ describe('WalletContext', () => {
     document.body.removeChild(container);
   });
 
+  // ── watcher teardown ──────────────────────────────────────────────────────
+
+  function mountWalletWithRoot() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const stateRef = { current: null as any };
+    function TestComponent() {
+      const wallet = useWallet();
+      useEffect(() => { stateRef.current = wallet; }, [wallet]);
+      return null;
+    }
+    act(() => {
+      root.render(
+        <WalletProvider>
+          <TestComponent />
+        </WalletProvider>,
+      );
+    });
+    const rerender = () => {
+      act(() => {
+        root.render(
+          <WalletProvider>
+            <TestComponent />
+          </WalletProvider>,
+        );
+      });
+    };
+    return { root, container, stateRef, rerender };
+  }
+
+  it('stops the wallet-change watcher on unmount and ignores its trailing poll', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GAFIRSTACCOUNT', error: null } as any);
+
+    const { root, container, stateRef } = mountWalletWithRoot();
+    await act(async () => { await stateRef.current.connect(); });
+    expect(stateRef.current?.publicKey).toBe('GAFIRSTACCOUNT');
+
+    const watcher = watchInstances[watchInstances.length - 1];
+
+    act(() => { root.unmount(); });
+    expect(watcher?.stopped).toBe(true);
+
+    // A poll already in flight when stop() ran still fires the callback once;
+    // it must not mutate caches or storage on the detached tree.
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    act(() => {
+      watcher?.cb?.({ address: 'GALATEACCOUNT', network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
+    });
+
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('conduit:wallet')!).key).toBe('GAFIRSTACCOUNT');
+
+    document.body.removeChild(container);
+  });
+
+  it('ignores a stale watcher callback after the subscription is replaced', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GAFIRSTACCOUNT', error: null } as any);
+
+    const { container, stateRef, rerender } = mountWalletWithRoot();
+    await act(async () => { await stateRef.current.connect(); });
+
+    const staleWatcher = watchInstances[watchInstances.length - 1]!;
+
+    // Re-render the provider so the watcher effect tears down and re-subscribes
+    // (the component stays mounted, so isMountedRef alone would not catch this).
+    rerender();
+
+    expect(staleWatcher.stopped).toBe(true);
+    expect(watchInstances[watchInstances.length - 1]).not.toBe(staleWatcher);
+
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    act(() => {
+      staleWatcher.cb?.({ address: 'GASTALEACCOUNT', network: 'TESTNET', networkPassphrase: 'Test SDF Network ; September 2015' });
+    });
+
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(stateRef.current?.publicKey).toBe('GAFIRSTACCOUNT');
+
+    document.body.removeChild(container);
+  });
+
   it('rejects signTx with error when the account changes while signing is in flight', async () => {
     let resolveSign: (value: { signedTxXdr: string; signerAddress: string; error: null }) => void;
     const signPromise = new Promise<{ signedTxXdr: string; signerAddress: string; error: null }>((resolve) => {
@@ -356,6 +440,33 @@ describe('WalletContext', () => {
     expect(errorRef.current).not.toBeNull();
     expect(errorRef.current?.message).toMatch(/Wallet state changed during signing/i);
 
+    document.body.removeChild(container);
+  });
+
+  it('removes the session abort listener after signTx settles', async () => {
+    mockedFreighter.isConnected.mockResolvedValue({ isConnected: true });
+    mockedFreighter.requestAccess.mockResolvedValue({ address: 'GACLEANUPTEST', error: null } as any);
+    mockedFreighter.signTransaction.mockResolvedValue({ signedTxXdr: 'signed-xdr', error: null } as any);
+
+    const { stateRef, container } = mountWallet();
+
+    await act(async () => {
+      await stateRef.current.connect();
+    });
+
+    const addSpy = vi.spyOn(AbortSignal.prototype, 'addEventListener');
+    const removeSpy = vi.spyOn(AbortSignal.prototype, 'removeEventListener');
+    await act(async () => {
+      await stateRef.current.signTx('AAAA');
+    });
+
+    const abortAdds = addSpy.mock.calls.filter(([type]) => type === 'abort');
+    const abortRemovals = removeSpy.mock.calls.filter(([type]) => type === 'abort');
+    expect(abortAdds.length).toBeGreaterThan(0);
+    expect(abortRemovals).toHaveLength(abortAdds.length);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
     document.body.removeChild(container);
   });
 
@@ -518,6 +629,46 @@ describe('Mutex — queued acquire under load', () => {
     expect(typeof release3).toBe('function');
     release3();
   });
+
+  // #389 — the lock is handed to a waiter by `_release()` *before* the waiter
+  // checks its abort signal. Rejecting there without releasing strands the
+  // lock and deadlocks every later connect().
+  it('hands the lock on instead of stranding it when a waiter is aborted by the very release that dequeues it', async () => {
+    const mutex = new Mutex();
+    const release1 = await mutex.acquire();
+
+    // The holder releases from an abort listener registered before the
+    // waiter's own — exactly the shape disconnect() produces, where one
+    // signal both cancels queued work and frees the in-flight holder.
+    const controller = new AbortController();
+    controller.signal.addEventListener('abort', () => release1(), { once: true });
+
+    const queued = mutex.acquire(controller.signal);
+    controller.abort();
+    await expect(queued).rejects.toThrow(/aborted/i);
+
+    // The lock must be free again, not stuck in the aborted waiter's hands.
+    const release2 = await mutex.acquire();
+    expect(typeof release2).toBe('function');
+    release2();
+  });
+
+  it('rejects up front when acquire() is handed an already-aborted signal, instead of queueing a waiter that can never be woken', async () => {
+    const mutex = new Mutex();
+    const release1 = await mutex.acquire();
+
+    // An already-aborted signal never fires an 'abort' event, so the waiter
+    // would sit in the queue until `_release()` handed it the lock and it
+    // rejected — losing the lock for good (#389).
+    const controller = new AbortController();
+    controller.abort();
+    await expect(mutex.acquire(controller.signal)).rejects.toThrow(/aborted/i);
+
+    release1();
+    const release2 = await mutex.acquire();
+    expect(typeof release2).toBe('function');
+    release2();
+  });
 });
 
 describe('Semaphore — unit tests', () => {
@@ -639,6 +790,56 @@ describe('Semaphore — unit tests', () => {
     const release4 = await p4;
     expect(typeof release4).toBe('function');
     release4();
+  });
+
+  // #389 — `_release()` dequeues a waiter and hands it the permit without
+  // touching `_available`. If that waiter then rejects because its signal
+  // fired, the permit is gone for good.
+  it('returns the permit instead of losing it when a waiter is aborted by the very release that dequeues it', async () => {
+    const sem = new Semaphore(1);
+    const release1 = await sem.acquire();
+
+    const controller = new AbortController();
+    controller.signal.addEventListener('abort', () => release1(), { once: true });
+
+    const queued = sem.acquire(controller.signal);
+    expect(sem.pendingCount).toBe(1);
+
+    controller.abort();
+    await expect(queued).rejects.toThrow(/aborted/i);
+
+    expect(sem.availablePermits).toBe(1);
+    const release2 = await sem.acquire();
+    expect(typeof release2).toBe('function');
+    release2();
+  });
+
+  it('recovers every permit when a burst of queued waiters aborts as the holders release', async () => {
+    const sem = new Semaphore(3);
+    const holders = [await sem.acquire(), await sem.acquire(), await sem.acquire()];
+    expect(sem.availablePermits).toBe(0);
+
+    // One signal cancels all three queued waiters while simultaneously
+    // freeing the three holders — the disconnect()-mid-flight shape. Before
+    // the fix this exhausted the semaphore permanently and every subsequent
+    // signTx hung.
+    const controller = new AbortController();
+    for (const release of holders) {
+      controller.signal.addEventListener('abort', () => release(), { once: true });
+    }
+    const queued = [
+      sem.acquire(controller.signal),
+      sem.acquire(controller.signal),
+      sem.acquire(controller.signal),
+    ];
+
+    controller.abort();
+    for (const p of queued) {
+      await expect(p).rejects.toThrow(/aborted/i);
+    }
+
+    expect(sem.pendingCount).toBe(0);
+    expect(sem.availablePermits).toBe(3);
   });
 });
 

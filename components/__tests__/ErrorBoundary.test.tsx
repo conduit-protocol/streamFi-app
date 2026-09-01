@@ -95,6 +95,24 @@ describe('ErrorBoundary (issue #92 regression)', () => {
     expect(container.textContent).toContain('Too many errors');
   });
 
+  it('does not schedule the breaker reset as a render side effect (#421)', () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const boundary = new ErrorBoundary({});
+
+    boundary.state = {
+      hasError: true,
+      error: new Error('boom'),
+      errorCount: MAX_ERROR_COUNT,
+    };
+
+    boundary.render();
+
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('preserves errorCount and trips the circuit breaker when retrying via a custom fallback', () => {
     // Render custom fallback with Bomb throwing
     act(() => {

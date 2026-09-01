@@ -64,6 +64,17 @@ export class ErrorBoundary extends Component<Props, State> {
     window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
   }
 
+  public componentDidUpdate(_prevProps: Props, prevState: State) {
+    const breakerTripped =
+      this.state.hasError &&
+      this.state.errorCount >= MAX_ERROR_COUNT &&
+      prevState.errorCount < MAX_ERROR_COUNT;
+
+    if (breakerTripped) {
+      this.scheduleReset();
+    }
+  }
+
   public componentWillUnmount() {
     window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
     if (this.resetTimer) clearTimeout(this.resetTimer);
@@ -98,7 +109,6 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       if (this.state.errorCount >= MAX_ERROR_COUNT) {
-        this.scheduleReset();
         return React.createElement('div', { className: 'flex items-center justify-center min-h-[200px]' },
           React.createElement('div', { className: 'text-center p-6 max-w-md' },
             React.createElement('h2', { className: 'text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2' }, 'Too many errors'),

@@ -37,6 +37,8 @@ export interface StreamInfo {
   pausedAt:        number;
   clawbackEnabled: boolean;
   cancelled:       boolean;
+  /** Delegated operator, if the sender has set one. `null` when unset. */
+  operator:        string | null;
 }
 
 // ── Read-only ─────────────────────────────────────────────────────────────────
@@ -50,19 +52,19 @@ export async function getStreamAddress(
   options?: { signal?: AbortSignal },
 ): Promise<string | null> {
   if (isMock()) return MOCK_ADDRESSES[streamId.toString()] ?? null;
-  try {
-    const result = await simulateReadOnly(
-      source,
-      FACTORY()!,
-      'stream_address',
-      [nativeToScVal(streamId, { type: 'u64' })],
-      options,
-    );
-    if (result.switch().name === 'scvVoid') return null;
-    return Address.fromScVal(result).toString();
-  } catch {
-    return null;
-  }
+  const result = await simulateReadOnly(
+    source,
+    FACTORY()!,
+    'stream_address',
+    [nativeToScVal(streamId, { type: 'u64' })],
+    options,
+  );
+  // scvVoid is DripFactory::stream_address returning Option::None — the only
+  // case that means "this stream ID does not exist". RPC/network failures and
+  // a misconfigured factory env var must propagate so callers don't mistake
+  // an outage for a missing stream.
+  if (result.switch().name === 'scvVoid') return null;
+  return Address.fromScVal(result).toString();
 }
 
 /**
@@ -121,6 +123,7 @@ export async function getStreamInfo(
       pausedAt: 0,
       clawbackEnabled: false,
       cancelled: false,
+      operator: null,
     };
     return entry ? (MOCK_STREAMS[entry[0]] ?? fallback) : fallback;
   }
@@ -146,6 +149,22 @@ export async function getStreamInfo(
 
   function readAddress(name: string): string {
     return Address.fromScVal(requireType(name, 'scvAddress', 'an address')).toString();
+  }
+
+  // `operator` — best-effort: no prior wiring for a delegated operator
+  // exists in this repo (issue #473), so the exact field name/shape on the
+  // live contract is unconfirmed against streamFi-contracts. Tolerant on
+  // purpose: absent field, scvVoid (Option::None), or anything unexpected
+  // all read as "no operator set" rather than throwing, so a wrong guess
+  // here degrades to hiding the operator UI instead of breaking the page.
+  function readOptionalAddress(name: string): string | null {
+    const field = fields.find(e => e.key().sym()?.toString() === name)?.val();
+    if (!field || field.switch().name !== 'scvAddress') return null;
+    try {
+      return Address.fromScVal(field).toString();
+    } catch {
+      return null;
+    }
   }
 
   function readI128(name: string): bigint {
@@ -179,11 +198,35 @@ export async function getStreamInfo(
     pausedAt:        readU64('paused_at'),
     clawbackEnabled: (flags & FLAG_CLAWBACK_ENABLED) !== 0,
     cancelled:       (flags & FLAG_CANCELLED) !== 0,
+    operator:        readOptionalAddress('operator'),
   };
 }
 
 
 // ── Mutating ──────────────────────────────────────────────────────────────────
+
+/**
+ * Internal helper to invoke a contract method with optional abort signal support.
+ * Avoids code duplication across the 8 mutating wrappers.
+ */
+async function mutate(
+  sender:        string,
+  streamAddress: string,
+  method:        string,
+  args:          xdr.ScVal[],
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  const { hash } = await invokeContract(
+    sender,
+    streamAddress,
+    method,
+    args,
+    signTx,
+    signal ? { signal } : undefined,
+  );
+  return hash;
+}
 
 /**
  * Withdraw the available balance from a stream.
@@ -197,10 +240,7 @@ export async function withdraw(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_withdraw';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx, signal);
 }
 
 /**
@@ -213,10 +253,7 @@ export async function cancel(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_cancel';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'cancel', [], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'cancel', [], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'cancel', [], signTx, signal);
 }
 
 /**
@@ -229,10 +266,7 @@ export async function forceCancel(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_force_cancel';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'force_cancel', [], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'force_cancel', [], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'force_cancel', [], signTx, signal);
 }
 
 /**
@@ -245,10 +279,7 @@ export async function pause(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_pause';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'pause', [], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'pause', [], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'pause', [], signTx, signal);
 }
 
 /**
@@ -261,10 +292,7 @@ export async function resume(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_resume';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'resume', [], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'resume', [], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'resume', [], signTx, signal);
 }
 
 /**
@@ -278,10 +306,7 @@ export async function topUp(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_topup';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx, signal);
 }
 
 /**
@@ -294,10 +319,7 @@ export async function clawback(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_clawback';
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'clawback', [], signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'clawback', [], signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'clawback', [], signTx, signal);
 }
 
 /**
@@ -312,8 +334,23 @@ export async function transferRecipient(
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_transfer_recipient';
   const args = [new Address(newRecipient).toScVal()];
-  const { hash } = signal
-    ? await invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx, { signal })
-    : await invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx);
-  return hash;
+  return mutate(sender, streamAddress, 'transfer_recipient', args, signTx, signal);
+}
+
+/**
+ * Revoke the delegated operator on a stream (sender only).
+ *
+ * NOTE: `revoke_operator` is a best-match guess for this contract method,
+ * following this file's naming convention (cancel/pause/resume all match
+ * their contract method 1:1). Not confirmed against streamFi-contracts —
+ * please verify before merging (see PR description).
+ */
+export async function revokeOperator(
+  sender:        string,
+  streamAddress: string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_revoke_operator';
+  return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
 }

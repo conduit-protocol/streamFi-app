@@ -38,6 +38,7 @@ function pruneOldestTerminal(
     const id: string | undefined = nextOrder[i];
     const tx = id ? nextTransactions[id] : undefined;
     if (id && tx && isTerminal(tx.status)) {
+      toast.dismiss(id);
       nextOrder.splice(i, 1);
       delete nextTransactions[id];
     } else {
@@ -53,7 +54,7 @@ interface TransactionStore {
   order: string[];
   addTransaction: (id: string, description: string) => void;
   updateStatus: (id: string, status: TransactionStatus, hash?: string, error?: string) => void;
-  /** Remove all tracked transactions — called on wallet disconnect (fixes #81). */
+  /** Remove all tracked transactions and dismiss toasts — called on wallet disconnect (fixes #81, #386). */
   clearTransactions: () => void;
 }
 
@@ -111,6 +112,9 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
   },
 
   clearTransactions: () => {
+    Object.keys(get().transactions).forEach((id) => {
+      toast.dismiss(id);
+    });
     set({ transactions: {}, order: [] });
   },
 }));

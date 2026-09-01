@@ -73,6 +73,7 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
     paused: false,
     pausedAt: 0,
     clawbackEnabled: false,
+    operator: null,
     ...overrides,
   };
 }
@@ -146,6 +147,24 @@ describe('StreamPage (app/stream/[id]/page.tsx)', () => {
     expect(container.textContent).toContain('Stream not found.');
   });
 
+  it('surfaces the underlying error instead of "Stream not found" when the address lookup fails', async () => {
+    mockUseWallet.mockReturnValue({
+      publicKey: 'GWALLET',
+      connected: true,
+    } as unknown as ReturnType<typeof useWallet>);
+    mockAddr.mockRejectedValue(new Error('rpc down'));
+
+    await act(async () => {
+      root.render(React.createElement(StreamPage));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('rpc down');
+    expect(container.textContent).not.toContain('Stream not found');
+  });
+
   it('derives isSender/isRecipient correctly and renders StreamActions once loaded', async () => {
     mockUseWallet.mockReturnValue({
       publicKey: 'GSENDER',
@@ -164,6 +183,27 @@ describe('StreamPage (app/stream/[id]/page.tsx)', () => {
 
     expect(container.querySelector('[data-testid="stream-actions"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="badge"]')?.textContent).toBe('active');
+  });
+
+  it('shows the final withdrawable balance for an ended stream', async () => {
+    mockUseWallet.mockReturnValue({
+      publicKey: 'GRECIPIENT',
+      connected: true,
+    } as unknown as ReturnType<typeof useWallet>);
+    mockAddr.mockResolvedValue('STREAM_ADDR');
+    mockInfo.mockResolvedValue(makeInfo({ endTime: Math.floor(Date.now() / 1000) - 1 }));
+    mockWithdrawable.mockResolvedValue(15_000_000n);
+
+    await act(async () => {
+      root.render(React.createElement(StreamPage));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="badge"]')?.textContent).toBe('ended');
+    expect(container.textContent).toContain('Final balance, ready to withdraw');
+    expect(container.textContent).toContain('1.50');
   });
 
   it('#318 — resolves a known token address to its symbol instead of the truncated address', async () => {

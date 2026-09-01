@@ -32,7 +32,9 @@ import {
   WatchWalletChanges,
 } from '@stellar/freighter-api';
 import { getNetworkPassphrase } from '@/lib/env';
+import { withTimeout } from '@/lib/with-timeout';
 import { queryClient } from '@/lib/queryClient';
+import { resetTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import { useTransactionStore } from '@/lib/store';
 import { truncateAddress } from '@/lib/format';
 import { useRouter } from 'next/navigation';
@@ -40,7 +42,10 @@ import {
   clearWalletSession,
   loadWalletSession,
   saveWalletSession,
+  touchWalletSession,
 } from '@/lib/wallet-storage';
+import { resetServer, resetCircuitBreaker } from '@/lib/soroban';
+import { clearIdempotencyKeys } from '@/lib/safe-operations';
 import toast from 'react-hot-toast';
 
 // ── Concurrency Primitives ───────────────────────────────────────────────────
@@ -55,42 +60,77 @@ export class Mutex {
 
   async acquire(abortSignal?: AbortSignal): Promise<() => void> {
     return new Promise<() => void>((resolve, reject) => {
-      let entry: ((release: () => void) => void) | undefined;
-
-      // If already locked, queue the request
-      if (this._locked) {
-        entry = (release: () => void) => {
-          if (abortSignal?.aborted) {
-            reject(new Error('Operation aborted'));
-            return;
-          }
-          resolve(release);
-        };
-        this._queue.push(entry);
-      } else {
+      // Fast path: nothing holds the lock.
+      if (!this._locked) {
         this._locked = true;
-        resolve(() => this._release());
+        resolve(this._makeRelease());
+        return;
       }
 
-      if (abortSignal && entry) {
-        const queuedEntry = entry;
-        abortSignal.addEventListener('abort', () => {
-          // Remove this entry from queue if it hasn't been resolved yet
-          if (entry) {
-            const idx = this._queue.indexOf(entry);
-            if (idx !== -1) this._queue.splice(idx, 1);
-          }
+      // Slow path: queue, and clean up the abort listener on either outcome
+      // so a completed acquire doesn't leave a dead listener on a long-lived
+      // AbortSignal (#390).
+      let onAbort: (() => void) | undefined;
+      const cleanup = () => {
+        if (onAbort && abortSignal) {
+          abortSignal.removeEventListener('abort', onAbort);
+          onAbort = undefined;
+        }
+      };
+
+      const entry = (release: () => void) => {
+        cleanup();
+        if (abortSignal?.aborted) {
+          // `_release()` has already dequeued this waiter and handed the lock
+          // over to it, so rejecting without releasing strands the lock
+          // forever and deadlocks every later connect() (#389). Pass it on.
+          release();
           reject(new Error('Operation aborted'));
-        }, { once: true });
+          return;
+        }
+        resolve(release);
+      };
+
+      // A signal that is already aborted never fires an 'abort' event, so the
+      // listener below would never run and this waiter would sit in the queue
+      // until `_release()` handed it the lock — the same leak, reached from
+      // the other side (#389). Reject before queueing instead.
+      if (abortSignal?.aborted) {
+        reject(new Error('Operation aborted'));
+        return;
+      }
+      this._queue.push(entry);
+
+      if (abortSignal) {
+        onAbort = () => {
+          const idx = this._queue.indexOf(entry);
+          if (idx !== -1) this._queue.splice(idx, 1);
+          cleanup();
+          reject(new Error('Operation aborted'));
+        };
+        abortSignal.addEventListener('abort', onAbort);
       }
     });
   }
 
-  
+  /**
+   * Build a one-shot release function. Calling it more than once is a no-op,
+   * so a `finally { release() }` plus an explicit or retried call can't hand
+   * the lock to two waiters (#388).
+   */
+  private _makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._release();
+    };
+  }
+
   private _release() {
     const next = this._queue.shift();
     if (next) {
-      next(() => this._release());
+      next(this._makeRelease());
     } else {
       this._locked = false;
     }
@@ -116,13 +156,28 @@ export class Semaphore {
   async acquire(signal?: AbortSignal): Promise<() => void> {
     if (this._available > 0) {
       this._available--;
-      return () => this._release();
+      return this._makeRelease();
     }
 
     return new Promise<() => void>((resolve, reject) => {
+      let onAbort: (() => void) | undefined;
+      const cleanup = () => {
+        if (onAbort && signal) {
+          signal.removeEventListener('abort', onAbort);
+          onAbort = undefined;
+        }
+      };
+
       const entry = {
         resolver: (release: () => void) => {
+          cleanup();
           if (signal?.aborted) {
+            // `_release()` has already dequeued this waiter and handed the
+            // permit to it without incrementing `_available`. Rejecting
+            // without releasing loses the permit permanently, and after
+            // `maxConcurrentOperations` of these the semaphore is exhausted
+            // and every signTx hangs forever (#389). Pass it on instead.
+            release();
             reject(new Error('Operation aborted'));
             return;
           }
@@ -137,10 +192,12 @@ export class Semaphore {
         this._dequeue(entry);
         reject(new Error('Operation aborted'));
       } else if (signal) {
-        signal.addEventListener('abort', () => {
+        onAbort = () => {
           this._dequeue(entry);
+          cleanup();
           reject(new Error('Operation aborted'));
-        }, { once: true });
+        };
+        signal.addEventListener('abort', onAbort);
       }
     });
   }
@@ -150,10 +207,23 @@ export class Semaphore {
     if (idx !== -1) this._queue.splice(idx, 1);
   }
 
+  /**
+   * Build a one-shot release function. A second call is a no-op, so a double
+   * `release()` can't over-increment `_available` past `maxConcurrent` (#388).
+   */
+  private _makeRelease(): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._release();
+    };
+  }
+
   private _release() {
     const next = this._queue.shift();
     if (next) {
-      next.resolver(() => this._release());
+      next.resolver(this._makeRelease());
     } else {
       this._available++;
     }
@@ -179,6 +249,17 @@ const DEFAULT_MAX_CONCURRENT_OPS = 5;
  * Prevents infinite hangs if the RPC provider or extension becomes unresponsive.
  */
 const WALLET_CONNECT_TIMEOUT_MS = 15_000;
+
+/**
+ * Timeout message for wallet calls. This one reaches the user directly
+ * (ConnectButton renders it), so it stays wallet-specific rather than using
+ * the shared helper's default `… timed out after 15000ms` (#393).
+ */
+function walletTimeoutError(ms: number, label?: string): Error {
+  return new Error(
+    `${label ?? 'Wallet operation'} timed out after ${ms / 1000}s — the wallet or network may be unresponsive.`,
+  );
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,22 +308,6 @@ export function useWallet(): WalletState {
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 
-/**
- * Race a promise against a timeout. Rejects with a clear error if the
- * promise does not resolve within `ms` milliseconds.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms / 1000}s — the wallet or network may be unresponsive.`));
-    }, ms);
-    promise.then(
-      (val) => { clearTimeout(timer); resolve(val); },
-      (err) => { clearTimeout(timer); reject(err); },
-    );
-  });
-}
-
 export function WalletProvider({
   children,
   maxConcurrentOperations = DEFAULT_MAX_CONCURRENT_OPS,
@@ -281,6 +346,10 @@ export function WalletProvider({
     if (stored) {
       setPublicKey(stored.key);
       setWalletName(stored.name);
+      // A returning user with a still-valid session is active — slide the
+      // expiry so an open tab isn't force-disconnected 24h after the first
+      // connect (#430).
+      touchWalletSession();
     }
 
     return () => {
@@ -340,7 +409,7 @@ export function WalletProvider({
       const { isConnected: hasFreighter } = await withTimeout(
         freighterIsConnected(),
         WALLET_CONNECT_TIMEOUT_MS,
-        'Freighter connection check',
+        { label: 'Freighter connection check', onTimeout: walletTimeoutError },
       );
       if (requestId !== pendingRequestIdRef.current || !isMountedRef.current) return;
 
@@ -355,7 +424,7 @@ export function WalletProvider({
       const { address, error } = await withTimeout(
         requestAccess(),
         WALLET_CONNECT_TIMEOUT_MS,
-        'Freighter access request',
+        { label: 'Freighter access request', onTimeout: walletTimeoutError },
       );
       if (requestId !== pendingRequestIdRef.current || !isMountedRef.current) return;
       if (error || !address) {
@@ -394,7 +463,12 @@ export function WalletProvider({
     // Clear all cached stream data so a subsequent wallet connection
     // cannot see the previous wallet's streams (fixes #81 & #146).
     queryClient.clear();
+    resetTokenAllowanceGateway();
     clearTransactions();
+    resetServer();
+    resetCircuitBreaker();
+    resetTokenAllowanceGateway();
+    clearIdempotencyKeys();
     router.push('/');
   }, [clearTransactions, router]);
 
@@ -406,9 +480,17 @@ export function WalletProvider({
   // `publicKey` and every cached on-chain query pointed at the old account,
   // silently showing stale data (fixes #88).
   useEffect(() => {
+    // `WatchWalletChanges.stop()` only flips an internal flag; a poll
+    // iteration already awaiting Freighter when we call it still runs to
+    // completion and fires this callback one last time (and schedules one
+    // more `setTimeout` we cannot clear from out here). `active` is a
+    // per-effect-instance latch so that trailing tick — and any tick after
+    // an unmount or a dependency-triggered re-subscribe — is ignored instead
+    // of mutating state on a torn-down tree.
+    let active = true;
     const watcher = new WatchWalletChanges();
     watcher.watch(({ address }) => {
-      if (!isMountedRef.current) return;
+      if (!active || !isMountedRef.current) return;
       if (!publicKeyRef.current) return; // no active session to keep in sync
 
       if (!address) {
@@ -424,11 +506,19 @@ export function WalletProvider({
       setPublicKey(address);
       saveWalletSession({ key: address, name: 'Freighter' });
       queryClient.clear();
+      resetTokenAllowanceGateway();
       clearTransactions();
+      resetServer();
+      resetCircuitBreaker();
+      resetTokenAllowanceGateway();
+      clearIdempotencyKeys();
       toast(`Switched to ${truncateAddress(address)}`, { icon: '🔄' });
     });
 
-    return () => watcher.stop();
+    return () => {
+      active = false;
+      watcher.stop();
+    };
   }, [clearTransactions, disconnect]);
 
   // ── signTx ─────────────────────────────────────────────────────────────────
@@ -450,45 +540,49 @@ export function WalletProvider({
     const globalAbortCleanup = () => {
       operationAbortController.abort();
     };
-    abortControllerRef.current?.signal.addEventListener('abort', globalAbortCleanup, { once: true });
+    const globalAbortSignal = abortControllerRef.current?.signal;
+    globalAbortSignal?.addEventListener('abort', globalAbortCleanup, { once: true });
 
-    // Acquire a semaphore permit — limits concurrent Freighter popups
-    const release = await semaphoreRef.current.acquire(combinedSignal);
+    try {
+      // Acquire a semaphore permit — limits concurrent Freighter popups
+      const release = await semaphoreRef.current.acquire(combinedSignal);
 
-    return trackOperation(async () => {
-      try {
-        if (combinedSignal.aborted) {
-          throw new Error('Operation aborted');
+      return await trackOperation(async () => {
+        try {
+          if (combinedSignal.aborted) {
+            throw new Error('Operation aborted');
+          }
+
+          const requestId = pendingRequestIdRef.current;
+          const currentPublicKey = publicKeyRef.current;
+          const { signedTxXdr, error } = await withTimeout(
+            signTransaction(xdr, {
+              networkPassphrase: getNetworkPassphrase(),
+              address:           currentPublicKey ?? undefined,
+            }),
+            WALLET_CONNECT_TIMEOUT_MS,
+            'Freighter signing',
+          );
+
+          if (combinedSignal.aborted) {
+            throw new Error('Operation aborted');
+          }
+
+          if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKeyRef.current) {
+            throw new Error('Wallet state changed during signing. Please retry the operation.');
+          }
+
+          if (error || !signedTxXdr) {
+            throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
+          }
+          return signedTxXdr;
+        } finally {
+          release();
         }
-
-        const requestId = pendingRequestIdRef.current;
-        const currentPublicKey = publicKeyRef.current;
-        const { signedTxXdr, error } = await withTimeout(
-          signTransaction(xdr, {
-            networkPassphrase: getNetworkPassphrase(),
-            address:           currentPublicKey ?? undefined,
-          }),
-          WALLET_CONNECT_TIMEOUT_MS,
-          'Freighter signing',
-        );
-
-        if (combinedSignal.aborted) {
-          throw new Error('Operation aborted');
-        }
-
-        if (requestId !== pendingRequestIdRef.current || currentPublicKey !== publicKeyRef.current) {
-          throw new Error('Wallet state changed during signing. Please retry the operation.');
-        }
-
-        if (error || !signedTxXdr) {
-          throw new Error(error?.message ?? 'Failed to sign transaction in Freighter.');
-        }
-        return signedTxXdr;
-      } finally {
-        release();
-        abortControllerRef.current?.signal.removeEventListener('abort', globalAbortCleanup);
-      }
-    });
+      });
+    } finally {
+      globalAbortSignal?.removeEventListener('abort', globalAbortCleanup);
+    }
   }, [publicKey, trackOperation]);
 
   // ── Memoized context value ─────────────────────────────────────────────────

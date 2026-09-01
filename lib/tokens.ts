@@ -63,8 +63,12 @@ export const TOKENS_MAINNET: TokenMeta[] = [
   },
 ];
 
+export const TOKENS_LOCAL: TokenMeta[] = [];
+
 export function getTokens(network: 'mainnet' | 'testnet' | 'local'): TokenMeta[] {
-  return network === 'mainnet' ? TOKENS_MAINNET : TOKENS_TESTNET;
+  if (network === 'mainnet') return TOKENS_MAINNET;
+  if (network === 'local') return TOKENS_LOCAL;
+  return TOKENS_TESTNET;
 }
 
 export function tokenByAddress(address: string, network: 'mainnet' | 'testnet' | 'local'): TokenMeta | undefined {
@@ -84,6 +88,64 @@ export function tokenLogoUrl(symbol: string, network: 'mainnet' | 'testnet' | 'l
   return tokenBySymbol(symbol, network)?.logoUrl ?? '/tokens/generic.svg';
 }
 
+/**
+ * Symbol used as the safe fallback when a previously-selected token is not
+ * available on the active network (#429). It is present on every network list.
+ */
+export const DEFAULT_TOKEN_SYMBOL = 'XLM';
+
+export interface TokenResolution {
+  /** The resolved token — never `undefined`; falls back to {@link DEFAULT_TOKEN_SYMBOL}. */
+  token: TokenMeta;
+  /** `true` when `symbol` was absent on `network` and the default was substituted. */
+  wasReset: boolean;
+}
+
+/**
+ * Resolve a token by symbol on a network, falling back to that network's
+ * default token (XLM) instead of returning `undefined`.
+ *
+ * The testnet and mainnet symbol sets differ — testnet has EURC, mainnet does
+ * not (#429) — so a symbol carried over from a previous network selection can
+ * be missing on the new one, leaving `TokenSelector` with no selection and
+ * breaking `/create` / top-up flows that assume a resolved `TokenMeta`.
+ * Callers that need a concrete token should use this and surface `wasReset`
+ * (e.g. a toast) rather than dereferencing a possibly-`undefined` lookup.
+ */
+export function resolveTokenBySymbol(
+  symbol: string,
+  network: 'mainnet' | 'testnet' | 'local',
+): TokenResolution {
+  const match = tokenBySymbol(symbol, network);
+  if (match) return { token: match, wasReset: false };
+
+  const list = getTokens(network);
+  const fallback = list.find(t => t.symbol === DEFAULT_TOKEN_SYMBOL) ?? list[0];
+  if (!fallback) {
+    throw new Error(`No tokens configured for network "${network}"`);
+  }
+  return { token: fallback, wasReset: true };
+}
+
+/**
+ * The networks on which `symbol` is a known token. Lets the UI say "EURC
+ * exists on testnet but not mainnet" instead of a bare "unknown token".
+ */
+export function networksForSymbol(symbol: string): Array<'mainnet' | 'testnet'> {
+  const networks: Array<'mainnet' | 'testnet'> = [];
+  if (TOKENS_MAINNET.some(t => t.symbol === symbol)) networks.push('mainnet');
+  if (TOKENS_TESTNET.some(t => t.symbol === symbol)) networks.push('testnet');
+  return networks;
+}
+
+/** Companion to {@link networksForSymbol} for the address-based selector. */
+export function networksForAddress(address: string): Array<'mainnet' | 'testnet'> {
+  const networks: Array<'mainnet' | 'testnet'> = [];
+  if (TOKENS_MAINNET.some(t => t.address === address)) networks.push('mainnet');
+  if (TOKENS_TESTNET.some(t => t.address === address)) networks.push('testnet');
+  return networks;
+}
+
 // ── Token Allowance Helpers (SEP-41) ──────────────────────────────────────────
 
 import {
@@ -92,7 +154,16 @@ import {
 } from './token-allowance-gateway';
 
 export interface AllowanceResult {
-  hasAllowance: boolean;
+  /**
+   * Whether the spender has sufficient allowance.
+   * - `true`  → allowance >= requiredAmount (checked, sufficient)
+   * - `false` → allowance < requiredAmount (checked, insufficient — needs approve)
+   * - `undefined` → allowance could not be checked (e.g. transient RPC failure).
+   *   Callers MUST check `error` first and retry the read rather than treating
+   *   `undefined` as "needs approval", otherwise a hiccup triggers an
+   *   unnecessary SEP-41 approve() transaction and fee.
+   */
+  hasAllowance: boolean | undefined;
   currentAllowance: bigint;
   error?: string;
 }
@@ -139,6 +210,12 @@ export async function getAllowance(
 /**
  * Check whether the source address has sufficient token allowance for spender.
  * Throws an explicit error on missing arguments (#348), returns structured status on check completion.
+ *
+ * IMPORTANT: On a successful RPC read, `hasAllowance` is `true`|`false` and
+ * `error` is absent. On a transient RPC/network failure, `hasAllowance` is
+ * `undefined` and `error` is set — callers must surface the error and retry
+ * the read rather than treating it as "insufficient allowance" (which would
+ * trigger an unnecessary approve() transaction and fee).
  */
 export async function checkAllowance(
   source: string,
@@ -162,7 +239,7 @@ export async function checkAllowance(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to check token allowance';
     return {
-      hasAllowance: false,
+      hasAllowance: undefined,
       currentAllowance: 0n,
       error: message,
     };
@@ -178,8 +255,8 @@ export async function approveAllowance(
   tokenAddress: string,
   spender: string,
   amount: bigint,
-  expirationLedger: number = DEFAULT_EXPIRATION_LEDGER,
   signTx: (xdr: string, signal?: AbortSignal) => Promise<string>,
+  expirationLedger: number = DEFAULT_EXPIRATION_LEDGER,
   options?: { signal?: AbortSignal },
 ): Promise<ApproveResult> {
   if (!source || !tokenAddress || !spender) {
@@ -211,4 +288,3 @@ export async function approveAllowance(
     txHash: res.data,
   };
 }
-

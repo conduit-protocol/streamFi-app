@@ -9,6 +9,9 @@ import {
   getAllowance,
   checkAllowance,
   approveAllowance,
+  resolveTokenBySymbol,
+  networksForSymbol,
+  networksForAddress,
 } from './tokens';
 import { StrKey, Keypair } from '@stellar/stellar-sdk';
 import { resetTokenAllowanceGateway } from './token-allowance-gateway';
@@ -38,6 +41,14 @@ describe('tokens module', () => {
 
   it('returns mainnet tokens when requested', () => {
     expect(getTokens('mainnet')).toEqual(TOKENS_MAINNET);
+  });
+
+  it('returns no configured token contracts for local networks (#423)', () => {
+    const usdc = TOKENS_TESTNET.find((t) => t.symbol === 'USDC');
+
+    expect(getTokens('local')).toEqual([]);
+    expect(tokenBySymbol('USDC', 'local')).toBeUndefined();
+    expect(tokenByAddress(usdc!.address!, 'local')).toBeUndefined();
   });
 
   it('looks up tokens by symbol or address', () => {
@@ -85,7 +96,7 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
   it('approveAllowance throws an explicit error when arguments are missing (#348)', async () => {
     const mockSignTx = vi.fn();
     await expect(
-      approveAllowance('', VALID_TOKEN, VALID_SPENDER, 100n, 500000, mockSignTx)
+      approveAllowance('', VALID_TOKEN, VALID_SPENDER, 100n, mockSignTx, 500000)
     ).rejects.toThrow(/Missing required arguments for approveAllowance/);
   });
 
@@ -102,6 +113,19 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     expect(result.currentAllowance).toBe(1000n);
   });
 
+  it('checkAllowance distinguishes RPC failure from insufficient allowance (hasAllowance undefined, not false)', async () => {
+    vi.mocked(soroban.simulateReadOnly).mockRejectedValueOnce(new Error('Network request timed out'));
+    const result = await checkAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER, 500n);
+    // Must NOT be `false` — false means "checked, insufficient" and would
+    // trigger an unnecessary approve() and fee. Undefined means "couldn't check".
+    expect(result.hasAllowance).toBeUndefined();
+    expect(result.currentAllowance).toBe(0n);
+    expect(result.error).toMatch(/Network request timed out/);
+    // Callers must check error first; a falsy check `!hasAllowance` would
+    // still be true for undefined, so the correct guard is `hasAllowance === false`.
+    expect(result.hasAllowance === false).toBe(false);
+  });
+
   it('approveAllowance calls SAC with 4 arguments and succeeds (#347)', async () => {
     vi.mocked(soroban.invokeContract).mockResolvedValueOnce({ hash: 'tx_hash_123' });
     const mockSignTx = vi.fn().mockResolvedValue('signed');
@@ -111,8 +135,8 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
       VALID_TOKEN,
       VALID_SPENDER,
       2000n,
+      mockSignTx,
       600000,
-      mockSignTx
     );
 
     expect(result.success).toBe(true);
@@ -129,5 +153,52 @@ describe('SEP-41 Token Allowance Helpers (#347, #348)', () => {
     // Verify 4 arguments were passed to invokeContract
     const passedArgs = vi.mocked(soroban.invokeContract).mock.calls[0]![3];
     expect(passedArgs).toHaveLength(4);
+  });
+
+  it('approveAllowance defaults expirationLedger when omitted (#385)', async () => {
+    vi.mocked(soroban.invokeContract).mockResolvedValueOnce({ hash: 'tx_hash_456' } as any);
+    const mockSignTx = vi.fn().mockResolvedValue('signed');
+
+    const result = await approveAllowance(
+      VALID_SOURCE,
+      VALID_TOKEN,
+      VALID_SPENDER,
+      2000n,
+      mockSignTx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.txHash).toBe('tx_hash_456');
+    expect(soroban.invokeContract).toHaveBeenCalled();
+  });
+});
+describe('resolveTokenBySymbol / cross-network helpers (#429)', () => {
+  it('resolves a symbol that exists on the network without resetting', () => {
+    const { token, wasReset } = resolveTokenBySymbol('USDC', 'mainnet');
+    expect(token.symbol).toBe('USDC');
+    expect(wasReset).toBe(false);
+  });
+
+  it('falls back to XLM with wasReset when the symbol is missing on the network', () => {
+    // EURC is only in the testnet list.
+    const { token, wasReset } = resolveTokenBySymbol('EURC', 'mainnet');
+    expect(token.symbol).toBe('XLM');
+    expect(wasReset).toBe(true);
+  });
+
+  it('does not reset for a symbol that does exist on the target network', () => {
+    expect(resolveTokenBySymbol('EURC', 'testnet').wasReset).toBe(false);
+  });
+
+  it('reports which networks a symbol belongs to', () => {
+    expect(networksForSymbol('EURC')).toEqual(['testnet']);
+    expect(networksForSymbol('USDC').sort()).toEqual(['mainnet', 'testnet']);
+    expect(networksForSymbol('DOGE')).toEqual([]);
+  });
+
+  it('reports which networks an address belongs to', () => {
+    const eurc = TOKENS_TESTNET.find(t => t.symbol === 'EURC');
+    expect(networksForAddress(eurc!.address!)).toEqual(['testnet']);
+    expect(networksForAddress('CNOTATOKEN')).toEqual([]);
   });
 });
