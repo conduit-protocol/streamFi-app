@@ -732,6 +732,10 @@ function recipientLedgerKey(address: string): xdr.LedgerKey {
  * @param options    Optional signal and timeout
  * @returns          `true` / `false` when the ledger answered; throws when it didn't
  */
+// Brief negative cache for checkRecipientExists — mirrors SDK behaviour (#451).
+const NEGATIVE_CACHE_TTL_MS = 5_000;
+const recipientNegativeCache = new Map<string, number>();
+
 export async function checkRecipientExists(
   address: string,
   options?: { signal?: AbortSignal; timeoutMs?: number },
@@ -739,6 +743,12 @@ export async function checkRecipientExists(
   const timeoutMs = options?.timeoutMs ?? 10_000;
 
   if (options?.signal?.aborted) throw new OperationAbortedError();
+
+  const cachedUntil = recipientNegativeCache.get(address);
+  if (cachedUntil !== undefined && Date.now() < cachedUntil) {
+    return false;
+  }
+  recipientNegativeCache.delete(address);
 
   const { entries } = await withTimeout(
     getServer().getLedgerEntries(recipientLedgerKey(address)),
@@ -752,5 +762,9 @@ export async function checkRecipientExists(
   if (!Array.isArray(entries)) {
     throw new Error('Malformed RPC payload: getLedgerEntries returned no entries array');
   }
-  return entries.length > 0;
+  const exists = entries.length > 0;
+  if (!exists) {
+    recipientNegativeCache.set(address, Date.now() + NEGATIVE_CACHE_TTL_MS);
+  }
+  return exists;
 }
