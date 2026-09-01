@@ -166,7 +166,7 @@ export default function DashboardPage() {
         const totalFailed = recv.failedCount + sent.failedCount;
         setPartialError(
           totalFailed > 0
-            ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} could not be loaded — some data may be missing.`
+            ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} couldn\u2019t load`
             : null,
         );
         setError(null);
@@ -304,15 +304,19 @@ export default function DashboardPage() {
       )}
 
       {partialError && !error && !networkTrouble && (
-        <div className="card text-center py-3 mb-6 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="card text-center py-3 mb-6 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2"
+        >
           <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-          {partialError}
+          <span>{partialError} &mdash;</span>
           <button
             onClick={() => refetch()}
             disabled={loading}
-            className="underline font-semibold hover:text-black dark:hover:text-white ml-1 disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+            className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
-            {loading ? "Retrying…" : "Retry"}
+            {loading ? "Retrying\u2026" : "retry"}
           </button>
         </div>
       )}
