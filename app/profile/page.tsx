@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { CopyHashButton } from "@/components/ui/CopyHashButton";
+import { ProfileSkeleton } from "@/components/ProfileSkeleton";
 import { isValidStellarPublicKey } from "@/lib/stellar-address";
 
 type ConnectionState =
@@ -33,15 +34,7 @@ export default function ProfilePage() {
   const content = () => {
     switch (connection.status) {
       case "loading":
-        return (
-          <div className="max-w-2xl mx-auto px-4 py-10">
-            <div className="animate-pulse space-y-6">
-              <div className="h-8 w-48 bg-gray-200 dark:bg-gray-800 rounded" />
-              <div className="h-4 w-64 bg-gray-200 dark:bg-gray-800 rounded" />
-              <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded" />
-            </div>
-          </div>
-        );
+        return <ProfileSkeleton />;
       case "disconnected":
         return (
           <div className="max-w-2xl mx-auto px-4 py-10">
