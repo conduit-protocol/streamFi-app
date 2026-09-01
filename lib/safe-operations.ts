@@ -329,3 +329,17 @@ export function clearIdempotencyKeys(): void {
   activeIdempotencyKeys.clear();
 }
 
+
+// ── Promise.allSettled Helpers ───────────────────────────────────────────────
+
+/**
+ * Type guard for a fulfilled Promise.allSettled result.
+ *
+ * Use this instead of inline `r && r.status === 'fulfilled'` so
+ * TypeScript narrows the value correctly under `noUncheckedIndexedAccess`.
+ */
+export function isFulfilled<T>(
+  result: PromiseSettledResult<T> | undefined,
+): result is PromiseFulfilledResult<T> {
+  return result !== undefined && result.status === 'fulfilled';
+}
