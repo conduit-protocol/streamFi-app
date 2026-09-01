@@ -12,6 +12,8 @@
  * static /about page) if they end up transitively importing this module.
  */
 
+import { loadSelectedNetwork } from './network-storage';
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -22,12 +24,28 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Return the RPC URL for the currently selected network.
+ *
+ * If the user has selected a known network (testnet/mainnet/local) from
+ * settings, its well-known RPC URL is used. Otherwise falls back to
+ * NEXT_PUBLIC_SOROBAN_RPC_URL so a custom/deployed URL can still be set.
+ */
 export function getRpcUrl(): string {
-  return required('NEXT_PUBLIC_SOROBAN_RPC_URL');
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_SOROBAN_RPC_URL'] || selected.rpcUrl;
 }
 
+/**
+ * Return the Stellar network passphrase for the currently selected network.
+ *
+ * The user's last-selected network (persisted in localStorage) takes
+ * precedence; this lets the app rehydrate the same network after a refresh.
+ * A NEXT_PUBLIC_NETWORK_PASSPHRASE env var can still override it.
+ */
 export function getNetworkPassphrase(): string {
-  return required('NEXT_PUBLIC_NETWORK_PASSPHRASE');
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_NETWORK_PASSPHRASE'] || selected.passphrase;
 }
 
 export function getFactoryContractId(): string {
@@ -45,7 +63,8 @@ export function getGovernorContractId(): string | undefined {
 
 /** Optional — only used for classic-account balance lookups, not required for Soroban calls. */
 export function getHorizonUrl(): string | undefined {
-  return process.env['NEXT_PUBLIC_HORIZON_URL'] || undefined;
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_HORIZON_URL'] || selected.horizonUrl;
 }
 
 const DEFAULT_FEE_MULTIPLIER = 2;
