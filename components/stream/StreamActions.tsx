@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, X, Plus, RotateCcw } from 'lucide-react';
 import { WithdrawButton }    from './WithdrawButton';
 import { Modal }             from '@/components/ui/Modal';
@@ -40,6 +40,12 @@ export function StreamActions({
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmt, setTopUpAmt]   = useState('');
   const [topUpErr, setTopUpErr]   = useState('');
+
+  const closeTopUp = useCallback(() => {
+    setTopUpOpen(false);
+    setTopUpAmt('');
+    setTopUpErr('');
+  }, []);
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -91,8 +97,7 @@ export function StreamActions({
     setTopUpErr('');
     await run('topup', () => streamLib.topUp(publicKey, streamAddress, amount, signTx));
     if (!mounted.current) return;
-    setTopUpOpen(false);
-    setTopUpAmt('');
+    closeTopUp();
   };
 
   return (
@@ -183,7 +188,7 @@ export function StreamActions({
 
       {/* Top-up modal */}
       {topUpOpen && (
-        <Modal title="Top up stream" onClose={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}>
+        <Modal title="Top up stream" onClose={closeTopUp}>
           <div className="space-y-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Add more {token} to extend the stream&apos;s lifetime at the current rate.
@@ -212,7 +217,7 @@ export function StreamActions({
               </button>
               <button
                 className="btn-secondary"
-                onClick={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}
+                onClick={closeTopUp}
               >
                 Cancel
               </button>
