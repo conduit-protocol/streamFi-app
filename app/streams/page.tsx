@@ -37,15 +37,12 @@ async function loadRows(
   role: "sender" | "recipient",
   now: number,
 ): Promise<LoadRowsResult> {
-  let ids: bigint[];
-  try {
-    ids =
-      role === "sender"
-        ? await streamsBySender(publicKey, publicKey, 0, 100)
-        : await streamsByRecipient(publicKey, publicKey, 0, 100);
-  } catch {
-    return { rows: [], failedCount: 0 };
-  }
+  // Let initial list-fetch failures propagate so the page can surface a
+  // visible error instead of silently rendering an empty state.
+  const ids =
+    role === "sender"
+      ? await streamsBySender(publicKey, publicKey, 0, 100)
+      : await streamsByRecipient(publicKey, publicKey, 0, 100);
 
   if (!ids || !Array.isArray(ids)) return { rows: [], failedCount: 0 };
 
