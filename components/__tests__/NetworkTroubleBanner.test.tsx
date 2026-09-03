@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
 import { NetworkTroubleBanner } from '../NetworkTroubleBanner';
 import {
   reportRpcFailure,

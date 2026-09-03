@@ -6,13 +6,13 @@ import { Plus, AlertCircle, RefreshCw } from "lucide-react";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BulkWithdrawButton } from "@/components/stream/BulkWithdrawButton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo, getWithdrawable } from "@/lib/stream";
+import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } from '@/lib/stream';
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
-import type { StreamInfo } from "@/lib/stream";
 import { isFulfilled } from "@/lib/safe-operations";
 
 type Tab = "receiving" | "sending";
@@ -394,6 +394,17 @@ export default function DashboardPage() {
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
               Your streams will appear here once the connection is back.
             </div>
+          ) : displayed.length === 0 && partialError ? (
+            <div className="card text-center py-12 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mb-2">{partialError}.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={loading}
+                className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                {loading ? "Retrying…" : "Retry"}
+              </button>
+            </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
               No {tab} streams yet.
@@ -412,20 +423,29 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {displayed.map((row) => (
-                <StreamCard
+                <ErrorBoundary
                   key={row.id}
-                  id={row.id}
-                  counterparty={
-                    tab === "receiving" ? row.info.sender : row.info.recipient
-                  }
-                  role={tab === "receiving" ? "recipient" : "sender"}
-                  token={row.info.token}
-                  ratePerSecond={row.info.ratePerSecond}
-                  startTime={row.info.startTime}
-                  endTime={row.info.endTime}
-                  status={row.status}
-                  pausedAt={row.info.pausedAt}
-                />
+                  fallback={(_err, retry) => (
+                    <div className="p-4 border border-red-200 dark:border-red-800 rounded bg-red-50 dark:bg-red-900/20">
+                      <p className="text-sm text-red-600 dark:text-red-400">Failed to load stream {row.id}</p>
+                      <button onClick={retry} className="mt-2 text-xs underline">Retry</button>
+                    </div>
+                  )}
+                >
+                  <StreamCard
+                    id={row.id}
+                    counterparty={
+                      tab === "receiving" ? row.info.sender : row.info.recipient
+                    }
+                    role={tab === "receiving" ? "recipient" : "sender"}
+                    token={row.info.token}
+                    ratePerSecond={row.info.ratePerSecond}
+                    startTime={row.info.startTime}
+                    endTime={row.info.endTime}
+                    status={row.status}
+                    pausedAt={row.info.pausedAt}
+                  />
+                </ErrorBoundary>
               ))}
             </div>
           )}

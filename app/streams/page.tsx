@@ -7,9 +7,8 @@ import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo } from "@/lib/stream";
+import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
-import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
@@ -37,15 +36,12 @@ async function loadRows(
   role: "sender" | "recipient",
   now: number,
 ): Promise<LoadRowsResult> {
-  let ids: bigint[];
-  try {
-    ids =
-      role === "sender"
-        ? await streamsBySender(publicKey, publicKey, 0, 100)
-        : await streamsByRecipient(publicKey, publicKey, 0, 100);
-  } catch {
-    return { rows: [], failedCount: 0 };
-  }
+  // Let initial list-fetch failures propagate so the page can surface a
+  // visible error instead of silently rendering an empty state.
+  const ids =
+    role === "sender"
+      ? await streamsBySender(publicKey, publicKey, 0, 100)
+      : await streamsByRecipient(publicKey, publicKey, 0, 100);
 
   if (!ids || !Array.isArray(ids)) return { rows: [], failedCount: 0 };
 

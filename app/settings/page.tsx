@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
+import { NetworkName, NETWORKS } from "@/lib/network-config";
+import { saveSelectedNetwork } from "@/lib/network-storage";
 
 type Currency = "USD" | "EUR" | "XLM";
 type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
 
 interface SettingsState {
+  network: NetworkName;
   currency: Currency;
   slippageTolerance: Slippage;
   notificationsEnabled: boolean;
@@ -17,13 +20,14 @@ const STORAGE_KEY = "conduit:settings";
 
 function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
-    return { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    return { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
+        network: parsed.network ?? "testnet" as NetworkName,
         currency: parsed.currency ?? "USD",
         slippageTolerance: parsed.slippageTolerance ?? 1.0,
         notificationsEnabled: parsed.notificationsEnabled ?? true,
@@ -33,7 +37,7 @@ function loadSettings(): SettingsState {
   } catch {
     // Ignore parse errors, use defaults
   }
-  return { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+  return { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
 }
 
 export default function SettingsPage() {
@@ -53,6 +57,11 @@ export default function SettingsPage() {
     } catch {
       // Storage can be unavailable in private browsing or embedded webviews.
     }
+
+    // Mirror the selected network into its own key so lib/network-storage can
+    // read it without parsing the whole settings blob. Guarded by the same
+    // didMount check so storage is never rewritten on the initial mount (#422).
+    saveSelectedNetwork(settings.network);
   }, [settings]);
 
   const updateSetting = useCallback(<K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
@@ -61,7 +70,7 @@ export default function SettingsPage() {
   }, []);
 
   const handleReset = useCallback(() => {
-    const defaults: SettingsState = { currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    const defaults: SettingsState = { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
     setSettings(defaults);
     setTheme("system");
     setSaved(true);
@@ -104,6 +113,27 @@ export default function SettingsPage() {
               </button>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Network */}
+      <section className="card">
+        <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">
+          Network
+        </h2>
+        <div className="flex flex-row items-center justify-between">
+          <span className="text-sm">Stellar Network</span>
+          <select
+            value={settings.network}
+            onChange={(e) => updateSetting("network", e.target.value as NetworkName)}
+            className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
+          >
+            {Object.values(NETWORKS).map((n) => (
+              <option key={n.name} value={n.name}>
+                {n.label}
+              </option>
+            ))}
+          </select>
         </div>
       </section>
 

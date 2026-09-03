@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from "vitest";
-import React from "react";
+import React, { act } from 'react';
 import { createRoot } from "react-dom/client";
-import { act } from "react";
 
 beforeAll(() => {
   window.matchMedia = window.matchMedia || (() => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
