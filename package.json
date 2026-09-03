@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@conduit-protocol/sdk": "https://codeload.github.com/conduit-protocol/streamFi-sdk/tar.gz/5de4fce26d3d3c73cf56f81e0bd54965dcf831a1",
@@ -29,6 +31,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "~1.62.1",
     "@tanstack/react-query-devtools": "^5.102.8",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

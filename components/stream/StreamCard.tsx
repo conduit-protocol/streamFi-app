@@ -1,5 +1,6 @@
 import Link                    from 'next/link';
 import { Badge }               from '@/components/ui/Badge';
+import { CopyableAddress }     from '@/components/ui/CopyableAddress';
 import { StreamProgressBar }   from '@/components/stream/StreamProgressBar';
 import { truncateAddress, fromStroops } from '@/lib/format';
 
@@ -50,9 +51,9 @@ export function StreamCard({
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">
             {role === 'recipient' ? 'From' : 'To'}
           </p>
-          <p className="font-mono text-xs text-black dark:text-white truncate max-w-[110px] sm:max-w-[180px]">
-            {truncateAddress(counterparty)}
-          </p>
+          <div className="truncate max-w-[110px] sm:max-w-[180px]">
+            <CopyableAddress address={counterparty} />
+          </div>
         </div>
 
         {/* Rate number centered, green text */}
@@ -77,9 +78,9 @@ export function StreamCard({
       />
 
       <div className="flex items-center justify-between mt-3 text-xs">
-        <span className="text-gray-500 dark:text-gray-400 font-mono truncate max-w-[200px] sm:max-w-[300px]">
-          {truncateAddress(token)}
-        </span>
+        <div className="truncate max-w-[200px] sm:max-w-[300px]">
+          <CopyableAddress address={token} className="text-gray-500 dark:text-gray-400" />
+        </div>
         <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium font-mono">
           {Math.round(pctSnapshot)}%
         </span>

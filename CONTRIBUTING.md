@@ -46,7 +46,7 @@ npm install
 cp .env.example .env.local
 ```
 
-Edit `.env.local`:
+Edit `.env.local` (see [docs/environment-variables.md](./docs/environment-variables.md) for a full reference):
 
 ```env
 NEXT_PUBLIC_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
@@ -54,9 +54,11 @@ NEXT_PUBLIC_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
 NEXT_PUBLIC_FACTORY_CONTRACT_ID=C...     # from conduit-contracts deploy
 NEXT_PUBLIC_GOVERNOR_CONTRACT_ID=C...    # from conduit-contracts deploy
 NEXT_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
+NEXT_PUBLIC_SOROBAN_FEE_MULTIPLIER=2
+NEXT_PUBLIC_DEMO_MODE=                   # set to "true" for mock data
 ```
 
-> Don't have deployed contract IDs? Use the testnet deployments listed in the [conduit-contracts releases](https://github.com/conduit-protocol/conduit-contracts/releases).
+> Don't have deployed contract IDs? Set `NEXT_PUBLIC_DEMO_MODE=true` for local development with mock data, or use the testnet deployments listed in the [conduit-contracts releases](https://github.com/conduit-protocol/conduit-contracts/releases).
 
 Start the development server:
 
@@ -76,10 +78,62 @@ npm run build       # production build (catches Next.js-specific errors)
 
 ---
 
+## Monorepo SDK Dependency
+
+The `@conduit-protocol/sdk` package is resolved to the `streamFi-sdk` git repository via a tarball URL in `package.json`:
+
+```json
+"@conduit-protocol/sdk": "https://codeload.github.com/conduit-protocol/streamFi-sdk/tar.gz/5de4fce26d3d3c73cf56f81e0bd54965dcf831a1"
+```
+
+### Using a Local SDK Checkout
+
+If you're developing the SDK and app simultaneously, you can point the app at your local SDK checkout:
+
+1. Clone the SDK repo alongside this app:
+   ```bash
+   cd /path/to/parent
+   git clone https://github.com/conduit-protocol/streamFi-sdk.git
+   ```
+
+2. In the app's `package.json`, replace the tarball URL with a file path:
+   ```json
+   "@conduit-protocol/sdk": "file:../streamFi-sdk"
+   ```
+
+3. Run `npm install` to link the local package.
+
+4. **Important:** After making changes to the SDK, rebuild it before testing in the app:
+   ```bash
+   cd ../streamFi-sdk
+   npm run build
+   cd ../streamFi-app
+   npm run dev
+   ```
+
+### Lockfile Implications for CI
+
+When you switch between the git tarball and a local file path:
+
+- **Always commit `package-lock.json`** after changing the SDK dependency
+- The lockfile pins the exact tarball hash for reproducible CI builds
+- CI installs from the lockfile, so local file paths won't work in CI — use the git tarball URL for branches that will be CI-tested
+- After testing locally with a local SDK checkout, **revert to the git tarball URL** before pushing
+
+### CI Behavior
+
+The CI pipeline (`npm ci`) installs dependencies strictly from the lockfile. This means:
+
+- Git tarball URLs are fetched and cached by hash
+- Local `file:` paths are not resolved in CI
+- Always test that `npm ci` works after modifying the SDK dependency
+
+---
+
 ## Repository Layout
 
 ```
-conduit-app/
+streamFi-app/
 ├── app/                         # Next.js App Router pages
 │   ├── layout.tsx               # Root layout — Navbar, Providers, footer
 │   ├── page.tsx                 # Landing page
@@ -97,7 +151,8 @@ conduit-app/
 │   │   ├── Input.tsx
 │   │   ├── Badge.tsx
 │   │   ├── ProgressBar.tsx
-│   │   └── Modal.tsx
+│   │   ├── Modal.tsx
+│   │   └── CopyableAddress.tsx  # Click-to-copy address with feedback
 │   ├── stream/                  # Stream-specific composed components
 │   │   ├── StreamCard.tsx       # Summary card used in list
 │   │   ├── StreamActions.tsx    # Role-gated action buttons
@@ -114,10 +169,18 @@ conduit-app/
 │   ├── factory.ts               # DripFactory call wrappers
 │   ├── stream.ts                # DripStream call wrappers
 │   ├── tokens.ts                # Known Stellar asset list
-│   └── format.ts                # Amount formatting, relative time
+│   ├── format.ts                # Amount formatting, relative time
+│   └── clipboard.ts             # Clipboard API with HTTP fallback
+├── e2e/                         # Playwright E2E tests
+│   └── wallet-disconnect.spec.ts
+├── docs/
+│   ├── architecture.md
+│   ├── offline-support.md
+│   └── environment-variables.md
 ├── tailwind.config.ts
 ├── next.config.ts
 ├── tsconfig.json
+├── playwright.config.ts
 └── .env.example
 ```
 
@@ -291,7 +354,7 @@ Transactions are assembled client-side via Soroban simulation, signed by the use
 
 ## Testing
 
-We use [Vitest](https://vitest.dev) for unit tests. Integration / E2E tests are not yet in scope.
+We use [Vitest](https://vitest.dev) for unit tests and [Playwright](https://playwright.dev) for end-to-end tests.
 
 ### What to test
 
@@ -310,6 +373,17 @@ npm test                       # run once
 npm run test:watch             # watch mode
 npx vitest run --coverage      # with coverage report
 ```
+
+### E2E tests
+
+E2E tests use Playwright and require a running dev server:
+
+```bash
+npm run test:e2e               # run all E2E tests
+npm run test:e2e:ui            # open Playwright UI for debugging
+```
+
+E2E tests are in the `e2e/` directory and cover critical user flows like wallet connection, disconnection during loading, and navigation.
 
 ---
 
