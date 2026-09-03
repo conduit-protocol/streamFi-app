@@ -1,9 +1,14 @@
+import { StrKey } from '@stellar/stellar-sdk';
 import type { StreamInfo } from './stream';
 
-const SENDER    = 'GBBJNFWGYQJ6NYQUKCHNF4737FWAK4CLI33JMSUMM7ZGOMDKN6TE2T4E';
-const RECIPIENT = 'GADUAJ5BWNIF4DJGCJ6DZ34C7KFVQDPNRSC54MHVCOV4EGZ3EIOETOSC';
-const TOKEN_XLM  = 'GAV5WUSJY4V4A6CHW6G2ZU5XYMIAKBRZNQDFQXQIKIEC5HDPKCKAA4GD';
-const TOKEN_USDC = 'GA5FYQQE7NZZQOSLDLQLBBQZXFQUQLV3FRGAECH6YVI6BXK7YTOCRLXG';
+// Valid 56-character StrKey public keys (G...) generated via
+// @stellar/stellar-sdk's StrKey.encodeEd25519PublicKey (verified checksums).
+const SENDER    = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x10));
+const RECIPIENT = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x20));
+// Valid 56-character StrKey contract addresses (C...) generated via
+// @stellar/stellar-sdk's StrKey.encodeContract (verified checksums).
+const TOKEN_XLM  = StrKey.encodeContract(Buffer.alloc(32, 0x30));
+const TOKEN_USDC = StrKey.encodeContract(Buffer.alloc(32, 0x40));
 
 export const MOCK_STREAM_IDS = [1n, 2n, 3n, 4n, 5n];
 

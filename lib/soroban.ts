@@ -189,6 +189,11 @@ export class TransactionRevertedError extends Error {
 // during the build's static-generation pass, before real env vars exist.
 let serverInstance: SorobanRpc.Server | undefined;
 
+// Brief negative cache for checkRecipientExists — mirrors SDK behaviour (#451).
+// Declared here (not next to checkRecipientExists) so resetServer() can clear it.
+const NEGATIVE_CACHE_TTL_MS = 5_000;
+const recipientNegativeCache = new Map<string, number>();
+
 function getServer(): SorobanRpc.Server {
   if (!serverInstance) {
     const rpcUrl = getRpcUrl();
@@ -201,10 +206,13 @@ function getServer(): SorobanRpc.Server {
 
 /**
  * Reset the RPC server instance — useful after network errors or config changes.
+ * Also clears the module-level caches (fee stats, recipient negative cache) so
+ * tests and a manual network switch start from a clean slate.
  */
 export function resetServer(): void {
   serverInstance = undefined;
   feeStatsCache = undefined;
+  recipientNegativeCache.clear();
 }
 
 /** Test-only: clear the inclusion-fee cache so fee-stats tests are isolated. */
@@ -740,6 +748,12 @@ export async function checkRecipientExists(
 
   if (options?.signal?.aborted) throw new OperationAbortedError();
 
+  const cachedUntil = recipientNegativeCache.get(address);
+  if (cachedUntil !== undefined && Date.now() < cachedUntil) {
+    return false;
+  }
+  recipientNegativeCache.delete(address);
+
   const { entries } = await withTimeout(
     getServer().getLedgerEntries(recipientLedgerKey(address)),
     timeoutMs,
@@ -752,5 +766,9 @@ export async function checkRecipientExists(
   if (!Array.isArray(entries)) {
     throw new Error('Malformed RPC payload: getLedgerEntries returned no entries array');
   }
-  return entries.length > 0;
+  const exists = entries.length > 0;
+  if (!exists) {
+    recipientNegativeCache.set(address, Date.now() + NEGATIVE_CACHE_TTL_MS);
+  }
+  return exists;
 }

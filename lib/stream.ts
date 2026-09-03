@@ -5,7 +5,7 @@
  * Read-only calls take a `source` address to build the simulation transaction.
  */
 
-import { xdr, Address, nativeToScVal } from '@stellar/stellar-sdk';
+import { xdr, Address, nativeToScVal, StrKey } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128, scValToU64 } from './soroban';
 import { tryGetFactoryContractId } from './env';
 import { isMock } from './factory';
@@ -112,9 +112,9 @@ export async function getStreamInfo(
   if (isMock()) {
     const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
     const fallback: StreamInfo = {
-      sender: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN',
-      recipient: 'GBV4ZDEPVQQ4HX6Z3V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7',
-      token: 'CAS3J7GYLGX6UWJ6V7R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6',
+      sender: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x10)),
+      recipient: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x20)),
+      token: StrKey.encodeContract(Buffer.alloc(32, 0x30)),
       ratePerSecond: 11574074074074n,
       startTime: Math.floor(Date.now() / 1000) - 86400,
       endTime: Math.floor(Date.now() / 1000) + 86400 * 7,

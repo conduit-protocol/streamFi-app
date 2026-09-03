@@ -102,12 +102,14 @@ describe('StreamProgressBar', () => {
     it('should freeze progress at current position when paused', () => {
       const startTime = Math.floor(MOCK_NOW / 1000) - 3600; // Started 1 hour ago
       const endTime = Math.floor(MOCK_NOW / 1000) + 3600;   // Ends in 1 hour
+      const pausedAt = Math.floor(MOCK_NOW / 1000);          // Paused now (1 hour after start)
       
       render(
         <StreamProgressBar
           startTime={startTime}
           endTime={endTime}
           status="paused"
+          pausedAt={pausedAt}
         />
       );
 
@@ -119,12 +121,14 @@ describe('StreamProgressBar', () => {
     it('should not animate when paused', () => {
       const startTime = Math.floor(MOCK_NOW / 1000) - 1800; // Started 30 min ago
       const endTime = Math.floor(MOCK_NOW / 1000) + 1800;   // Ends in 30 min
+      const pausedAt = Math.floor(MOCK_NOW / 1000) - 900;   // Paused 15 min ago
       
       const { container } = render(
         <StreamProgressBar
           startTime={startTime}
           endTime={endTime}
           status="paused"
+          pausedAt={pausedAt}
         />
       );
 

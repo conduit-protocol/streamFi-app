@@ -13,11 +13,10 @@ import { StreamFlowChart } from '@/components/stream/StreamFlowChart';
 import { StreamActions }   from '@/components/stream/StreamActions';
 import { OperatorInfo }    from '@/components/stream/OperatorInfo';
 import { useWallet }       from '@/contexts/WalletContext';
-import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
+import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } from '@/lib/stream';
 import { useNetworkStatus }                                from '@/hooks/useNetworkStatus';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
 import { tokenByAddress } from '@/lib/tokens';
-import type { StreamInfo } from '@/lib/stream';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

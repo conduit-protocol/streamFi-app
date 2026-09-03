@@ -27,6 +27,7 @@ import React, {
 } from 'react';
 import {
   isConnected as freighterIsConnected,
+  getNetwork,
   requestAccess,
   signTransaction,
   WatchWalletChanges,
@@ -362,6 +363,55 @@ export function WalletProvider({
 
   // ── Operation tracking helper ──────────────────────────────────────────────
 
+  // ── Session expiry toast ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!publicKey) return;
+
+    let warned = false;
+    const interval = setInterval(() => {
+      const session = loadWalletSession();
+      if (!session?.expiresAt) return;
+
+      const remaining = session.expiresAt - Date.now();
+      const WARNING_MS = 5 * 60 * 1000; // 5 minutes
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        return;
+      }
+
+      if (remaining <= WARNING_MS && !warned) {
+        warned = true;
+        toast((t) => (
+          <span className="flex items-center gap-3">
+            <span>Your wallet session expires soon.</span>
+            <button
+              type="button"
+              onClick={() => {
+                touchWalletSession();
+                toast.dismiss(t.id);
+                toast.success('Session extended.');
+              }}
+              className="px-2 py-1 rounded bg-black text-white text-xs font-medium dark:bg-white dark:text-black"
+            >
+              Stay connected
+            </button>
+          </span>
+        ), { duration: Infinity, id: 'session-expiry' });
+      }
+
+      if (remaining > WARNING_MS && warned) {
+        warned = false;
+        toast.dismiss('session-expiry');
+      }
+    }, 60_000); // check every minute
+
+    return () => {
+      clearInterval(interval);
+      toast.dismiss('session-expiry');
+    };
+  }, [publicKey]);
+
   function trackOperation<T>(fn: () => Promise<T>): Promise<T> {
     setPendingOperationCount((c) => c + 1);
     return fn().finally(() => {
@@ -431,6 +481,25 @@ export function WalletProvider({
         throw new Error(error?.message ?? 'Failed to connect to Freighter.');
       }
 
+      // Verify the wallet's network matches the app's configured network
+      // before completing the connection (#418).
+      const { networkPassphrase: walletPassphrase, error: networkError } = await withTimeout(
+        getNetwork(),
+        WALLET_CONNECT_TIMEOUT_MS,
+        { label: 'Freighter network check', onTimeout: walletTimeoutError },
+      );
+      if (requestId !== pendingRequestIdRef.current || !isMountedRef.current) return;
+      if (networkError) {
+        throw new Error(networkError.message ?? 'Failed to read wallet network.');
+      }
+
+      const configuredPassphrase = getNetworkPassphrase();
+      if (walletPassphrase && walletPassphrase !== configuredPassphrase) {
+        throw new Error(
+          `Network mismatch: your wallet is set to "${walletPassphrase}" but the app expects "${configuredPassphrase}". Please switch your wallet to the correct network and try again.`,
+        );
+      }
+
       setPublicKey(address);
       setWalletName('Freighter');
       saveWalletSession({ key: address, name: 'Freighter' });
@@ -489,7 +558,7 @@ export function WalletProvider({
     // of mutating state on a torn-down tree.
     let active = true;
     const watcher = new WatchWalletChanges();
-    watcher.watch(({ address }) => {
+    watcher.watch(({ address, networkPassphrase }) => {
       if (!active || !isMountedRef.current) return;
       if (!publicKeyRef.current) return; // no active session to keep in sync
 
@@ -501,6 +570,25 @@ export function WalletProvider({
         disconnect();
         return;
       }
+
+      // Check for network change: if the wallet's network passphrase no
+      // longer matches the app's configured network, clear stale data and
+      // warn the user. This handles Freighter testnet<->mainnet switches
+      // that leave React Query caches pointing at the wrong network (#418).
+      const configuredPassphrase = getNetworkPassphrase();
+      if (networkPassphrase && networkPassphrase !== configuredPassphrase) {
+        queryClient.clear();
+        resetTokenAllowanceGateway();
+        clearTransactions();
+        resetServer();
+        resetCircuitBreaker();
+        clearIdempotencyKeys();
+        toast.error(
+          `Network mismatch: wallet is on a different network (${networkPassphrase}) than the app (${configuredPassphrase}). Please switch your wallet to the correct network.`,
+        );
+        return;
+      }
+
       if (address === publicKeyRef.current) return; // nothing actually changed
 
       setPublicKey(address);

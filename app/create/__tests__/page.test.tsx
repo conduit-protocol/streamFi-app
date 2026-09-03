@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React from 'react';
+import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -64,12 +63,7 @@ vi.mock('@/lib/soroban', async () => {
   };
 });
 
-vi.mock('lucide-react', () => ({
-  ArrowRight: () => React.createElement('span', null, '→'),
-  Info: () => React.createElement('span', null, 'i'),
-  Copy: () => React.createElement('span', null, 'copy'),
-  Check: () => React.createElement('span', null, 'check'),
-}));
+vi.mock("lucide-react");
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
