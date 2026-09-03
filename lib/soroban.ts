@@ -189,6 +189,11 @@ export class TransactionRevertedError extends Error {
 // during the build's static-generation pass, before real env vars exist.
 let serverInstance: SorobanRpc.Server | undefined;
 
+// Brief negative cache for checkRecipientExists — mirrors SDK behaviour (#451).
+// Declared here (not next to checkRecipientExists) so resetServer() can clear it.
+const NEGATIVE_CACHE_TTL_MS = 5_000;
+const recipientNegativeCache = new Map<string, number>();
+
 function getServer(): SorobanRpc.Server {
   if (!serverInstance) {
     const rpcUrl = getRpcUrl();
@@ -201,10 +206,13 @@ function getServer(): SorobanRpc.Server {
 
 /**
  * Reset the RPC server instance — useful after network errors or config changes.
+ * Also clears the module-level caches (fee stats, recipient negative cache) so
+ * tests and a manual network switch start from a clean slate.
  */
 export function resetServer(): void {
   serverInstance = undefined;
   feeStatsCache = undefined;
+  recipientNegativeCache.clear();
 }
 
 /** Test-only: clear the inclusion-fee cache so fee-stats tests are isolated. */
@@ -732,10 +740,6 @@ function recipientLedgerKey(address: string): xdr.LedgerKey {
  * @param options    Optional signal and timeout
  * @returns          `true` / `false` when the ledger answered; throws when it didn't
  */
-// Brief negative cache for checkRecipientExists — mirrors SDK behaviour (#451).
-const NEGATIVE_CACHE_TTL_MS = 5_000;
-const recipientNegativeCache = new Map<string, number>();
-
 export async function checkRecipientExists(
   address: string,
   options?: { signal?: AbortSignal; timeoutMs?: number },

@@ -57,11 +57,12 @@ export default function SettingsPage() {
     } catch {
       // Storage can be unavailable in private browsing or embedded webviews.
     }
-  }, [settings]);
 
-  useEffect(() => {
+    // Mirror the selected network into its own key so lib/network-storage can
+    // read it without parsing the whole settings blob. Guarded by the same
+    // didMount check so storage is never rewritten on the initial mount (#422).
     saveSelectedNetwork(settings.network);
-  }, [settings.network]);
+  }, [settings]);
 
   const updateSetting = useCallback(<K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));

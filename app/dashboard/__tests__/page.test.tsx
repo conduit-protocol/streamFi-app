@@ -504,7 +504,7 @@ describe("DashboardPage — heavy load initialization", () => {
     cleanupDashboard(root, container);
   });
 
-  it("shows empty state when all streams fail to load", async () => {
+  it("shows the failure state, not the empty state, when all streams fail to load (#467)", async () => {
     mockStreamsBySender.mockResolvedValue([1n, 2n, 3n]);
     mockStreamsByRecipient.mockResolvedValue([]);
     mockGetStreamAddress.mockResolvedValue(null);
@@ -515,7 +515,12 @@ describe("DashboardPage — heavy load initialization", () => {
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    expect(container.textContent).toContain("No receiving streams yet.");
+    // Since #511: when displayed.length is 0 but a partialError is set, the
+    // dashboard shows the error + a Retry button instead of the misleading
+    // "No … streams yet" empty state.
+    expect(container.textContent).toMatch(/couldn.t load/i);
+    expect(container.textContent).toMatch(/retry/i);
+    expect(container.textContent).not.toContain("No receiving streams yet.");
     const cards = container.querySelectorAll('[data-testid="stream-card"]');
     expect(cards.length).toBe(0);
     cleanupDashboard(root, container);
