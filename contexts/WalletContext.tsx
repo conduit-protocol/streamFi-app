@@ -363,6 +363,55 @@ export function WalletProvider({
 
   // ── Operation tracking helper ──────────────────────────────────────────────
 
+  // ── Session expiry toast ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!publicKey) return;
+
+    let warned = false;
+    const interval = setInterval(() => {
+      const session = loadWalletSession();
+      if (!session?.expiresAt) return;
+
+      const remaining = session.expiresAt - Date.now();
+      const WARNING_MS = 5 * 60 * 1000; // 5 minutes
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        return;
+      }
+
+      if (remaining <= WARNING_MS && !warned) {
+        warned = true;
+        toast((t) => (
+          <span className="flex items-center gap-3">
+            <span>Your wallet session expires soon.</span>
+            <button
+              type="button"
+              onClick={() => {
+                touchWalletSession();
+                toast.dismiss(t.id);
+                toast.success('Session extended.');
+              }}
+              className="px-2 py-1 rounded bg-black text-white text-xs font-medium dark:bg-white dark:text-black"
+            >
+              Stay connected
+            </button>
+          </span>
+        ), { duration: Infinity, id: 'session-expiry' });
+      }
+
+      if (remaining > WARNING_MS && warned) {
+        warned = false;
+        toast.dismiss('session-expiry');
+      }
+    }, 60_000); // check every minute
+
+    return () => {
+      clearInterval(interval);
+      toast.dismiss('session-expiry');
+    };
+  }, [publicKey]);
+
   function trackOperation<T>(fn: () => Promise<T>): Promise<T> {
     setPendingOperationCount((c) => c + 1);
     return fn().finally(() => {
