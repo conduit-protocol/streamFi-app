@@ -8,11 +8,10 @@ import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { BulkWithdrawButton } from "@/components/stream/BulkWithdrawButton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo, getWithdrawable } from "@/lib/stream";
+import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } from '@/lib/stream';
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
-import type { StreamInfo } from "@/lib/stream";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";

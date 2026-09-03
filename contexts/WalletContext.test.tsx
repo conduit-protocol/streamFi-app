@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
 import { WalletProvider, useWallet, Mutex, Semaphore } from './WalletContext';
 import * as freighter from '@stellar/freighter-api';
 import { queryClient } from '@/lib/queryClient';
