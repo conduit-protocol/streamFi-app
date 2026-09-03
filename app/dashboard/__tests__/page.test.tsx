@@ -69,11 +69,7 @@ vi.mock("next/link", () => ({
     React.createElement("a", props, children),
 }));
 
-vi.mock("lucide-react", () => ({
-  Plus: () => React.createElement("span", null, "+"),
-  AlertCircle: () => React.createElement("span", null, "!"),
-  RefreshCw: () => React.createElement("span", null, "↻"),
-}));
+vi.mock("lucide-react");
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
