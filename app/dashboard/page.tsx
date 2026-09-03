@@ -13,6 +13,7 @@ import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } fro
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { isFulfilled } from "@/lib/safe-operations";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
@@ -67,7 +68,7 @@ async function loadRows(
   for (let i = 0; i < uniqueIds.length; i++) {
     const r = addrResults[i];
     if (signal.aborted) return { rows: [], failedCount: 0 };
-    if (r && r.status === "fulfilled" && r.value && typeof r.value === "string") {
+    if (isFulfilled(r) && r.value && typeof r.value === "string") {
       addrPairs.push({ id: uniqueIds[i]!, rowId: uniqueIds[i]!.toString(), addr: r.value });
     } else {
       failedCount++;
@@ -93,8 +94,7 @@ async function loadRows(
       const r = results[j];
       const pair = batch[j]!;
       if (
-        r &&
-        r.status === "fulfilled" &&
+        isFulfilled(r) &&
         r.value[0] &&
         typeof r.value[0] === "object" &&
         typeof r.value[0].ratePerSecond === "bigint"
