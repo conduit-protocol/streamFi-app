@@ -53,9 +53,18 @@ export function StreamProgressBar({
     status === 'paused' && pausedAt ? pausedAt : startTime,
   );
 
+  const mountTimeRef = useRef<number | null>(null);
+
   useEffect(() => {
+    if (mountTimeRef.current === null) {
+      mountTimeRef.current = Date.now();
+    }
+
     // Update to real wall-clock time after hydration
-    if (status !== 'paused') {
+    if (status === 'cancelled') {
+      const mountSec = Math.floor((mountTimeRef.current ?? Date.now()) / 1_000);
+      setReferenceSec(endTime > 0 ? Math.min(mountSec, endTime) : mountSec);
+    } else if (status !== 'paused') {
       setReferenceSec(Math.floor(Date.now() / 1_000));
     }
 
@@ -78,7 +87,15 @@ export function StreamProgressBar({
     // Paused streams freeze at pausedAt, not the wall-clock time this
     // effect happens to run at — otherwise reloading (or just re-rendering)
     // a paused stream makes the "frozen" bar keep creeping forward.
-    const referenceMs = status === 'paused' && pausedAt ? pausedAt * 1_000 : Date.now();
+    // Cancelled streams freeze at min(now, endTime) captured once at mount
+    // since we don't have a cancelledAt timestamp.
+    let referenceMs = Date.now();
+    if (status === 'paused' && pausedAt) {
+      referenceMs = pausedAt * 1_000;
+    } else if (status === 'cancelled') {
+      const now = mountTimeRef.current ?? Date.now();
+      referenceMs = endMs > 0 ? Math.min(now, endMs) : now;
+    }
     const elapsedMs   = Math.max(0, referenceMs - startMs);
 
     // Clamp for ended streams — show full bar, static
