@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import React from "react";
+import React, { act } from 'react';
 import { createRoot } from "react-dom/client";
-import { act } from "react";
 
 // ── Mutable wallet state (changed per test) ──────────────────────────────────
 
@@ -42,9 +41,7 @@ vi.mock("next/link", () => ({
     React.createElement("a", props, children),
 }));
 
-vi.mock("lucide-react", () => ({
-  Plus: () => React.createElement("span", null, "+"),
-}));
+vi.mock("lucide-react");
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 

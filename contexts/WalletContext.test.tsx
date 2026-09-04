@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
 import { WalletProvider, useWallet, Mutex, Semaphore } from './WalletContext';
 import * as freighter from '@stellar/freighter-api';
 import { queryClient } from '@/lib/queryClient';
@@ -28,6 +27,7 @@ const { watchInstances } = vi.hoisted(() => ({
 
 vi.mock('@stellar/freighter-api', () => ({
   isConnected: vi.fn(),
+  getNetwork: vi.fn(),
   requestAccess: vi.fn(),
   signTransaction: vi.fn(),
   WatchWalletChanges: class MockWatchWalletChanges {
@@ -89,6 +89,12 @@ describe('WalletContext', () => {
     vi.clearAllMocks();
     watchInstances.length = 0;
     useTransactionStore.setState({ transactions: {}, order: [] });
+    // Default getNetwork mock returns the same passphrase the env mock uses,
+    // so connect() passes the network check without extra setup per test.
+    mockedFreighter.getNetwork.mockResolvedValue({
+      network: 'TESTNET',
+      networkPassphrase: 'Test SDF Network ; September 2015',
+    });
   });
 
   it('restores a valid stored wallet session on mount', () => {
