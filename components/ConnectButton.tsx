@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useWallet }         from '@/contexts/WalletContext';
-import { truncateAddress }   from '@/lib/format';
+import { CopyableAddress }   from '@/components/ui/CopyableAddress';
 import { LogOut }            from 'lucide-react';
 
 const CONNECT_UI_TIMEOUT_MS = 20_000;
@@ -49,8 +49,8 @@ export function ConnectButton() {
   if (connected && publicKey) {
     return (
       <div className="flex items-center gap-2">
-        <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400 font-mono">
-          {truncateAddress(publicKey)}
+        <span className="hidden sm:block text-xs text-gray-500 dark:text-gray-400">
+          <CopyableAddress address={publicKey} />
         </span>
         <button
           onClick={disconnect}

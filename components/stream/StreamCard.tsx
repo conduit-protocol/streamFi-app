@@ -1,5 +1,6 @@
 import Link                    from 'next/link';
 import { Badge }               from '@/components/ui/Badge';
+import { CopyableAddress }     from '@/components/ui/CopyableAddress';
 import { StreamProgressBar }   from '@/components/stream/StreamProgressBar';
 import { fromStroops } from '@/lib/format';
 import { CopyAddress } from '@/components/ui/CopyAddress';
@@ -51,7 +52,9 @@ export function StreamCard({
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">
             {role === 'recipient' ? 'From' : 'To'}
           </p>
-          <CopyAddress address={counterparty} />
+          <div className="truncate max-w-[110px] sm:max-w-[180px]">
+            <CopyableAddress address={counterparty} />
+          </div>
         </div>
 
         {/* Rate number centered, green text */}

@@ -7,6 +7,7 @@ import { ArrowLeft }                         from 'lucide-react';
 
 import { Badge }           from '@/components/ui/Badge';
 import { Card }            from '@/components/ui/Card';
+import { CopyableAddress } from '@/components/ui/CopyableAddress';
 import { RateTicker }      from '@/components/stream/RateTicker';
 import { StreamTimeline }  from '@/components/stream/StreamTimeline';
 import { StreamFlowChart } from '@/components/stream/StreamFlowChart';
@@ -210,7 +211,9 @@ export default function StreamPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1 font-mono">{truncateAddress(streamAddress)}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+            <CopyableAddress address={streamAddress} />
+          </p>
           <h1 className="text-2xl font-black tracking-tight">Stream #{id}</h1>
         </div>
         <Badge status={status} />
@@ -285,27 +288,48 @@ export default function StreamPage() {
       <Card className="mb-6">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-            {[
-              { label: 'Sender',          value: truncateAddress(info.sender)    },
-              { label: 'Recipient',       value: truncateAddress(info.recipient) },
-              { label: 'Token',           value: truncateAddress(info.token)     },
-              { label: 'Rate',            value: `${fromStroops(info.ratePerSecond)} / sec` },
-              { label: 'Total deposited', value: fromStroops(totalDeposited)     },
-              { label: 'Withdrawn',       value: fromStroops(info.withdrawn)     },
-              ...(info.endTime > 0 ? [
-                { label: 'Start',  value: formatTimestamp(info.startTime) },
-                { label: 'End',    value: formatTimestamp(info.endTime)   },
-              ] : [
-                { label: 'Start',  value: formatTimestamp(info.startTime) },
-                { label: 'End',    value: 'Open-ended'                   },
-              ]),
-              { label: 'Clawback', value: info.clawbackEnabled ? 'Enabled' : 'Disabled' },
-            ].map(({ label, value }) => (
-              <tr key={label}>
-                <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">{label}</td>
-                <td className="py-2.5 font-mono text-black dark:text-white text-right">{value}</td>
-              </tr>
-            ))}
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Sender</td>
+              <td className="py-2.5 text-black dark:text-white text-right">
+                <CopyableAddress address={info.sender} />
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Recipient</td>
+              <td className="py-2.5 text-black dark:text-white text-right">
+                <CopyableAddress address={info.recipient} />
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Token</td>
+              <td className="py-2.5 text-black dark:text-white text-right">
+                <CopyableAddress address={info.token} />
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Rate</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{`${fromStroops(info.ratePerSecond)} / sec`}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Total deposited</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{fromStroops(totalDeposited)}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Withdrawn</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{fromStroops(info.withdrawn)}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Start</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{formatTimestamp(info.startTime)}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">End</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{info.endTime > 0 ? formatTimestamp(info.endTime) : 'Open-ended'}</td>
+            </tr>
+            <tr>
+              <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">Clawback</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">{info.clawbackEnabled ? 'Enabled' : 'Disabled'}</td>
+            </tr>
           </tbody>
         </table>
       </Card>
