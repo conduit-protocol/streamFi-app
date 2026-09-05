@@ -1,4 +1,5 @@
 'use client';
+import type { StreamInfo } from '@conduit-protocol/sdk';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, X, Plus, RotateCcw } from 'lucide-react';
@@ -10,6 +11,7 @@ import * as streamLib        from '@/lib/stream';
 import { safeToStroops }     from '@/lib/safe-operations';
 import { queryClient }       from '@/lib/queryClient';
 import { invalidateStreamMutation } from '@/lib/query-keys';
+import { optimisticStreamStatusUpdate, rollbackStreamStatus } from '@/lib/optimistic-updates';
 
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
@@ -57,25 +59,30 @@ export function StreamActions({
   const isPaused = status === 'paused';
   const canAct   = isActive || isPaused;
 
-  async function run(name: string, fn: () => Promise<unknown>) {
+  async function run(name: string, fn: () => Promise<unknown>, optimisticStatus?: string) {
     setPending(name);
     setActionError(null);
+
+    // Apply optimistic update before the mutation (#454)
+    let snapshot: StreamInfo | undefined;
+    if (optimisticStatus) {
+      snapshot = optimisticStreamStatusUpdate(queryClient, streamAddress, optimisticStatus);
+    }
+
     try {
       await fn();
       if (!mounted.current) return;
-      // The stream's on-chain state just changed — invalidate only what this
-      // action touched (this stream's reads, the streams list / dashboard,
-      // the transactions list, the wallet balance) rather than every query in
-      // the app (fixes #193, narrowed per #431).
       await invalidateStreamMutation(queryClient, streamAddress);
       onSuccess?.();
     } catch (e) {
       if (!mounted.current) return;
+      // Roll back the optimistic update on error
+      if (optimisticStatus && snapshot !== undefined) {
+        rollbackStreamStatus(queryClient, streamAddress, snapshot);
+      }
       console.error(`[${name}] error:`, e);
       setActionError(e instanceof Error ? e.message : `Failed to ${name}.`);
     } finally {
-      // Always clear the pending spinner, even on RPC timeout, so the user
-      // is never left with a button stuck in a loading state (fixes #195).
       if (mounted.current) setPending(null);
     }
   }
@@ -121,7 +128,7 @@ export function StreamActions({
         {isSender && isActive && (
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => run('pause', () => streamLib.pause(publicKey, streamAddress, signTx))}
+              onClick={() => run('pause', () => streamLib.pause(publicKey, streamAddress, signTx), 'paused')}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -129,7 +136,7 @@ export function StreamActions({
               {pending === 'pause' ? 'Pausing…' : 'Pause'}
             </button>
             <button
-              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx))}
+              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx), 'cancelled')}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -143,7 +150,7 @@ export function StreamActions({
         {isSender && isPaused && (
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => run('resume', () => streamLib.resume(publicKey, streamAddress, signTx))}
+              onClick={() => run('resume', () => streamLib.resume(publicKey, streamAddress, signTx), 'active')}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -151,7 +158,7 @@ export function StreamActions({
               {pending === 'resume' ? 'Resuming…' : 'Resume'}
             </button>
             <button
-              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx))}
+              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx), 'cancelled')}
               disabled={pending !== null}
               className="btn-secondary"
             >
