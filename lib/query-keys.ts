@@ -55,3 +55,39 @@ export async function invalidateStreamMutation(
     qc.invalidateQueries({ queryKey: queryKeys.wallet.all }),
   ]);
 }
+
+// Extend with profile and allowance query keys (#448)
+// These are appended after the existing queryKeys object and
+// invalidateStreamMutation function.
+
+export const extendedQueryKeys = {
+  ...queryKeys,
+  profile: {
+    all: ['profile'] as const,
+    summary: (address: string) => ['profile', address] as const,
+  },
+  allowance: {
+    all: ['allowance'] as const,
+    forToken: (owner: string, token: string) => ['allowance', owner, token] as const,
+  },
+} as const;
+
+/**
+ * Invalidate profile and allowance queries after a mutation (#448).
+ * Call after invalidateStreamMutation to also refresh profile
+ * aggregates and the token-allowance gateway state.
+ */
+export async function invalidateProfileAndAllowance(
+  qc: QueryClient,
+  address: string,
+  token?: string,
+): Promise<void> {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: extendedQueryKeys.profile.summary(address) }),
+    qc.invalidateQueries({ queryKey: extendedQueryKeys.allowance.all }),
+    ...(token
+      ? [qc.invalidateQueries({ queryKey: extendedQueryKeys.allowance.forToken(address, token) })]
+      : []
+    ),
+  ]);
+}
