@@ -74,7 +74,7 @@ vi.mock('lucide-react', () => ({
   Copy: () => React.createElement('span', null, 'copy'),
   Check: () => React.createElement('span', null, 'check'),
 }));
-`r`n`
+
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
@@ -298,7 +298,6 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
   });
 });
 
-
 // #392 — `create_stream` accepts a contract as the recipient, but only an
 // address able to call DripStream::withdraw can pull the funds back out. A
 // SAC, a token contract, or a vault without that call path locks the deposit,
@@ -419,4 +418,5 @@ describe('CreatePage — contract recipient warning (issue #392)', () => {
     cleanup(root, container);
   });
 });
+
 
