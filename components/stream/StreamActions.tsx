@@ -1,5 +1,5 @@
 'use client';
-import type { StreamInfo } from '@conduit-protocol/sdk';
+import type { StreamInfo } from '@/lib/stream';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, X, Plus, RotateCcw } from 'lucide-react';

@@ -8,7 +8,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { queryKeys } from './query-keys';
-import type { StreamInfo } from '@conduit-protocol/sdk';
+import type { StreamInfo } from './stream';
 
 /**
  * Apply an optimistic status change to a stream in the cache.
