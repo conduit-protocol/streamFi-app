@@ -9,7 +9,7 @@ import { Input }             from '@/components/ui/Input';
 import * as streamLib        from '@/lib/stream';
 import { safeToStroops }     from '@/lib/safe-operations';
 import { queryClient }       from '@/lib/queryClient';
-import { invalidateStreamMutation } from '@/lib/query-keys';
+import { invalidateStreamMutation, invalidateProfileAndAllowance } from '@/lib/query-keys';
 
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
@@ -68,6 +68,7 @@ export function StreamActions({
       // the transactions list, the wallet balance) rather than every query in
       // the app (fixes #193, narrowed per #431).
       await invalidateStreamMutation(queryClient, streamAddress);
+      await invalidateProfileAndAllowance(queryClient, publicKey);
       onSuccess?.();
     } catch (e) {
       if (!mounted.current) return;
