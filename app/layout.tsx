@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { Providers } from '@/components/Providers';
-import { Navbar }    from '@/components/Navbar';
+import { Navbar } from '@/components/Navbar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { CircuitBreakerOverlay } from '@/components/CircuitBreakerOverlay';
+import { initErrorTracking } from '@/lib/error-tracking';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  if (typeof window !== 'undefined') initErrorTracking();
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="bg-white dark:bg-gray-950 text-black dark:text-white antialiased">
