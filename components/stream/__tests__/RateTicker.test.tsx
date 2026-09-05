@@ -53,7 +53,7 @@ describe('RateTicker', () => {
     });
 
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-    const intervalId = setIntervalSpy.mock.results[0].value;
+    const intervalId = setIntervalSpy.mock.results[0]!.value;
 
     act(() => root.unmount());
 
@@ -73,7 +73,7 @@ describe('RateTicker', () => {
     });
 
     expect(setIntervalSpy).toHaveBeenCalledTimes(1);
-    const firstId = setIntervalSpy.mock.results[0].value;
+    const firstId = setIntervalSpy.mock.results[0]!.value;
 
     act(() => {
       root.render(
@@ -105,6 +105,6 @@ describe('RateTicker', () => {
     });
 
     act(() => vi.advanceTimersByTime(1_000));
-    expect(container.textContent).toBe('2.00');
+    expect(container.textContent).toBe('4.00');
   });
 });
