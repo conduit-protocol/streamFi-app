@@ -1,4 +1,5 @@
 'use client';
+import { captureError } from "@/lib/error-tracking";
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 
@@ -50,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return { errorCount: newCount };
     });
 
-    console.error('ErrorBoundary caught:', error.message, errorInfo.componentStack);
+    captureError(error, { tags: { source: 'ErrorBoundary' }, extra: { componentStack: errorInfo.componentStack } });
     this.props.onError?.(error, errorInfo);
   }
 
