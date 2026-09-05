@@ -63,7 +63,18 @@ vi.mock('@/lib/soroban', async () => {
   };
 });
 
-vi.mock("lucide-react");
+const mockCheckContractHasWithdraw = vi.fn().mockResolvedValue(true);
+vi.mock('@/lib/contract-recipient-probe', () => ({
+  checkContractHasWithdraw: (...args: unknown[]) => mockCheckContractHasWithdraw(...args),
+}));
+
+vi.mock('lucide-react', () => ({
+  ArrowRight: () => React.createElement('span', null, '→'),
+  Info: () => React.createElement('span', null, 'i'),
+  Copy: () => React.createElement('span', null, 'copy'),
+  Check: () => React.createElement('span', null, 'check'),
+}));
+`r`n`
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
@@ -119,6 +130,7 @@ describe('CreatePage — zero-rate guard (issue #243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
   });
@@ -189,6 +201,7 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockIsMock.mockReturnValue(false);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
@@ -298,6 +311,7 @@ describe('CreatePage — contract recipient warning (issue #392)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockIsMock.mockReturnValue(true);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
@@ -405,3 +419,4 @@ describe('CreatePage — contract recipient warning (issue #392)', () => {
     cleanup(root, container);
   });
 });
+
