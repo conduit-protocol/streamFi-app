@@ -79,9 +79,10 @@ export const extendedQueryKeys = {
  */
 export async function invalidateProfileAndAllowance(
   qc: QueryClient,
-  address: string,
+  address: string | null,
   token?: string,
 ): Promise<void> {
+  if (!address) return;
   await Promise.all([
     qc.invalidateQueries({ queryKey: extendedQueryKeys.profile.summary(address) }),
     qc.invalidateQueries({ queryKey: extendedQueryKeys.allowance.all }),
