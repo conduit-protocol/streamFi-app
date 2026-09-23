@@ -213,10 +213,14 @@ export default function StreamPage() {
   const tokenSymbol = tokenByAddress(info.token, 'testnet')?.symbol ?? truncateAddress(info.token);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
+    <div
+      className="max-w-2xl mx-auto px-4 py-10 print-receipt"
+      data-stream-id={`Stream #${id}`}
+      data-print-date={new Date().toLocaleDateString("en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" })}
+    >
 
       {/* Back */}
-      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
+      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6 print:hidden">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
 
@@ -337,16 +341,18 @@ export default function StreamPage() {
 
       {/* Actions */}
       {(isSender || isRecipient) && (
-        <StreamActions
-          streamAddress={streamAddress}
-          status={status}
-          clawbackEnabled={info.clawbackEnabled}
-          isSender={isSender}
-          isRecipient={isRecipient}
-          withdrawable={withdrawable}
-          token={tokenSymbol}
-          onSuccess={loadStream}
-        />
+        <div className="print:hidden">
+          <StreamActions
+            streamAddress={streamAddress}
+            status={status}
+            clawbackEnabled={info.clawbackEnabled}
+            isSender={isSender}
+            isRecipient={isRecipient}
+            withdrawable={withdrawable}
+            token={tokenSymbol}
+            onSuccess={loadStream}
+          />
+        </div>
       )}
 
       {/* Delegated operator — shown when the stream has one set (#473) */}

@@ -78,3 +78,120 @@
   from { width: 0%; }
   to   { width: 100%; }
 }
+
+/* ── Print stylesheet (#555, #571) ────────────────────────────────────────── */
+/*
+ * Applied via .print-receipt on /transactions and /stream/[id].
+ * Hides all UI chrome (navbar, action buttons, export controls) and presents
+ * a clean, receipt-style layout for printing or saving as PDF.
+ */
+@media print {
+  /* Hide global chrome */
+  nav,
+  header,
+  footer,
+  aside {
+    display: none !important;
+  }
+
+  /* Hide interactive controls that make no sense on paper */
+  .print\:hidden,
+  [aria-label="Download PDF summary"],
+  [aria-label="Print transaction history"] {
+    display: none !important;
+  }
+
+  /* Reset page geometry */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+    margin: 0;
+  }
+
+  /* Receipt-style container: full width, no padding waste */
+  .print-receipt {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1.5cm 2cm !important;
+  }
+
+  /* Print header — show the page title prominently */
+  .print-receipt h1 {
+    font-size: 18pt;
+    font-weight: 900;
+    border-bottom: 2pt solid black;
+    padding-bottom: 0.4cm;
+    margin-bottom: 0.6cm;
+  }
+
+  /* Cards: drop shadow and background, keep border */
+  .card,
+  .print-receipt [class~="card"] {
+    box-shadow: none !important;
+    background: white !important;
+    border: 1pt solid #999 !important;
+    border-radius: 0 !important;
+  }
+
+  /* Table borders for readability on paper */
+  .print-receipt table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+
+  .print-receipt th,
+  .print-receipt td {
+    border-bottom: 0.5pt solid #ccc;
+    padding: 4pt 6pt;
+  }
+
+  .print-receipt thead th {
+    border-bottom: 1pt solid black;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.05em;
+  }
+
+  /* Stream detail: show both mobile and desktop layouts as single column */
+  .sm\:hidden {
+    display: block !important;
+  }
+  .hidden.sm\:block {
+    display: none !important;
+  }
+
+  /* Preserve monospace for addresses and amounts */
+  .font-mono,
+  .tabular-nums {
+    font-family: ui-monospace, monospace;
+  }
+
+  /* Ensure status badges print legibly without colour */
+  .badge-active,
+  .badge-paused,
+  .badge-ended,
+  .badge-cancelled {
+    background: white !important;
+    color: black !important;
+    border: 1pt solid black !important;
+  }
+
+  /* Page break utilities */
+  .print-receipt > * + * {
+    page-break-inside: avoid;
+  }
+
+  /* Print footer with URL and date */
+  .print-receipt::after {
+    content: "Conduit — " attr(data-stream-id) "  |  Printed " attr(data-print-date);
+    display: block;
+    margin-top: 1cm;
+    padding-top: 0.3cm;
+    border-top: 0.5pt solid #ccc;
+    font-size: 8pt;
+    color: #666;
+  }
+}
