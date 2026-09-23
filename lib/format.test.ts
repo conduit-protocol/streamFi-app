@@ -4,6 +4,7 @@ import {
   toStroops,
   formatDuration,
   formatTimestamp,
+  formatTimestampRelative,
   truncateAddress,
   wouldRateTruncateToZero,
 } from './format.js';
@@ -133,6 +134,38 @@ describe('formatTimestamp', () => {
     // 1700000000 = Tuesday, November 14, 2023 10:13:20 PM UTC
     const formatted = formatTimestamp(1700000000);
     expect(formatted).toBe('Nov 14, 2023, 10:13 PM');
+  });
+});
+
+describe('formatTimestampRelative', () => {
+  it('returns "just now" for timestamps within the last 45 seconds (#556)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatTimestampRelative(now - 10)).toBe('just now');
+    expect(formatTimestampRelative(now)).toBe('just now');
+  });
+
+  it('returns minutes ago for timestamps 1–59 minutes old (#556)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatTimestampRelative(now - 60)).toBe('1m ago');
+    expect(formatTimestampRelative(now - 3540)).toBe('59m ago');
+  });
+
+  it('returns hours ago for timestamps 1–23 hours old (#556)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatTimestampRelative(now - 3600)).toBe('1h ago');
+    expect(formatTimestampRelative(now - 82800)).toBe('23h ago');
+  });
+
+  it('returns days ago for timestamps 1–6 days old (#556)', () => {
+    const now = Math.floor(Date.now() / 1000);
+    expect(formatTimestampRelative(now - 86400)).toBe('1d ago');
+    expect(formatTimestampRelative(now - 518400)).toBe('6d ago');
+  });
+
+  it('falls back to absolute date for timestamps ≥ 7 days old (#556)', () => {
+    // 1700000000 is more than 7 days ago from any plausible test run date
+    const result = formatTimestampRelative(1700000000);
+    expect(result).toBe('Nov 14, 2023, 10:13 PM');
   });
 });
 
