@@ -120,6 +120,31 @@ export function formatTimestamp(ts: number): string {
   });
 }
 
+/**
+ * Format a unix timestamp as a relative string ("2h ago") for recent events,
+ * falling back to the absolute locale string for anything older than 7 days.
+ *
+ * Thresholds:
+ *  < 45 s  → "just now"
+ *  < 1 h   → "Xm ago"
+ *  < 24 h  → "Xh ago"
+ *  < 7 d   → "Xd ago"
+ *  ≥ 7 d   → formatTimestamp(ts)  (absolute fallback)
+ *
+ * Added for issue #556 — settings toggle between relative and absolute time.
+ */
+export function formatTimestampRelative(ts: number): string {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const delta = nowSeconds - ts;
+
+  if (delta < 45) return "just now";
+  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+  if (delta < 86400 * 7) return `${Math.floor(delta / 86400)}d ago`;
+
+  return formatTimestamp(ts);
+}
+
 /** Format seconds into a human-readable duration */
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds)) return "—";
