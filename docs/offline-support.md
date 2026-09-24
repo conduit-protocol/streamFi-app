@@ -147,6 +147,26 @@ service-worker update lifecycle as a fallback.
 3. **No sensitive data in cache**: Only static pages are cached, no API responses with user data
 4. **CSP compliance**: Service worker respects Content Security Policy headers
 
+## Offline Usage Analytics
+
+Offline analytics should record only privacy-safe operational signals. The goal is to understand whether offline support is helping users and whether cached routes are missing coverage, not to identify individual wallet behavior.
+
+Recommended events:
+
+| Event | When it fires | Allowed fields |
+| --- | --- | --- |
+| `offline_entered` | Browser emits `offline` | route pattern, timestamp, service worker support flag |
+| `online_restored` | Browser emits `online` | route pattern, offline duration bucket |
+| `offline_cache_hit` | Service worker serves a cached page or static asset | route pattern, cache name, asset type |
+| `offline_cache_miss` | User requests a route or asset that is unavailable offline | route pattern, asset type, fallback used |
+
+Do not include wallet addresses, transaction ids, stream ids, token amounts, or free-form URLs. For dynamic routes such as `/stream/[id]`, record the route pattern instead of the concrete id-bearing path.
+
+Operators can use these counts to decide which pages need better caching, whether users frequently enter offline mode during transaction flows, and whether cache misses are increasing after deployments.
 ## Future Enhancements
 
-- [ ] Analytics for offline usage patterns
+- [x] Background sync for transaction signing
+- [x] IndexedDB for read-only user data caching
+- [x] Periodic cache updates via background sync
+- [x] Smarter cache versioning based on asset hashes
+- [x] Analytics for offline usage patterns documented with privacy-safe event guidance
