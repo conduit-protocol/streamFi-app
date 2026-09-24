@@ -8,8 +8,14 @@ import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BulkWithdrawButton } from "@/components/stream/BulkWithdrawButton";
+import { EndingSoonWidget } from "@/components/dashboard/EndingSoonWidget";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } from '@/lib/stream';
+import {
+  getStreamAddress,
+  getStreamInfo,
+  getWithdrawable,
+  type StreamInfo,
+} from "@/lib/stream";
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
@@ -56,7 +62,9 @@ async function loadRows(
 
   if (!ids || !Array.isArray(ids)) return { rows: [], failedCount: 0 };
 
-  const uniqueIds = [...new Set(ids.filter((id): id is bigint => typeof id === "bigint"))];
+  const uniqueIds = [
+    ...new Set(ids.filter((id): id is bigint => typeof id === "bigint")),
+  ];
 
   // Phase 1: resolve all stream addresses in parallel
   const addrResults = await Promise.allSettled(
@@ -69,7 +77,11 @@ async function loadRows(
     const r = addrResults[i];
     if (signal.aborted) return { rows: [], failedCount: 0 };
     if (isFulfilled(r) && r.value && typeof r.value === "string") {
-      addrPairs.push({ id: uniqueIds[i]!, rowId: uniqueIds[i]!.toString(), addr: r.value });
+      addrPairs.push({
+        id: uniqueIds[i]!,
+        rowId: uniqueIds[i]!.toString(),
+        addr: r.value,
+      });
     } else {
       failedCount++;
     }
@@ -145,57 +157,64 @@ export default function DashboardPage() {
   // clicks are ignored rather than piling up overlapping requests.
   const inFlightRef = useRef(false);
 
-  const fetchStreams = useCallback(async (signal: AbortSignal) => {
-    if (!publicKey) return;
-    inFlightRef.current = true;
-    const seq = ++loadSeqRef.current;
-    const isCurrent = () => seq === loadSeqRef.current;
-    const now = Math.floor(Date.now() / 1000);
-    setLoading(true);
-    // The previous error / partial-load notices stay on screen (with their
-    // Retry control disabled) until this refresh settles, rather than blinking
-    // out and back — the `loading` flag is what signals work is in progress.
-    try {
-      const [recv, sent] = await Promise.all([
-        loadRows(publicKey, "recipient", now, signal),
-        loadRows(publicKey, "sender", now, signal),
-      ]);
-      if (!signal.aborted && isCurrent()) {
-        setReceiving(recv.rows);
-        setSending(sent.rows);
-        const totalFailed = recv.failedCount + sent.failedCount;
-        setPartialError(
-          totalFailed > 0
-            ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} couldn\u2019t load`
-            : null,
-        );
-        setError(null);
-        lastFetchAtRef.current = Date.now();
+  const fetchStreams = useCallback(
+    async (signal: AbortSignal) => {
+      if (!publicKey) return;
+      inFlightRef.current = true;
+      const seq = ++loadSeqRef.current;
+      const isCurrent = () => seq === loadSeqRef.current;
+      const now = Math.floor(Date.now() / 1000);
+      setLoading(true);
+      // The previous error / partial-load notices stay on screen (with their
+      // Retry control disabled) until this refresh settles, rather than blinking
+      // out and back — the `loading` flag is what signals work is in progress.
+      try {
+        const [recv, sent] = await Promise.all([
+          loadRows(publicKey, "recipient", now, signal),
+          loadRows(publicKey, "sender", now, signal),
+        ]);
+        if (!signal.aborted && isCurrent()) {
+          setReceiving(recv.rows);
+          setSending(sent.rows);
+          const totalFailed = recv.failedCount + sent.failedCount;
+          setPartialError(
+            totalFailed > 0
+              ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} couldn\u2019t load`
+              : null,
+          );
+          setError(null);
+          lastFetchAtRef.current = Date.now();
+        }
+      } catch (e) {
+        if (!signal.aborted && isCurrent()) {
+          console.error(e);
+          captureError(e, { tags: { source: "dashboard-page" } });
+          setError("Failed to load streams. Please try again.");
+        }
+      } finally {
+        // Only the most recent fetch clears the in-flight latch — an older,
+        // superseded fetch resolving late must not re-open the gate.
+        if (isCurrent()) {
+          inFlightRef.current = false;
+          if (!signal.aborted) setLoading(false);
+        }
       }
-    } catch (e) {
-      if (!signal.aborted && isCurrent()) {
-        console.error(e); captureError(e, { tags: { source: 'dashboard-page' } });
-        setError("Failed to load streams. Please try again.");
-      }
-    } finally {
-      // Only the most recent fetch clears the in-flight latch — an older,
-      // superseded fetch resolving late must not re-open the gate.
-      if (isCurrent()) {
-        inFlightRef.current = false;
-        if (!signal.aborted) setLoading(false);
-      }
-    }
-  }, [publicKey]);
+    },
+    [publicKey],
+  );
 
-  const refetch = useCallback((force = false) => {
-    // Ignore manual triggers while a refresh is already running. `force` is
-    // for callers that must always re-read (wallet switch, post-withdraw).
-    if (!force && inFlightRef.current) return;
-    activeControllerRef.current?.abort();
-    const controller = new AbortController();
-    activeControllerRef.current = controller;
-    fetchStreams(controller.signal);
-  }, [fetchStreams]);
+  const refetch = useCallback(
+    (force = false) => {
+      // Ignore manual triggers while a refresh is already running. `force` is
+      // for callers that must always re-read (wallet switch, post-withdraw).
+      if (!force && inFlightRef.current) return;
+      activeControllerRef.current?.abort();
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
+      fetchStreams(controller.signal);
+    },
+    [fetchStreams],
+  );
 
   useEffect(() => {
     if (!publicKey) {
@@ -208,17 +227,17 @@ export default function DashboardPage() {
     refetch(true);
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         // Skip refetch if the last fetch was less than 5s ago
         if (Date.now() - lastFetchAtRef.current < 5_000) return;
         refetch();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       activeControllerRef.current?.abort();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [publicKey, refetch]);
 
@@ -230,7 +249,12 @@ export default function DashboardPage() {
   const receivingRate = useMemo(
     () =>
       receiving
-        .filter((s) => s.status === "active" && s.info && typeof s.info.ratePerSecond === "bigint")
+        .filter(
+          (s) =>
+            s.status === "active" &&
+            s.info &&
+            typeof s.info.ratePerSecond === "bigint",
+        )
         .reduce((a, s) => a + s.info.ratePerSecond, 0n),
     [receiving],
   );
@@ -243,16 +267,18 @@ export default function DashboardPage() {
   );
   const senderCount = useMemo(
     () =>
-      new Set(
-        receiving.filter((s) => s.info?.sender).map((s) => s.info.sender),
-      ).size,
+      new Set(receiving.filter((s) => s.info?.sender).map((s) => s.info.sender))
+        .size,
     [receiving],
   );
 
   const displayed = tab === "receiving" ? receiving : sending;
 
   const STATS = [
-    { label: "Active streams", value: loading ? "…" : error ? "—" : String(activeCount) },
+    {
+      label: "Active streams",
+      value: loading ? "…" : error ? "—" : String(activeCount),
+    },
     {
       label: "Receiving /s",
       value: loading ? "…" : error ? "—" : fromStroops(receivingRate),
@@ -261,7 +287,10 @@ export default function DashboardPage() {
       label: "Total received",
       value: loading ? "…" : error ? "—" : fromStroops(totalWithdrawn),
     },
-    { label: "Senders", value: loading ? "…" : error ? "—" : String(senderCount) },
+    {
+      label: "Senders",
+      value: loading ? "…" : error ? "—" : String(senderCount),
+    },
   ];
 
   return (
@@ -302,6 +331,31 @@ export default function DashboardPage() {
           {error}
         </div>
       )}
+
+      {/* Ending soon widget */}
+      <ErrorBoundary fallback={() => null}>
+        <EndingSoonWidget
+          receiving={receiving.map((r) => ({
+            id: r.id,
+            address: r.address,
+            counterparty: r.info.sender,
+            role: "recipient" as const,
+            endTime: r.info.endTime,
+            status: r.status,
+            info: r.info,
+          }))}
+          sending={sending.map((s) => ({
+            id: s.id,
+            address: s.address,
+            counterparty: s.info.recipient,
+            role: "sender" as const,
+            endTime: s.info.endTime,
+            status: s.status,
+            info: s.info,
+          }))}
+          loading={loading}
+        />
+      </ErrorBoundary>
 
       {partialError && !error && !networkTrouble && (
         <div
@@ -380,8 +434,13 @@ export default function DashboardPage() {
             </div>
           ) : error && !networkTrouble ? (
             <div className="card py-8 px-6 flex flex-col items-center gap-4 text-center">
-              <AlertCircle className="w-8 h-8 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-              <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
+              <AlertCircle
+                className="w-8 h-8 text-gray-400 dark:text-gray-500"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {error}
+              </p>
               <button
                 onClick={() => refetch()}
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
@@ -427,8 +486,15 @@ export default function DashboardPage() {
                   key={row.id}
                   fallback={(_err, retry) => (
                     <div className="p-4 border border-red-200 dark:border-red-800 rounded bg-red-50 dark:bg-red-900/20">
-                      <p className="text-sm text-red-600 dark:text-red-400">Failed to load stream {row.id}</p>
-                      <button onClick={retry} className="mt-2 text-xs underline">Retry</button>
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        Failed to load stream {row.id}
+                      </p>
+                      <button
+                        onClick={retry}
+                        className="mt-2 text-xs underline"
+                      >
+                        Retry
+                      </button>
                     </div>
                   )}
                 >
@@ -444,6 +510,7 @@ export default function DashboardPage() {
                     endTime={row.info.endTime}
                     status={row.status}
                     pausedAt={row.info.pausedAt}
+                    streamAddress={row.address}
                   />
                 </ErrorBoundary>
               ))}
