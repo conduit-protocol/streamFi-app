@@ -31,6 +31,7 @@ export const ArrowRight    = createIconStub('ArrowRight');
 export const Check         = createIconStub('Check');
 export const CheckCircle   = createIconStub('CheckCircle');
 export const Clock         = createIconStub('Clock');
+export const Columns       = createIconStub('Columns');
 export const Copy          = createIconStub('Copy');
 export const Download      = createIconStub('Download');
 export const Info          = createIconStub('Info');

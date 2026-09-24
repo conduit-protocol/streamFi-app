@@ -72,7 +72,7 @@ This application implements service worker-based offline support to ensure users
    - Network requests fail, service worker serves cached responses
    - OfflineIndicator displays "You are currently offline"
    - User can still view cached dashboard and stream data
-   - Mutating operations (create, withdraw, etc.) show errors gracefully
+   - Withdraw, cancel, and top-up operations are queued while offline and submitted automatically after reconnecting. The wallet still prompts for signing when the queue is flushed.
 
 ## Browser Support
 
@@ -102,10 +102,8 @@ This ensures the service worker file itself is always fresh, while cached pages/
 
 ## Limitations
 
-1. **Read-only offline support**: Users cannot perform mutations (create, withdraw, cancel) while offline
-2. **Static data only**: Dynamic user data (stream balances, rates) are not updated offline
-3. **Cache updates**: New versions require either hard refresh or service worker update
-4. **Storage quota**: Limited by browser (typically 50MB+ per origin)
+1. **Read-only creation**: Creating a new stream still requires an online connection.
+2. **Storage quota**: Limited by browser (typically 50MB+ per origin)
 
 ## Testing Offline Support
 
@@ -127,16 +125,14 @@ window.dispatchEvent(new Event('offline'));
 
 ## Updating the Cache
 
-To force an update when deploying new versions:
+Production builds derive the service-worker cache key from a SHA-256 hash of
+`.next/static`. A changed asset therefore creates a new cache automatically;
+old caches are removed during activation. The service worker checks for an
+updated worker on browser startup and when the page regains focus.
 
-1. Change the `CACHE_NAME` in `public/sw.js`
-2. Deploy the new service worker
-3. Users' browsers will detect the update and re-cache assets
-
-Example:
-```javascript
-const CACHE_NAME = 'conduit-v2'; // increment version number
-```
+Where Periodic Background Sync is supported, the worker requests a check every
+24 hours. Browsers without that API use the startup/focus check and the normal
+service-worker update lifecycle as a fallback.
 
 ## Accessibility
 
@@ -153,8 +149,4 @@ const CACHE_NAME = 'conduit-v2'; // increment version number
 
 ## Future Enhancements
 
-- [ ] Background sync for transaction signing
-- [ ] IndexedDB for read-only user data caching
-- [ ] Periodic cache updates via background sync
-- [ ] Smarter cache versioning based on asset hashes
 - [ ] Analytics for offline usage patterns

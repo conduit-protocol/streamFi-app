@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
 import { NetworkName, NETWORKS } from "@/lib/network-config";
 import { saveSelectedNetwork } from "@/lib/network-storage";
+import {
+  type TimeFormat,
+  type RefreshIntervalSeconds,
+  REFRESH_INTERVAL_OPTIONS,
+} from "@/hooks/useSettings";
 
 type Currency = "USD" | "EUR" | "XLM";
 type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
@@ -14,30 +19,59 @@ interface SettingsState {
   slippageTolerance: Slippage;
   notificationsEnabled: boolean;
   advancedMode: boolean;
+  /** Display timestamps as relative ("2h ago") or absolute date-time. Added #556. */
+  timeFormat: TimeFormat;
+  /**
+   * Auto-refresh stream data every N seconds (0 = disabled).
+   * Minimum enforced value is 10 s to avoid hammering the RPC endpoint. Added #572.
+   */
+  autoRefreshInterval: RefreshIntervalSeconds;
 }
 
 const STORAGE_KEY = "conduit:settings";
 
 function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
-    return { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    return {
+      network: "testnet" as NetworkName,
+      currency: "USD",
+      slippageTolerance: 1.0,
+      notificationsEnabled: true,
+      advancedMode: false,
+      timeFormat: "absolute",
+      autoRefreshInterval: 0,
+    };
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
-        network: parsed.network ?? "testnet" as NetworkName,
+        network: parsed.network ?? ("testnet" as NetworkName),
         currency: parsed.currency ?? "USD",
         slippageTolerance: parsed.slippageTolerance ?? 1.0,
         notificationsEnabled: parsed.notificationsEnabled ?? true,
         advancedMode: parsed.advancedMode ?? false,
+        timeFormat: parsed.timeFormat === "relative" ? "relative" : "absolute",
+        autoRefreshInterval: REFRESH_INTERVAL_OPTIONS.some(
+          (o) => o.value === parsed.autoRefreshInterval,
+        )
+          ? (parsed.autoRefreshInterval as RefreshIntervalSeconds)
+          : 0,
       };
     }
   } catch {
     // Ignore parse errors, use defaults
   }
-  return { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+  return {
+    network: "testnet" as NetworkName,
+    currency: "USD",
+    slippageTolerance: 1.0,
+    notificationsEnabled: true,
+    advancedMode: false,
+    timeFormat: "absolute",
+    autoRefreshInterval: 0,
+  };
 }
 
 export default function SettingsPage() {
@@ -64,13 +98,24 @@ export default function SettingsPage() {
     saveSelectedNetwork(settings.network);
   }, [settings]);
 
-  const updateSetting = useCallback(<K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-    setSaved(false);
-  }, []);
+  const updateSetting = useCallback(
+    <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
+      setSettings((prev) => ({ ...prev, [key]: value }));
+      setSaved(false);
+    },
+    [],
+  );
 
   const handleReset = useCallback(() => {
-    const defaults: SettingsState = { network: "testnet" as NetworkName, currency: "USD", slippageTolerance: 1.0, notificationsEnabled: true, advancedMode: false };
+    const defaults: SettingsState = {
+      network: "testnet" as NetworkName,
+      currency: "USD",
+      slippageTolerance: 1.0,
+      notificationsEnabled: true,
+      advancedMode: false,
+      timeFormat: "absolute",
+      autoRefreshInterval: 0,
+    };
     setSettings(defaults);
     setTheme("system");
     setSaved(true);
@@ -172,6 +217,59 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Timestamp Format — issue #556 */}
+          <div className="flex flex-row items-center justify-between">
+            <div>
+              <span className="text-sm">Timestamp Format</span>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                {settings.timeFormat === "relative"
+                  ? "e.g. 2h ago, 5m ago"
+                  : "e.g. Nov 14, 2023, 10:13 PM"}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {(["relative", "absolute"] as TimeFormat[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => updateSetting("timeFormat", f)}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    settings.timeFormat === f
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Auto-Refresh Interval — issue #572 */}
+          <div className="flex flex-row items-center justify-between">
+            <div>
+              <span className="text-sm">Auto-Refresh Interval</span>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                How often stream data refreshes automatically. Off conserves RPC calls.
+              </p>
+            </div>
+            <select
+              value={settings.autoRefreshInterval}
+              onChange={(e) =>
+                updateSetting(
+                  "autoRefreshInterval",
+                  Number(e.target.value) as RefreshIntervalSeconds,
+                )
+              }
+              className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
+            >
+              {REFRESH_INTERVAL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>

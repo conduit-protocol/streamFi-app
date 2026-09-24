@@ -5,6 +5,28 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 ## [Unreleased]
 
 ### Added
+- `lib/format.ts` — `formatTimestampRelative(ts)` returns human-readable relative strings
+  ("just now", "2h ago", "3d ago") falling back to `formatTimestamp` for events older than
+  7 days; consumed via the new `timeFormat` setting (#556)
+- `/settings` — **Timestamp Format** toggle (Relative / Absolute) in the Preferences section
+  lets users choose between `formatTimestampRelative` and `formatTimestamp` site-wide (#556)
+- `/settings` — **Auto-Refresh Interval** select (Off / 10 s / 30 s / 1 min / 5 min); chosen
+  interval drives a polling effect on `/stream/[id]` that re-fetches stream state automatically;
+  minimum of 10 s prevents accidental RPC hammering; defaults to Off (#572)
+- `hooks/useSettings.ts` — lightweight read-only hook that reads `timeFormat` and
+  `autoRefreshInterval` from `conduit:settings` in localStorage and refreshes on the `storage`
+  event so other tabs stay in sync (#556, #572)
+- `/transactions` — **Print** button triggers `window.print()` and the new `@media print`
+  stylesheet to produce a clean receipt-style printout or PDF; hides navbar, action buttons,
+  and export controls (#555)
+- `/stream/[id]` — **PDF** button triggers `window.print()` to produce a formatted single-stream
+  summary document via the print stylesheet; actions and back-link hidden in print view (#571)
+- `app/globals.css` — `@media print` block scoped to `.print-receipt` class: resets body
+  to white/black, collapses table borders, hides interactive chrome, preserves monospace
+  addresses and amounts, renders status badges in monochrome, adds a print footer with the
+  stream ID and print date (#555, #571)
+
+### Added
 - Create form warns when the recipient is a contract (`C…`) address and blocks submit until the
   user confirms the contract can call `withdraw()` — a SAC, token contract, or vault without that
   call path would otherwise lock the whole deposit with no client-side warning

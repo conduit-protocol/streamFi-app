@@ -174,7 +174,7 @@ export default function DashboardPage() {
       }
     } catch (e) {
       if (!signal.aborted && isCurrent()) {
-        console.error(e);
+        console.error(e); captureError(e, { tags: { source: 'dashboard-page' } });
         setError("Failed to load streams. Please try again.");
       }
     } finally {
@@ -454,3 +454,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+import { captureError } from "@/lib/error-tracking";

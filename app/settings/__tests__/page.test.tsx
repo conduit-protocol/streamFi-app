@@ -110,4 +110,17 @@ describe("SettingsPage", () => {
     expect(container.textContent).toContain("Settings");
     cleanup(root, container);
   });
+
+  it("renders timestamp format toggle (#556)", () => {
+    const { container, root } = renderSettings();
+    expect(container.textContent).toContain("Timestamp Format");
+    expect(container.textContent).toMatch(/Relative|Absolute/);
+    cleanup(root, container);
+  });
+
+  it("renders auto-refresh interval selector (#572)", () => {
+    const { container, root } = renderSettings();
+    expect(container.textContent).toContain("Auto-Refresh Interval");
+    cleanup(root, container);
+  });
 });

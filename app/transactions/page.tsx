@@ -1,11 +1,11 @@
 'use client';
 
-import { AlertCircle, RefreshCw, Info, Download } from 'lucide-react';
+import { AlertCircle, RefreshCw, Info, Download, Printer } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
 import { CopyHashButton } from '@/components/ui/CopyHashButton';
 import { TransactionCardSkeleton } from '@/components/TransactionCardSkeleton';
-import { formatTimestamp, truncateAddress } from '@/lib/format';
+import { formatTimestamp, formatTimestampRelative, truncateAddress } from '@/lib/format';
 import { toCsv, downloadCsv } from '@/lib/csv';
 import {
   fetchTransactionHistoryWithTimeout,
@@ -13,6 +13,7 @@ import {
   type TransactionRow,
 } from '@/lib/indexer';
 import { useWallet } from '@/contexts/WalletContext';
+import { useSettings } from '@/hooks/useSettings';
 
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
 
@@ -47,6 +48,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function TransactionsPage() {
   const { publicKey, connected } = useWallet();
+  const { timeFormat } = useSettings();
   const { data: txs = [], status, error, refetch, isRefetching } = useQuery<TransactionRow[]>({
     queryKey: [...TRANSACTIONS_QUERY_KEY, publicKey],
     queryFn: () => fetchTransactionHistoryWithTimeout(publicKey),
@@ -59,26 +61,45 @@ export default function TransactionsPage() {
   const isIndexerComingSoon = status === 'error' && isIndexerNotConfiguredError(error);
   const canExport = txs.length > 0;
 
+  /** Format a timestamp respecting the user's time-format preference (#556). */
+  const formatDate = (ts: number) =>
+    timeFormat === 'relative' ? formatTimestampRelative(ts) : formatTimestamp(ts);
+
   const handleExport = () => {
     if (!canExport) return;
     const stamp = new Date().toISOString().slice(0, 10);
     downloadCsv(`conduit-transactions-${stamp}.csv`, transactionsToCsv(txs));
   };
 
+  const handlePrint = () => window.print();
+
   return (
-    <div className="max-w-3xl mx-auto px-4 py-10">
+    <div className="max-w-3xl mx-auto px-4 py-10 print-receipt">
       <div className="flex items-center justify-between gap-4 mb-8">
         <h1 className="text-2xl font-black tracking-tight">Transaction History</h1>
-        {canExport && (
-          <button
-            type="button"
-            onClick={handleExport}
-            className="btn-secondary text-sm shrink-0"
-          >
-            <Download className="w-4 h-4" aria-hidden="true" />
-            Export CSV
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleExport}
+              className="btn-secondary text-sm shrink-0 print:hidden"
+            >
+              <Download className="w-4 h-4" aria-hidden="true" />
+              Export CSV
+            </button>
+          )}
+          {canExport && (
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="btn-secondary text-sm shrink-0 print:hidden"
+              aria-label="Print transaction history"
+            >
+              <Printer className="w-4 h-4" aria-hidden="true" />
+              Print
+            </button>
+          )}
+        </div>
       </div>
 
       {isDemoData && (
@@ -178,7 +199,7 @@ export default function TransactionsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-gray-400 font-medium" suppressHydrationWarning>
-                        {formatTimestamp(tx.date)}
+                        {formatDate(tx.date)}
                       </span>
                       <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${STATUS_CLASS[tx.status]}`}>
                         {tx.status}
@@ -229,7 +250,7 @@ export default function TransactionsPage() {
                           {tx.status}
                         </span>
                       </td>
-                      <td className="py-2.5 px-4 text-right text-gray-500 text-xs" suppressHydrationWarning>{formatTimestamp(tx.date)}</td>
+                      <td className="py-2.5 px-4 text-right text-gray-500 text-xs" suppressHydrationWarning>{formatDate(tx.date)}</td>
                       <td className="py-2.5 px-4 text-right font-mono text-gray-400 text-xs">
                         <div className="flex items-center justify-end gap-1">
                           <span>{truncateAddress(tx.hash)}</span>
