@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, AlertCircle } from "lucide-react";
+import { Plus, AlertCircle, Columns } from "lucide-react";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { deriveStatus, MAX_COMPARE, MIN_COMPARE, type StreamStatus } from "@/lib/stream-compare";
 
 type Tab = "receiving" | "sending";
-type StreamStatus = "active" | "paused" | "ended" | "cancelled";
 
 interface StreamRow {
   id: string;
@@ -22,13 +22,6 @@ interface StreamRow {
 interface LoadRowsResult {
   rows: StreamRow[];
   failedCount: number;
-}
-
-function deriveStatus(info: StreamInfo, now: number): StreamStatus {
-  if (info.cancelled) return "cancelled";
-  if (info.paused) return "paused";
-  if (info.endTime > 0 && now >= info.endTime) return "ended";
-  return "active";
 }
 
 async function loadRows(
@@ -80,8 +73,20 @@ export default function StreamsPage() {
   const [partialError, setPartialError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<"ALL" | StreamStatus>("ALL");
+  // Stream ids ticked for the side-by-side /streams/compare view.
+  const [selected, setSelected] = useState<string[]>([]);
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : prev.length >= MAX_COMPARE
+          ? prev
+          : [...prev, id],
+    );
 
   useEffect(() => {
+    setSelected([]);
     if (!publicKey) {
       // Wallet disconnected — clear stale stream rows immediately (fixes #81)
       setReceiving([]);
@@ -143,7 +148,10 @@ export default function StreamsPage() {
           {(["receiving", "sending"] as Tab[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                if (t !== tab) setSelected([]);
+                setTab(t);
+              }}
               className={[
                 "px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors",
                 tab === t
@@ -169,6 +177,44 @@ export default function StreamsPage() {
           </select>
         </div>
       </div>
+
+      {/* Compare selection bar */}
+      {selected.length > 0 && (
+        <div
+          role="region"
+          aria-label="Stream comparison selection"
+          className="card flex items-center justify-between gap-3 py-3 mb-4 text-sm"
+        >
+          <span className="text-gray-600 dark:text-gray-400">
+            {selected.length} selected
+            {selected.length < MIN_COMPARE
+              ? ` \u2014 pick at least ${MIN_COMPARE} to compare`
+              : selected.length >= MAX_COMPARE
+                ? ` (max ${MAX_COMPARE})`
+                : ""}
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSelected([])}
+              className="text-xs underline text-gray-400 hover:text-black dark:hover:text-white"
+            >
+              Clear
+            </button>
+            {selected.length >= MIN_COMPARE ? (
+              <Link
+                href={`/streams/compare?ids=${selected.join(",")}`}
+                className="btn-primary text-sm"
+              >
+                <Columns className="w-4 h-4" /> Compare
+              </Link>
+            ) : (
+              <span aria-disabled="true" className="btn-primary text-sm opacity-50 cursor-not-allowed">
+                <Columns className="w-4 h-4" /> Compare
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       {error && networkStatus === "ok" && (
@@ -254,9 +300,20 @@ export default function StreamsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {displayed.map((row) => (
+          {displayed.map((row) => {
+            const isSelected = selected.includes(row.id);
+            return (
+            <div key={row.id} className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                disabled={!isSelected && selected.length >= MAX_COMPARE}
+                onChange={() => toggleSelected(row.id)}
+                aria-label={`Select stream #${row.id} for comparison`}
+                className="w-4 h-4 shrink-0 accent-black dark:accent-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              />
+              <div className="flex-1 min-w-0">
             <StreamCard
-              key={row.id}
               id={row.id}
               counterparty={
                 tab === "receiving" ? row.info.sender : row.info.recipient
@@ -269,7 +326,10 @@ export default function StreamsPage() {
               status={row.status}
               pausedAt={row.info.pausedAt}
             />
-          ))}
+              </div>
+            </div>
+            );
+          })}
         </div>
       )}
     </div>
