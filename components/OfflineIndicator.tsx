@@ -39,7 +39,7 @@ export function OfflineIndicator({ className = '' }: OfflineIndicatorProps) {
       aria-live="polite"
       aria-label="Offline status"
     >
-      You are currently offline. Some features are limited.
+      You are currently offline. Cached data is shown; transactions will be queued.
     </div>
   );
 }

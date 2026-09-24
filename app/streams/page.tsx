@@ -8,6 +8,7 @@ import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
 import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
+import { readSnapshot, saveSnapshot } from "@/lib/offline-cache";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { deriveStatus, MAX_COMPARE, MIN_COMPARE, type StreamStatus } from "@/lib/stream-compare";
 
@@ -70,6 +71,7 @@ export default function StreamsPage() {
   const [sending, setSending] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<"ALL" | StreamStatus>("ALL");
@@ -109,6 +111,8 @@ export default function StreamsPage() {
         if (!active) return;
         setReceiving(recv.rows);
         setSending(sent.rows);
+        setCachedAt(null);
+        void saveSnapshot(`streams:${publicKey}`, { receiving: recv.rows, sending: sent.rows });
         const totalFailed = recv.failedCount + sent.failedCount;
         setPartialError(
           totalFailed > 0
@@ -116,12 +120,21 @@ export default function StreamsPage() {
             : null,
         );
       })
-      .catch((e) => {
+      .catch(async (e) => {
         if (!active) return;
-        console.error(e); captureError(e, { tags: { source: 'streams-page' } });
-        setError(e instanceof Error ? e.message : "Failed to load streams.");
-        setReceiving([]);
-        setSending([]);
+        const snapshot = await readSnapshot<{ receiving: StreamRow[]; sending: StreamRow[] }>(`streams:${publicKey}`);
+        if (!active) return;
+        if (snapshot) {
+          setReceiving(snapshot.value.receiving);
+          setSending(snapshot.value.sending);
+          setCachedAt(snapshot.savedAt);
+          setError(null);
+        } else {
+          console.error(e); captureError(e, { tags: { source: 'streams-page' } });
+          setError(e instanceof Error ? e.message : "Failed to load streams.");
+          setReceiving([]);
+          setSending([]);
+        }
       })
       .finally(() => { if (active) setLoading(false); });
 
@@ -217,6 +230,11 @@ export default function StreamsPage() {
       )}
 
       {/* Content */}
+      {cachedAt && (
+        <p className="text-xs text-gray-500 mb-4" role="status">
+          Showing cached data as of {new Date(cachedAt).toLocaleString()}.
+        </p>
+      )}
       {error && networkStatus === "ok" && (
         <div
           role="alert"
