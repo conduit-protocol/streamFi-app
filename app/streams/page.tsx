@@ -113,7 +113,7 @@ export default function StreamsPage() {
       })
       .catch((e) => {
         if (!active) return;
-        console.error(e);
+        console.error(e); captureError(e, { tags: { source: 'streams-page' } });
         setError(e instanceof Error ? e.message : "Failed to load streams.");
         setReceiving([]);
         setSending([]);
@@ -275,3 +275,4 @@ export default function StreamsPage() {
     </div>
   );
 }
+import { captureError } from "@/lib/error-tracking";

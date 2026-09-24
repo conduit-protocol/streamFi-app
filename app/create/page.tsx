@@ -11,6 +11,7 @@ import { createStream, isMock } from '@/lib/factory';
 import { TOKENS_TESTNET, tokenLogoUrl } from '@/lib/tokens';
 import { CopyHashButton }   from '@/components/ui/CopyHashButton';
 import { checkRecipientExists } from '@/lib/soroban';
+import { checkContractHasWithdraw } from '@/lib/contract-recipient-probe';
 import { refreshStreamData } from '@/lib/queryClient';
 import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
@@ -91,7 +92,7 @@ export default function CreatePage() {
   // the Zod length/format guard (i.e. it's a plausible 56-char G… key).
   // Debounced to avoid hammering the RPC on every keystroke.
   const [recipientStatus, setRecipientStatus] = useState<
-    'idle' | 'checking' | 'valid' | 'not-found' | 'error'
+    'idle' | 'checking' | 'valid' | 'not-found' | 'error' | 'contract-checking' | 'contract-no-withdraw'
   >('idle');
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
@@ -157,7 +158,22 @@ export default function CreatePage() {
         // Add a 10-second timeout to prevent an infinite loading state (#123)
         const exists = await checkRecipientExists(debouncedRecipient, { timeoutMs: 10_000 });
         if (!isMounted) return;
-        setRecipientStatus(exists ? 'valid' : 'not-found');
+        if (exists && isValidStellarContract(debouncedRecipient)) {
+          setRecipientStatus('contract-checking');
+          // Probe the contract for a withdraw() entry point (#458)
+          const walletPk = watch('token') ? (window as any).stellarWallet?.publicKey : undefined;
+          const sourceAddr = walletPk || debouncedRecipient;
+          try {
+            const hasWithdraw = await checkContractHasWithdraw(debouncedRecipient, sourceAddr, { timeoutMs: 10_000 });
+            if (!isMounted) return;
+            setRecipientStatus(hasWithdraw ? 'valid' : 'contract-no-withdraw');
+          } catch {
+            if (!isMounted) return;
+            setRecipientStatus('valid'); // Fallback: allow if probe fails
+          }
+        } else {
+          setRecipientStatus(exists ? 'valid' : 'not-found');
+        }
       } catch (err) {
         // Network / RPC error — don't block the user, but surface a warning.
         if (!isMounted) return;
@@ -552,6 +568,7 @@ export default function CreatePage() {
             !connected ||
             rateWouldBeZero ||
             recipientStatus === 'not-found' ||
+            recipientStatus === 'contract-no-withdraw' ||
             recipientStatus === 'checking' ||
             (isContractRecipient && !acknowledgedContractRecipient)
           }

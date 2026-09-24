@@ -63,7 +63,18 @@ vi.mock('@/lib/soroban', async () => {
   };
 });
 
-vi.mock("lucide-react");
+const mockCheckContractHasWithdraw = vi.fn().mockResolvedValue(true);
+vi.mock('@/lib/contract-recipient-probe', () => ({
+  checkContractHasWithdraw: (...args: unknown[]) => mockCheckContractHasWithdraw(...args),
+}));
+
+vi.mock('lucide-react', () => ({
+  ArrowRight: () => React.createElement('span', null, '→'),
+  Info: () => React.createElement('span', null, 'i'),
+  Copy: () => React.createElement('span', null, 'copy'),
+  Check: () => React.createElement('span', null, 'check'),
+}));
+
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
@@ -119,6 +130,7 @@ describe('CreatePage — zero-rate guard (issue #243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
   });
@@ -189,6 +201,7 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockIsMock.mockReturnValue(false);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
@@ -285,7 +298,6 @@ describe('CreatePage — SEP-41 allowance check before deposit (issue #218)', ()
   });
 });
 
-
 // #392 — `create_stream` accepts a contract as the recipient, but only an
 // address able to call DripStream::withdraw can pull the funds back out. A
 // SAC, a token contract, or a vault without that call path locks the deposit,
@@ -298,6 +310,7 @@ describe('CreatePage — contract recipient warning (issue #392)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRecipientExists.mockResolvedValue(true);
+    mockCheckContractHasWithdraw.mockResolvedValue(true);
     mockIsMock.mockReturnValue(true);
     mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
     mockRefreshStreamData.mockResolvedValue(undefined);
@@ -402,6 +415,84 @@ describe('CreatePage — contract recipient warning (issue #392)', () => {
     const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
     expect(submitButton.disabled).toBe(false);
 
+    cleanup(root, container);
+  });
+});
+
+describe('CreatePage — recipient check debounce (#466)', () => {
+  beforeEach(() => {
+    mockCheckRecipientExists.mockReset().mockResolvedValue(true);
+  });
+
+  it('does not call checkRecipientExists immediately on keystroke', async () => {
+    const { container, root } = renderCreatePage();
+    const recipientInput = container.querySelector('input[placeholder="G…"]') as HTMLInputElement;
+
+    await act(async () => {
+      setFieldValue(recipientInput, TEST_RECIPIENT);
+      // Do NOT wait for the debounce — check immediately
+    });
+
+    expect(mockCheckRecipientExists).not.toHaveBeenCalled();
+
+    // Now wait for the debounce
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 650));
+    });
+
+    expect(mockCheckRecipientExists).toHaveBeenCalledTimes(1);
+    cleanup(root, container);
+  });
+
+  it('fires only one check after rapid keystrokes within the debounce window', async () => {
+    const { container, root } = renderCreatePage();
+    const recipientInput = container.querySelector('input[placeholder="G…"]') as HTMLInputElement;
+
+    // Type rapidly — each keystroke within the 600ms debounce window
+    await act(async () => {
+      for (let i = 0; i < 5; i++) {
+        setFieldValue(recipientInput, TEST_RECIPIENT.slice(0, 50 + i));
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      setFieldValue(recipientInput, TEST_RECIPIENT);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    });
+
+    // Should not have fired yet (last keystroke was only 50ms ago)
+    expect(mockCheckRecipientExists).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 650));
+    });
+
+    expect(mockCheckRecipientExists).toHaveBeenCalledTimes(1);
+    cleanup(root, container);
+  });
+
+  it('aborts the in-flight check when the address changes mid-debounce', async () => {
+    const { container, root } = renderCreatePage();
+    const recipientInput = container.querySelector('input[placeholder="G…"]') as HTMLInputElement;
+
+    // Type first address and wait for debounce to fire
+    await act(async () => {
+      setFieldValue(recipientInput, TEST_RECIPIENT);
+      await new Promise(resolve => setTimeout(resolve, 650));
+    });
+
+    expect(mockCheckRecipientExists).toHaveBeenCalledTimes(1);
+
+    // Change address before the check completes
+    const SECOND_RECIPIENT = 'GCBBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILFH';
+    mockCheckRecipientExists.mockClear();
+
+    await act(async () => {
+      setFieldValue(recipientInput, SECOND_RECIPIENT);
+      // The old check should be aborted — only the new one should fire
+      await new Promise(resolve => setTimeout(resolve, 650));
+    });
+
+    expect(mockCheckRecipientExists).toHaveBeenCalledTimes(1);
+    expect(mockCheckRecipientExists).toHaveBeenCalledWith(SECOND_RECIPIENT, expect.any(Object));
     cleanup(root, container);
   });
 });
