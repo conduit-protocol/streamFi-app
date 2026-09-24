@@ -13,6 +13,14 @@ export const metadata: Metadata = {
     title:       'Your Streams — Conduit',
     description: 'View and manage your active, ended, and created payment streams on Conduit.',
     siteName:    'Conduit',
+    images: [{ url: '/og-image.svg', width: 1200, height: 630, alt: 'Your Streams — Conduit' }],
+    type:        'website',
+  },
+  twitter: {
+    card:        'summary_large_image',
+    title:       'Your Streams — Conduit',
+    description: 'View and manage your active, ended, and created payment streams on Conduit.',
+    images:      ['/og-image.svg'],
   },
 };
 
