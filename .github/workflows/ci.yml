@@ -29,8 +29,8 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-  test:
-    name: Unit tests
+  audit:
+    name: Dependency audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,39 @@ jobs:
         run: '! grep -q "registry.npmmirror.com" package-lock.json'
 
       - run: npm ci
-      - run: npm test
+
+      # Fail on high/critical vulnerabilities with no accepted exception.
+      # Accepted exceptions (transitive deps with no upstream fix) are listed
+      # in scripts/audit-check.js and documented in docs/audit-exceptions.md.
+      # To accept a new exception: add the advisory ID to ACCEPTED_ADVISORIES
+      # in scripts/audit-check.js and document the reason in
+      # docs/audit-exceptions.md with a review-by date (max 90 days out).
+      - name: Audit dependencies (high/critical)
+        run: node scripts/audit-check.js
+
+  test:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Reject non-standard registry URLs
+        run: '! grep -q "registry.npmmirror.com" package-lock.json'
+
+      - run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      # Run coverage as a separate step so a threshold failure is clearly
+      # labelled "coverage gate" rather than "tests failed".
+      - name: Coverage gate
+        run: npm run test:coverage
 
   build:
     name: Build
