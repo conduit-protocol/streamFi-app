@@ -33,6 +33,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.8.0",
     "@playwright/test": "~1.62.1",
     "@tanstack/react-query-devtools": "^5.102.8",
     "@testing-library/jest-dom": "^6.9.1",

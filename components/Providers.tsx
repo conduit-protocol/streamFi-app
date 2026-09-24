@@ -1,13 +1,14 @@
-'use client';
+"use client";
 
-import { ThemeProvider } from 'next-themes';
-import { WalletProvider } from '@/contexts/WalletContext';
-import { ReactQueryProvider } from '@/components/ReactQueryProvider';
-import { Toaster } from 'react-hot-toast';
-import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar';
-import { OfflineIndicator } from '@/components/OfflineIndicator';
-import { OfflineTransactionSync } from '@/components/OfflineTransactionSync';
-import { NetworkTroubleBanner } from '@/components/NetworkTroubleBanner';
+import { ThemeProvider } from "next-themes";
+import { WalletProvider } from "@/contexts/WalletContext";
+import { ReactQueryProvider } from "@/components/ReactQueryProvider";
+import { Toaster } from "react-hot-toast";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
+import { OfflineTransactionSync } from "@/components/OfflineTransactionSync";
+import { NetworkTroubleBanner } from "@/components/NetworkTroubleBanner";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -23,6 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ServiceWorkerRegistrar />
           <OfflineTransactionSync />
           <NetworkTroubleBanner />
+          <OnboardingTour />
           {children}
           <Toaster position="bottom-right" />
           <OfflineIndicator />

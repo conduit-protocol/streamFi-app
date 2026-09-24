@@ -28,14 +28,17 @@ and setup.
           contexts/WalletContext.tsx  →  Soroban RPC  →  DripFactory / DripStream contract
 ```
 
-Every page owns its own data fetching — there's no shared cache or query library (no SWR /
-React Query / Redux). Each page does `useState` + `useEffect(() => { load...() }, [deps])`
-directly against the `lib/*.ts` wrappers, and re-derives things like stream status
-(`active`/`paused`/`ended`/`cancelled`) and progress percentage from the raw `StreamInfo` on
-every render (see `deriveStatus`/`deriveProgress` in `app/dashboard/page.tsx` — duplicated in
-`app/streams/page.tsx`, since there's no shared hook for it yet).
+Most pages own their own data fetching via `useState` + `useEffect(() => { load...() }, [deps])`
+directly against the `lib/*.ts` wrappers. A shared `@tanstack/react-query` client
+(`lib/queryClient.ts`) is also wired in: `components/ReactQueryProvider.tsx` wraps the app in a
+`QueryClientProvider`, and `lib/queryClient.ts` exports a `refreshStreamData()` helper used to
+invalidate cached stream data after mutations (e.g. bulk-withdraw on the dashboard).
 
-The one thing that *doesn't* go through this chain is `RateTicker`: it takes the
+Stream status (`active`/`paused`/`ended`/`cancelled`) and progress percentage are re-derived from
+the raw `StreamInfo` on every render. `deriveStatus` is defined per-page in
+`app/dashboard/page.tsx` and shared via `lib/stream-compare.ts` for `app/streams/page.tsx`.
+
+The one thing that _doesn't_ go through this chain is `RateTicker`: it takes the
 `withdrawable`/`ratePerSecond` values already fetched by the page and extrapolates the display
 value client-side every 100ms (`balance + elapsed * rate`). It never calls the contract — the
 real value is only re-synced when the parent page re-fetches.
@@ -89,13 +92,13 @@ reading before adding a new mutation, since they determine how concurrent calls 
 
 ## Component composition
 
-| Page | Composes |
-|------|----------|
-| `/streams` | `StreamCard` (one per stream, sender + recipient tabs) |
+| Page           | Composes                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| `/streams`     | `StreamCard` (one per stream, sender + recipient tabs)                                                   |
 | `/stream/[id]` | `StreamTimeline` (progress viz) + `StreamActions` (role-gated buttons) + `WithdrawButton` + `RateTicker` |
-| `/dashboard` | `StreamCard` + aggregate totals computed inline from all fetched streams |
-| `/create` | Form built directly with `react-hook-form` + `zod`; no separate form component |
-| every page | `Navbar` (via root layout) → `ConnectButton` → `useWallet()` |
+| `/dashboard`   | `StreamCard` + aggregate totals computed inline from all fetched streams                                 |
+| `/create`      | Form built directly with `react-hook-form` + `zod`; no separate form component                           |
+| every page     | `Navbar` (via root layout) → `ConnectButton` → `useWallet()`                                             |
 
 `StreamActions` gates which buttons render by role (`isSender`/`isRecipient`) and by status
 (`isActive`/`isPaused`/`canAct`), and funnels every mutating call through a local `run(name, fn)`
@@ -105,8 +108,22 @@ helper that tracks a single `pending` state so only one action can be in flight 
 
 ## Testing
 
-`lib/format.ts` has a real unit test suite (`lib/format.test.ts`, run via `npm test` / Vitest).
-Nothing else in the app — components, page data-fetching, `lib/soroban.ts`, `lib/stream.ts`,
-`lib/factory.ts` — has test coverage yet. `lib/format.ts` was a natural first target since it's
-pure functions with no Next.js/DOM/network dependency; testing the rest would need component
-tests (React Testing Library) and mocked RPC responses, neither of which is set up.
+Tests run via `npm test` (Vitest, jsdom environment). Coverage is now spread across the
+codebase — not just `lib/format.ts`. The current test inventory:
+
+| Area              | Files                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pure utilities    | `lib/format.test.ts`, `lib/stream-compare.test.ts`                                                                                                                                                                                      |
+| UI components     | `components/ui/Button.test.tsx`, `components/ui/Badge.test.tsx`, `components/ThemeToggle.test.tsx`, `components/TokenSelector.test.tsx`                                                                                                 |
+| Shared components | `components/__tests__/` (ErrorBoundary, NetworkTroubleBanner, OfflineIndicator, etc.)                                                                                                                                                   |
+| Pages             | `app/dashboard/__tests__/`, `app/streams/__tests__/`, `app/stream/[id]/__tests__/`, `app/create/__tests__/`, `app/profile/__tests__/`, `app/settings/__tests__/`, `app/streams/compare/__tests__/`, `app/__tests__/` (not-found, error) |
+| Contexts          | `contexts/__tests__/`                                                                                                                                                                                                                   |
+
+Component and page tests use React's `createRoot` + `act` directly (no React Testing Library),
+with `vi.mock` for Next.js primitives (`next/link`, `next/navigation`), child components, and
+`lib/` wrappers. Tests that exercise data-fetching pages mock the factory and stream functions
+and drive state through resolved/rejected Promises.
+
+`lib/soroban.ts`, `lib/stream.ts`, and `lib/factory.ts` remain untested at unit level — they
+require mocked Soroban RPC responses and are better covered by integration tests against a
+local RPC node.
