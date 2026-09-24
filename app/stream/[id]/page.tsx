@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams }                         from 'next/navigation';
 import Link                                  from 'next/link';
-import { ArrowLeft }                         from 'lucide-react';
+import { ArrowLeft, FileText }               from 'lucide-react';
 
 import { Badge }           from '@/components/ui/Badge';
 import { Card }            from '@/components/ui/Card';
@@ -17,6 +17,7 @@ import { getStreamAddress, getStreamInfo, getWithdrawable, type StreamInfo } fro
 import { useNetworkStatus }                                from '@/hooks/useNetworkStatus';
 import { fromStroops, formatTimestamp, truncateAddress }    from '@/lib/format';
 import { tokenByAddress } from '@/lib/tokens';
+import { useSettings, MIN_REFRESH_INTERVAL_S }             from '@/hooks/useSettings';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ export default function StreamPage() {
   // NetworkTroubleBanner — defer to it rather than printing a raw
   // "circuit breaker open" string here.
   const { status: networkStatus }                 = useNetworkStatus();
+  const { autoRefreshInterval }                   = useSettings();
   const mounted                                   = useRef(true);
   const loadSeq                                   = useRef(0);
 
@@ -113,6 +115,17 @@ export default function StreamPage() {
   }, [id, publicKey]);
 
   useEffect(() => { loadStream(); }, [loadStream]);
+
+  // Auto-refresh stream data at the user-configured interval (#572).
+  // The minimum enforced by useSettings is MIN_REFRESH_INTERVAL_S (10 s).
+  // When interval is 0 the effect is a no-op so manual STREAM_REFRESH_MS
+  // polling still works as before.
+  useEffect(() => {
+    if (!autoRefreshInterval || autoRefreshInterval < MIN_REFRESH_INTERVAL_S) return;
+    const intervalMs = autoRefreshInterval * 1000;
+    const t = setInterval(() => { void loadStream(); }, intervalMs);
+    return () => clearInterval(t);
+  }, [autoRefreshInterval, loadStream]);
 
   useEffect(() => {
     if (info) setStatus(deriveStatus(info, nowSeconds));
@@ -200,10 +213,14 @@ export default function StreamPage() {
   const tokenSymbol = tokenByAddress(info.token, 'testnet')?.symbol ?? truncateAddress(info.token);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
+    <div
+      className="max-w-2xl mx-auto px-4 py-10 print-receipt"
+      data-stream-id={`Stream #${id}`}
+      data-print-date={new Date().toLocaleDateString("en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" })}
+    >
 
       {/* Back */}
-      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
+      <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6 print:hidden">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
 
@@ -213,7 +230,19 @@ export default function StreamPage() {
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-1 font-mono">{truncateAddress(streamAddress)}</p>
           <h1 className="text-2xl font-black tracking-tight">Stream #{id}</h1>
         </div>
-        <Badge status={status} />
+        <div className="flex items-center gap-2">
+          <Badge status={status} />
+          {/* Download PDF summary — triggers the @media print stylesheet (#571) */}
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors print:hidden"
+            aria-label="Download PDF summary"
+          >
+            <FileText className="w-3.5 h-3.5" aria-hidden="true" />
+            PDF
+          </button>
+        </div>
       </div>
 
       {/* Live withdrawable counter — active only */}
@@ -312,16 +341,18 @@ export default function StreamPage() {
 
       {/* Actions */}
       {(isSender || isRecipient) && (
-        <StreamActions
-          streamAddress={streamAddress}
-          status={status}
-          clawbackEnabled={info.clawbackEnabled}
-          isSender={isSender}
-          isRecipient={isRecipient}
-          withdrawable={withdrawable}
-          token={tokenSymbol}
-          onSuccess={loadStream}
-        />
+        <div className="print:hidden">
+          <StreamActions
+            streamAddress={streamAddress}
+            status={status}
+            clawbackEnabled={info.clawbackEnabled}
+            isSender={isSender}
+            isRecipient={isRecipient}
+            withdrawable={withdrawable}
+            token={tokenSymbol}
+            onSuccess={loadStream}
+          />
+        </div>
       )}
 
       {/* Delegated operator — shown when the stream has one set (#473) */}

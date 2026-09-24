@@ -1,4 +1,7 @@
+"use client";
+
 import Link                    from 'next/link';
+import { useState }            from 'react';
 import { Badge }               from '@/components/ui/Badge';
 import { StreamProgressBar }   from '@/components/stream/StreamProgressBar';
 import { fromStroops } from '@/lib/format';
@@ -32,6 +35,9 @@ export function StreamCard({
 }: StreamCardProps) {
   const rateFormatted = fromStroops(ratePerSecond);
 
+  // Client-only wall-clock snapshot for cancelled streams
+  const [mountSec] = useState(() => Date.now() / 1_000);
+
   // Derive a snapshot percentage for the text label only (no state, no timer)
   const pctSnapshot = (() => {
     if (endTime === 0) return 0;
@@ -40,7 +46,13 @@ export function StreamCard({
     // Paused streams freeze at pausedAt, not the wall-clock time this
     // renders at — otherwise the % label keeps climbing for a stream
     // that isn't actually streaming.
-    const now = status === 'paused' && pausedAt ? pausedAt : Date.now() / 1_000;
+    // Cancelled streams freeze at min(now, endTime) captured once at mount.
+    let now = Date.now() / 1_000;
+    if (status === 'paused' && pausedAt) {
+      now = pausedAt;
+    } else if (status === 'cancelled') {
+      now = endTime > 0 ? Math.min(mountSec, endTime) : mountSec;
+    }
     return Math.min(100, Math.max(0, ((now - startTime) / total) * 100));
   })();
 

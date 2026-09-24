@@ -41,4 +41,70 @@ describe('RateTicker', () => {
     act(() => vi.advanceTimersByTime(5_000));
     expect(container.textContent).toBe('2.00');
   });
+
+  it('clears the interval on unmount (no updates after unmount)', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+    act(() => {
+      root.render(
+        <RateTicker ratePerSecond={10_000_000n} startBalance={0n} endTime={0} />,
+      );
+    });
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    const intervalId = setIntervalSpy.mock.results[0]!.value;
+
+    act(() => root.unmount());
+
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId);
+    clearIntervalSpy.mockRestore();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('clears the old interval when ratePerSecond changes', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+
+    act(() => {
+      root.render(
+        <RateTicker ratePerSecond={10_000_000n} startBalance={0n} endTime={0} />,
+      );
+    });
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    const firstId = setIntervalSpy.mock.results[0]!.value;
+
+    act(() => {
+      root.render(
+        <RateTicker ratePerSecond={20_000_000n} startBalance={0n} endTime={0} />,
+      );
+    });
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(2);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(firstId);
+
+    clearIntervalSpy.mockRestore();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('reflects the new rate after ratePerSecond changes', () => {
+    act(() => {
+      root.render(
+        <RateTicker ratePerSecond={10_000_000n} startBalance={0n} endTime={0} />,
+      );
+    });
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(container.textContent).toBe('1.00');
+
+    act(() => {
+      root.render(
+        <RateTicker ratePerSecond={20_000_000n} startBalance={0n} endTime={0} />,
+      );
+    });
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(container.textContent).toBe('4.00');
+  });
 });

@@ -86,6 +86,10 @@ export function useServiceWorker() {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
+        const periodicSync = (registration as ServiceWorkerRegistration & {
+          periodicSync?: { register: (tag: string, options: { minInterval: number }) => Promise<void> };
+        }).periodicSync;
+        void periodicSync?.register('conduit-cache-update', { minInterval: 24 * 60 * 60 * 1000 });
         if (registration.waiting && navigator.serviceWorker.controller) {
           registration.waiting.postMessage({ type: 'SKIP_WAITING' });
         }
