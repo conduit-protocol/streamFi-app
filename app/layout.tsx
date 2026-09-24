@@ -9,10 +9,19 @@ import './globals.css';
 export const metadata: Metadata = {
   title:       'Conduit — Streaming Payments on Stellar',
   description: 'Create and manage per-second token streams on the Stellar network.',
+  manifest:    '/site.webmanifest',
   openGraph: {
-    title:       'Conduit',
-    description: 'Streaming payments on Stellar.',
+    title:       'Conduit — Streaming Payments on Stellar',
+    description: 'Create and manage per-second token streams on the Stellar network.',
     siteName:    'Conduit',
+    images: [{ url: '/og-image.svg', width: 1200, height: 630, alt: 'Conduit — Streaming Payments on Stellar' }],
+    type:        'website',
+  },
+  twitter: {
+    card:        'summary_large_image',
+    title:       'Conduit — Streaming Payments on Stellar',
+    description: 'Create and manage per-second token streams on the Stellar network.',
+    images:      ['/og-image.svg'],
   },
 };
 

@@ -1,7 +1,21 @@
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'About — Conduit',
+  title:       'About — Conduit',
+  description: 'Conduit is an open-source protocol for continuous token streaming on the Stellar network.',
+  openGraph: {
+    title:       'About — Conduit',
+    description: 'Conduit is an open-source protocol for continuous token streaming on the Stellar network.',
+    siteName:    'Conduit',
+    images: [{ url: '/og-image.svg', width: 1200, height: 630, alt: 'About — Conduit' }],
+    type:        'website',
+  },
+  twitter: {
+    card:        'summary_large_image',
+    title:       'About — Conduit',
+    description: 'Conduit is an open-source protocol for continuous token streaming on the Stellar network.',
+    images:      ['/og-image.svg'],
+  },
 };
 
 export default function AboutPage() {

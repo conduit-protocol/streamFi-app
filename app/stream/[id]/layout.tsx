@@ -15,6 +15,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       title,
       description,
       siteName: 'Conduit',
+      images: [{ url: '/og-image.svg', width: 1200, height: 630, alt: title }],
+      type:    'website',
+    },
+    twitter: {
+      card:        'summary_large_image',
+      title,
+      description,
+      images:      ['/og-image.svg'],
     },
   };
 }
