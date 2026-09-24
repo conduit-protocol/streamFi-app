@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
 import { NetworkName, NETWORKS } from "@/lib/network-config";
 import { saveSelectedNetwork } from "@/lib/network-storage";
+import { useOnboarding } from "@/hooks/useOnboarding";
 import {
   type TimeFormat,
   type RefreshIntervalSeconds,
@@ -76,6 +77,7 @@ function loadSettings(): SettingsState {
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { reset: resetOnboarding } = useOnboarding();
   const [settings, setSettings] = useState<SettingsState>(loadSettings);
   const [saved, setSaved] = useState(false);
   const didMount = useRef(false);
@@ -170,7 +172,9 @@ export default function SettingsPage() {
           <span className="text-sm">Stellar Network</span>
           <select
             value={settings.network}
-            onChange={(e) => updateSetting("network", e.target.value as NetworkName)}
+            onChange={(e) =>
+              updateSetting("network", e.target.value as NetworkName)
+            }
             className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
           >
             {Object.values(NETWORKS).map((n) => (
@@ -192,7 +196,9 @@ export default function SettingsPage() {
             <span className="text-sm">Display Currency</span>
             <select
               value={settings.currency}
-              onChange={(e) => updateSetting("currency", e.target.value as Currency)}
+              onChange={(e) =>
+                updateSetting("currency", e.target.value as Currency)
+              }
               className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
             >
               <option value="USD">USD</option>
@@ -251,7 +257,8 @@ export default function SettingsPage() {
             <div>
               <span className="text-sm">Auto-Refresh Interval</span>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                How often stream data refreshes automatically. Off conserves RPC calls.
+                How often stream data refreshes automatically. Off conserves RPC
+                calls.
               </p>
             </div>
             <select
@@ -285,7 +292,9 @@ export default function SettingsPage() {
             <input
               type="checkbox"
               checked={settings.notificationsEnabled}
-              onChange={(e) => updateSetting("notificationsEnabled", e.target.checked)}
+              onChange={(e) =>
+                updateSetting("notificationsEnabled", e.target.checked)
+              }
               className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
             />
           </label>
@@ -302,7 +311,17 @@ export default function SettingsPage() {
       </section>
 
       {/* Reset */}
-      <div className="flex justify-end">
+      <div className="flex gap-3 justify-end">
+        <button
+          onClick={() => {
+            resetOnboarding();
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+          }}
+          className="px-4 py-2 rounded text-sm font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+        >
+          Restart Tour
+        </button>
         <button
           onClick={handleReset}
           className="px-4 py-2 rounded text-sm font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
