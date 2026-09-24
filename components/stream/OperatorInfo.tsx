@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { UserX } from 'lucide-react';
 import { Card }              from '@/components/ui/Card';
+import { CopyableAddress }   from '@/components/ui/CopyableAddress';
 import { useWallet }         from '@/contexts/WalletContext';
 import * as streamLib        from '@/lib/stream';
-import { truncateAddress }   from '@/lib/format';
 import { queryClient }       from '@/lib/queryClient';
 import { invalidateStreamMutation } from '@/lib/query-keys';
 
@@ -55,9 +55,7 @@ export function OperatorInfo({ streamAddress, operator, isSender, onSuccess }: O
         Delegated operator
       </h3>
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-sm text-black dark:text-white">
-          {truncateAddress(operator)}
-        </span>
+        <CopyableAddress address={operator} className="text-sm" />
         {isSender && (
           <button
             onClick={handleRevoke}
