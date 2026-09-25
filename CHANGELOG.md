@@ -21,6 +21,10 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
   and export controls (#555)
 - `/stream/[id]` — **PDF** button triggers `window.print()` to produce a formatted single-stream
   summary document via the print stylesheet; actions and back-link hidden in print view (#571)
+- `/stream/[id]` — **Calendar** button downloads a standard `.ics` invitation for the stream's
+  end date (one-hour event, one-hour reminder, deterministic UID so re-importing updates the
+  existing entry instead of duplicating it), built by the new `lib/calendar.ts`; rendered only
+  for bounded streams, since an open-ended stream has no end date to schedule (#566)
 - `app/globals.css` — `@media print` block scoped to `.print-receipt` class: resets body
   to white/black, collapses table borders, hides interactive chrome, preserves monospace
   addresses and amounts, renders status badges in monochrome, adds a print footer with the

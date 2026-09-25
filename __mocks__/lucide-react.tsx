@@ -28,6 +28,7 @@ export const AlertCircle   = createIconStub('AlertCircle');
 export const ArrowDownToLine = createIconStub('ArrowDownToLine');
 export const ArrowLeft     = createIconStub('ArrowLeft');
 export const ArrowRight    = createIconStub('ArrowRight');
+export const CalendarPlus  = createIconStub('CalendarPlus');
 export const Check         = createIconStub('Check');
 export const CheckCircle   = createIconStub('CheckCircle');
 export const Clock         = createIconStub('Clock');
