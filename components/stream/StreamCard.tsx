@@ -120,6 +120,7 @@ export function StreamCard({
           address={token}
           className="text-gray-500 dark:text-gray-400"
           maxWidth="max-w-[200px] sm:max-w-[300px]"
+          showQrCode
         />
         <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium font-mono">
           {Math.round(pctSnapshot)}%
