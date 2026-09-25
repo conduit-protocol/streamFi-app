@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { Tooltip } from '@/components/ui/Tooltip';
+import { Modal }   from '@/components/ui/Modal';
+import { Input }   from '@/components/ui/Input';
 import { fromStroops }          from '@/lib/format';
 import { useWallet }            from '@/contexts/WalletContext';
 import { withdraw }             from '@/lib/stream';
@@ -10,6 +12,7 @@ import { CopyHashButton }       from '@/components/ui/CopyHashButton';
 import { queryClient }          from '@/lib/queryClient';
 import { queueTransaction }     from '@/lib/offline-transactions';
 import { invalidateStreamMutation } from '@/lib/query-keys';
+import { getLargeWithdrawalThreshold, isLargeWithdrawal } from '@/lib/withdraw-config';
 
 type Step = 'idle' | 'signing' | 'submitting' | 'done' | 'error';
 
@@ -26,9 +29,16 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
   const [step, setStep]     = useState<Step>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError]   = useState<string | null>(null);
+  // Large-withdrawal confirmation (#560): amounts at or above the configured
+  // threshold require the user to retype the amount before we proceed.
+  const [confirmOpen, setConfirmOpen]   = useState(false);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [confirmError, setConfirmError] = useState('');
 
   const amount = fromStroops(withdrawable);
   const isEmpty = withdrawable === 0n;
+  const threshold = getLargeWithdrawalThreshold();
+  const isLarge = !isEmpty && isLargeWithdrawal(amount, threshold);
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -71,6 +81,33 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
       setError(e instanceof Error ? e.message : 'Transaction failed');
       setStep('error');
     }
+  }
+
+  function onWithdrawClick() {
+    if (isLarge) {
+      setConfirmInput('');
+      setConfirmError('');
+      setConfirmOpen(true);
+      return;
+    }
+    handleWithdraw();
+  }
+
+  function closeConfirm() {
+    setConfirmOpen(false);
+    setConfirmInput('');
+    setConfirmError('');
+  }
+
+  function confirmAndWithdraw() {
+    if (confirmInput.trim() !== amount) {
+      setConfirmError(`Amount doesn't match. Type ${amount} exactly to confirm.`);
+      return;
+    }
+    setConfirmOpen(false);
+    setConfirmInput('');
+    setConfirmError('');
+    handleWithdraw();
   }
 
   if (step === 'done') {
@@ -132,7 +169,7 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
         </div>
       )}
       <button
-        onClick={handleWithdraw}
+        onClick={onWithdrawClick}
         disabled={isEmpty || step !== 'idle'}
         className="btn-primary w-full"
       >
@@ -145,6 +182,40 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
             : `Withdraw ${amount} ${token}`
         )}
       </button>
+
+      {/* Large-withdrawal confirmation — retype the amount to proceed (#560) */}
+      {confirmOpen && (
+        <Modal title="Confirm large withdrawal" onClose={closeConfirm}>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              You&apos;re withdrawing <strong>{amount} {token}</strong>, which is at or
+              above the {threshold} {token} large-withdrawal threshold. Type the
+              amount below to confirm.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold mb-1">
+                Amount ({token})
+              </label>
+              <Input
+                type="text"
+                placeholder={amount}
+                value={confirmInput}
+                onChange={e => { setConfirmInput(e.target.value); setConfirmError(''); }}
+                autoFocus
+              />
+              {confirmError && <p className="text-xs text-red-600 mt-1">{confirmError}</p>}
+            </div>
+            <div className="flex gap-2">
+              <button className="btn-primary flex-1" onClick={confirmAndWithdraw}>
+                Confirm withdrawal
+              </button>
+              <button className="btn-secondary" onClick={closeConfirm}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
