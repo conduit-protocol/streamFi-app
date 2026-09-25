@@ -9,6 +9,8 @@ import {
   loadSelectedNetwork,
   saveSelectedNetwork,
   getSelectedNetworkName,
+  subscribeSelectedNetwork,
+  resetNetworkStorageForTests,
 } from './network-storage.js';
 import { NETWORKS, DEFAULT_NETWORK, NETWORK_STORAGE_KEY } from './network-config.js';
 
@@ -33,6 +35,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 beforeEach(() => {
   store.clear();
+  // The 'falls back to memory store' cases below intentionally populate the
+  // module-level memory fallback; clear it so it doesn't leak into later
+  // tests that assume nothing is stored.
+  resetNetworkStorageForTests();
 });
 
 // ── loadSelectedNetwork ──────────────────────────────────────────────────────
@@ -100,5 +106,49 @@ describe('getSelectedNetworkName', () => {
   it('returns the stored network name', () => {
     store.set(NETWORK_STORAGE_KEY, 'local');
     expect(getSelectedNetworkName()).toBe('local');
+  });
+});
+
+// ── subscribeSelectedNetwork ─────────────────────────────────────────────────
+
+describe('subscribeSelectedNetwork', () => {
+  it('notifies listeners when saveSelectedNetwork is called', () => {
+    let calls = 0;
+    const unsubscribe = subscribeSelectedNetwork(() => { calls++; });
+
+    saveSelectedNetwork('mainnet');
+    expect(calls).toBe(1);
+
+    saveSelectedNetwork('local');
+    expect(calls).toBe(2);
+
+    unsubscribe();
+  });
+
+  it('stops notifying after unsubscribing', () => {
+    let calls = 0;
+    const unsubscribe = subscribeSelectedNetwork(() => { calls++; });
+    unsubscribe();
+
+    saveSelectedNetwork('mainnet');
+    expect(calls).toBe(0);
+  });
+
+  it('supports multiple independent listeners', () => {
+    let a = 0;
+    let b = 0;
+    const unsubA = subscribeSelectedNetwork(() => { a++; });
+    const unsubB = subscribeSelectedNetwork(() => { b++; });
+
+    saveSelectedNetwork('mainnet');
+    expect(a).toBe(1);
+    expect(b).toBe(1);
+
+    unsubA();
+    saveSelectedNetwork('testnet');
+    expect(a).toBe(1);
+    expect(b).toBe(2);
+
+    unsubB();
   });
 });

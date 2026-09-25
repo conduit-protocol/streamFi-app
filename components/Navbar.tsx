@@ -7,6 +7,8 @@ import { Menu, X }          from 'lucide-react';
 import { ConnectButton }    from '@/components/ConnectButton';
 import { ThemeToggle }      from '@/components/ThemeToggle';
 import { ErrorBoundary }    from '@/components/ErrorBoundary';
+import { NetworkBadge }     from '@/components/NetworkBadge';
+import { useSelectedNetwork } from '@/hooks/useSelectedNetwork';
 
 const NAV = [
   { href: '/streams',      label: 'Streams'    },
@@ -19,6 +21,7 @@ const NAV = [
 export function Navbar() {
   const path = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const network = useSelectedNetwork();
 
   // Close the mobile menu whenever the route changes (e.g. after a nav tap).
   useEffect(() => {
@@ -51,6 +54,9 @@ export function Navbar() {
         <Link href="/" className="font-black text-lg tracking-tight hover:opacity-70 transition-opacity">
           conduit
         </Link>
+
+        {/* Active-network indicator — hidden on mainnet (#559) */}
+        <NetworkBadge network={network} />
 
         {/* Desktop nav links */}
         <nav className="hidden sm:flex items-center gap-1">

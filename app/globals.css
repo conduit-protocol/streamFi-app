@@ -67,6 +67,10 @@
   .badge-ended     { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
   .badge-cancelled { @apply badge border border-gray-200 text-gray-300 line-through dark:border-gray-700 dark:text-gray-600; }
 
+  /* Active-network indicator (#559) — dashed border keeps it visually
+     distinct from stream-status badges while staying black/white/gray. */
+  .badge-network   { @apply badge border border-dashed border-black text-black uppercase tracking-wide dark:border-white dark:text-white; }
+
   /* Amount display */
   .amount {
     @apply font-mono tabular-nums slashed-zero;
