@@ -1,0 +1,26 @@
+{
+  "title": "Dashboard",
+  "newStream": "New stream",
+  "totalsFor": "Totals for",
+  "rangeTo": "to",
+  "stats": {
+    "activeStreams": "Active streams",
+    "receivingPerSecond": "Receiving /s",
+    "totalReceived": "Total received",
+    "senders": "Senders"
+  },
+  "connectWallet": "Connect your wallet to see your streams.",
+  "loadError": "Failed to load streams. Please try again.",
+  "partialError_one": "{{count}} stream couldn’t load",
+  "partialError_other": "{{count}} streams couldn’t load",
+  "retryLower": "retry",
+  "retrying": "Retrying…",
+  "retryButton": "Retry",
+  "tabs": {
+    "receiving": "Receiving",
+    "sending": "Sending"
+  },
+  "noStreamsYet": "No {{tab}} streams yet.",
+  "createFirstStream": "Create your first stream",
+  "connectionRestoredMessage": "Your streams will appear here once the connection is back."
+}
