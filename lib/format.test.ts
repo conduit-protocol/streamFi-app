@@ -7,6 +7,7 @@ import {
   formatTimestampRelative,
   truncateAddress,
   wouldRateTruncateToZero,
+  formatAmount,
 } from './format.js';
 
 describe('wouldRateTruncateToZero', () => {
@@ -218,5 +219,58 @@ describe('truncateAddress', () => {
     expect(
       truncateAddress('GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN', 6),
     ).toBe('GAAZI4…KOCCWN');
+  });
+});
+
+describe('formatAmount (issue #557 — locale-aware formatting)', () => {
+  it('formats using en-US style by default when locale is explicitly set', () => {
+    // 10_000_000_000n / 1e7 = 1000.00
+    expect(formatAmount(10_000_000_000n, { locale: 'en-US' })).toBe('1,000.00');
+  });
+
+  it('uses period as decimal separator and comma as grouping in en-US', () => {
+    // 1_234_500_000n / 1e7 = 123.45
+    expect(formatAmount(1_234_500_000n, { locale: 'en-US' })).toBe('123.45');
+  });
+
+  it('uses comma as decimal separator and period as grouping in de-DE', () => {
+    // 10_000_000_000n / 1e7 = 1000.00 → "1.000,00" in de-DE
+    expect(formatAmount(10_000_000_000n, { locale: 'de-DE' })).toBe('1.000,00');
+  });
+
+  it('formats decimal correctly in de-DE', () => {
+    // 1_234_500_000n / 1e7 = 123.45 → "123,45" in de-DE
+    expect(formatAmount(1_234_500_000n, { locale: 'de-DE' })).toBe('123,45');
+  });
+
+  it('formats with currency symbol for en-US USD', () => {
+    const result = formatAmount(10_000_000_000n, { locale: 'en-US', currency: 'USD' });
+    expect(result).toBe('$1,000.00');
+  });
+
+  it('formats with currency symbol for de-DE EUR', () => {
+    const result = formatAmount(10_000_000_000n, { locale: 'de-DE', currency: 'EUR' });
+    // de-DE renders "1.000,00 €" (non-breaking space before symbol)
+    expect(result).toMatch(/1\.000,00/);
+    expect(result).toMatch(/€/);
+  });
+
+  it('respects minimumFractionDigits and maximumFractionDigits overrides', () => {
+    expect(
+      formatAmount(10_000_000n, { locale: 'en-US', minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+    ).toBe('1');
+  });
+
+  it('handles zero stroops', () => {
+    expect(formatAmount(0n, { locale: 'en-US' })).toBe('0.00');
+  });
+
+  it('handles negative stroops', () => {
+    expect(formatAmount(-1_234_500_000n, { locale: 'en-US' })).toBe('-123.45');
+  });
+
+  it('respects a custom decimals value (e.g. 2-decimal token)', () => {
+    // 1050n / 1e2 = 10.50
+    expect(formatAmount(1050n, { locale: 'en-US', decimals: 2 })).toBe('10.50');
   });
 });

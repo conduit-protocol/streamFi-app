@@ -161,3 +161,79 @@ export function truncateAddress(addr: string, chars = 4): string {
   if (addr.length <= chars * 2 + 3) return addr;
   return `${addr.slice(0, chars)}…${addr.slice(-chars)}`;
 }
+
+export interface FormatAmountOptions {
+  /**
+   * BCP 47 locale tag used for `Intl.NumberFormat`.
+   * Defaults to the browser/runtime locale (`undefined` → system default).
+   * Pass `"en-US"` to get US-style "1,234.56", `"de-DE"` for "1.234,56", etc.
+   */
+  locale?: string;
+  /** Token decimals (1 XLM = 10^decimals stroops). Defaults to 7. */
+  decimals?: number;
+  /**
+   * ISO 4217 currency code (e.g. "USD", "EUR").
+   * When provided the value is formatted as currency (symbol + grouping).
+   * When omitted it is formatted as a plain decimal number.
+   */
+  currency?: string;
+  /**
+   * Minimum fraction digits shown. Defaults to 2, or 0 when the
+   * token has 0 decimals.
+   */
+  minimumFractionDigits?: number;
+  /**
+   * Maximum fraction digits shown. Defaults to `decimals`, capped at 20
+   * (the `Intl.NumberFormat` hard limit).
+   */
+  maximumFractionDigits?: number;
+}
+
+/**
+ * Format a stroops bigint as a locale-aware amount string.
+ *
+ * Routes through `Intl.NumberFormat` so grouping separators, decimal
+ * marks, and (optionally) currency symbols follow the user's locale
+ * rather than a hardcoded US convention. Fixes issue #557.
+ *
+ * @example
+ * formatAmount(1_234_567_890n)                          // "123.46" (system locale)
+ * formatAmount(1_234_567_890n, { locale: "en-US" })     // "123.46"
+ * formatAmount(1_234_567_890n, { locale: "de-DE" })     // "123,46"
+ * formatAmount(10_000_000_000n, { locale: "en-IN" })    // "1,000.00"
+ * formatAmount(10_000_000_000n, { locale: "de-DE", currency: "EUR" }) // "1.000,00 €"
+ */
+export function formatAmount(
+  stroops: bigint,
+  {
+    locale,
+    decimals = 7,
+    currency,
+    minimumFractionDigits,
+    maximumFractionDigits,
+  }: FormatAmountOptions = {},
+): string {
+  // Convert to a plain JS number for Intl.NumberFormat.
+  // BigInt division loses sub-stroop precision intentionally — we only need
+  // display precision, not round-trip accuracy.
+  const factor = 10 ** decimals;
+  const value = Number(stroops) / factor;
+
+  const minFrac = minimumFractionDigits ?? (decimals > 0 ? 2 : 0);
+  const maxFrac = maximumFractionDigits ?? Math.min(decimals, 20);
+
+  const nfOptions: Intl.NumberFormatOptions = currency
+    ? {
+        style: "currency",
+        currency,
+        minimumFractionDigits: minFrac,
+        maximumFractionDigits: maxFrac,
+      }
+    : {
+        style: "decimal",
+        minimumFractionDigits: minFrac,
+        maximumFractionDigits: maxFrac,
+      };
+
+  return new Intl.NumberFormat(locale, nfOptions).format(value);
+}
