@@ -13,6 +13,17 @@ vi.mock("@/contexts/WalletContext", () => ({
   }),
 }));
 
+// ── next/navigation (URL sync for tab/status/token/sort, #548) ──────────────
+
+const mockRouterReplace = vi.fn();
+let currentSearchParams = new URLSearchParams();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
+  usePathname: () => "/streams",
+  useSearchParams: () => currentSearchParams,
+}));
+
 // ── Mock factory / stream functions ──────────────────────────────────────────
 
 const mockStreamsBySender = vi.fn();
@@ -76,6 +87,7 @@ describe("StreamsPage — RPC deserialization failure handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentPublicKey = "GTESTKEY1234567890ABCDEF";
+    currentSearchParams = new URLSearchParams();
     mockStreamsBySender.mockResolvedValue([]);
     mockStreamsByRecipient.mockResolvedValue([]);
   });
@@ -157,6 +169,7 @@ describe("StreamsPage — multi-select for comparison", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     currentPublicKey = "GTESTKEY1234567890ABCDEF";
+    currentSearchParams = new URLSearchParams();
     const stream = await import("@/lib/stream");
     vi.mocked(stream.getStreamAddress).mockImplementation(async (_pk, id) => `CADDR${id}`);
     vi.mocked(stream.getStreamInfo).mockResolvedValue({

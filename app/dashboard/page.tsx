@@ -20,6 +20,12 @@ import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { isFulfilled } from "@/lib/safe-operations";
+import {
+  DATE_RANGE_PRESETS,
+  presetToRange,
+  streamInRange,
+  type DateRangePreset,
+} from "@/lib/date-range";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
@@ -140,6 +146,12 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
+  // Date-range filter for the aggregate totals (#547). Defaults to "all
+  // time" so existing behavior (no filtering) is preserved until the user
+  // opts in.
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
@@ -241,14 +253,35 @@ export default function DashboardPage() {
     };
   }, [publicKey, refetch]);
 
+  const range = useMemo(() => {
+    if (rangePreset !== "custom") return presetToRange(rangePreset);
+    const start = customStart ? Math.floor(new Date(customStart).getTime() / 1000) : null;
+    const end = customEnd ? Math.floor(new Date(customEnd).getTime() / 1000) + 86_400 - 1 : null;
+    return {
+      start: start !== null && Number.isFinite(start) ? start : null,
+      end: end !== null && Number.isFinite(end) ? end : null,
+    };
+  }, [rangePreset, customStart, customEnd]);
+
+  const filterByRange = useCallback(
+    (rows: StreamRow[]) =>
+      range.start === null && range.end === null
+        ? rows
+        : rows.filter((r) => streamInRange(r.info.startTime, r.info.endTime, range)),
+    [range],
+  );
+
+  const filteredReceiving = useMemo(() => filterByRange(receiving), [receiving, filterByRange]);
+  const filteredSending = useMemo(() => filterByRange(sending), [sending, filterByRange]);
+
   const activeCount = useMemo(
     () =>
-      [...receiving, ...sending].filter((s) => s.status === "active").length,
-    [receiving, sending],
+      [...filteredReceiving, ...filteredSending].filter((s) => s.status === "active").length,
+    [filteredReceiving, filteredSending],
   );
   const receivingRate = useMemo(
     () =>
-      receiving
+      filteredReceiving
         .filter(
           (s) =>
             s.status === "active" &&
@@ -256,23 +289,24 @@ export default function DashboardPage() {
             typeof s.info.ratePerSecond === "bigint",
         )
         .reduce((a, s) => a + s.info.ratePerSecond, 0n),
-    [receiving],
+    [filteredReceiving],
   );
   const totalWithdrawn = useMemo(
     () =>
-      receiving
+      filteredReceiving
         .filter((s) => s.info && typeof s.info.withdrawn === "bigint")
         .reduce((a, s) => a + s.info.withdrawn, 0n),
-    [receiving],
+    [filteredReceiving],
   );
   const senderCount = useMemo(
     () =>
-      new Set(receiving.filter((s) => s.info?.sender).map((s) => s.info.sender))
-        .size,
-    [receiving],
+      new Set(
+        filteredReceiving.filter((s) => s.info?.sender).map((s) => s.info.sender),
+      ).size,
+    [filteredReceiving],
   );
 
-  const displayed = tab === "receiving" ? receiving : sending;
+  const displayed = tab === "receiving" ? filteredReceiving : filteredSending;
 
   const STATS = [
     {
@@ -304,6 +338,46 @@ export default function DashboardPage() {
           </Link>
         )}
       </div>
+
+      {/* Date-range filter (#547) */}
+      {connected && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <label htmlFor="dashboard-range" className="text-xs text-gray-400 dark:text-gray-500">
+            Totals for
+          </label>
+          <select
+            id="dashboard-range"
+            value={rangePreset}
+            onChange={(e) => setRangePreset(e.target.value as DateRangePreset)}
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+          >
+            {DATE_RANGE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          {rangePreset === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                aria-label="Range start"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+              <span className="text-xs text-gray-400">to</span>
+              <input
+                type="date"
+                aria-label="Range end"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Aggregate stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
@@ -397,7 +471,7 @@ export default function DashboardPage() {
                 {t.charAt(0).toUpperCase() + t.slice(1)}
                 {!loading && (
                   <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-gray-500">
-                    ({(t === "receiving" ? receiving : sending).length})
+                    ({(t === "receiving" ? filteredReceiving : filteredSending).length})
                   </span>
                 )}
               </button>

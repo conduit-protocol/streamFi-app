@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, AlertCircle, Columns } from "lucide-react";
 import { useWallet } from "@/contexts/WalletContext";
@@ -11,6 +12,9 @@ import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { readSnapshot, saveSnapshot } from "@/lib/offline-cache";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { deriveStatus, MAX_COMPARE, MIN_COMPARE, type StreamStatus } from "@/lib/stream-compare";
+import { sortStreams, isSortKey, SORT_OPTIONS, type SortKey } from "@/lib/stream-sort";
+import { tokenByAddress } from "@/lib/tokens";
+import { truncateAddress } from "@/lib/format";
 
 type Tab = "receiving" | "sending";
 
@@ -60,13 +64,27 @@ async function loadRows(
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function StreamsPage() {
+/** Read a validated tab value from the URL, defaulting to "receiving". */
+function tabFromParam(value: string | null): Tab {
+  return value === "sending" ? "sending" : "receiving";
+}
+
+/** Read a validated status value from the URL, defaulting to "ALL". */
+function statusFromParam(value: string | null): "ALL" | StreamStatus {
+  return value === "active" || value === "paused" || value === "ended" || value === "cancelled"
+    ? value
+    : "ALL";
+}
+
+function StreamsView() {
   const { publicKey, connected } = useWallet();
   // The global NetworkTroubleBanner already covers RPC-down / fetch-failure
   // cases, so suppress this page's own error row when it's showing.
   const { status: networkStatus } = useNetworkStatus();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,9 +92,31 @@ export default function StreamsPage() {
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<"ALL" | StreamStatus>("ALL");
+  // Tab, status/token filters, and sort are seeded from the URL on first
+  // render so a shared/bookmarked link reproduces the same view (#548), then
+  // kept in sync back to the URL as they change.
+  const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get("tab")));
+  const [statusFilter, setStatusFilter] = useState<"ALL" | StreamStatus>(() =>
+    statusFromParam(searchParams.get("status")),
+  );
+  const [tokenFilter, setTokenFilter] = useState<string>(() => searchParams.get("token") ?? "ALL");
+  const [sort, setSort] = useState<SortKey>(() => {
+    const s = searchParams.get("sort");
+    return isSortKey(s) ? s : "default";
+  });
   // Stream ids ticked for the side-by-side /streams/compare view.
   const [selected, setSelected] = useState<string[]>([]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== "receiving") params.set("tab", tab);
+    if (statusFilter !== "ALL") params.set("status", statusFilter);
+    if (tokenFilter !== "ALL") params.set("token", tokenFilter);
+    if (sort !== "default") params.set("sort", sort);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, statusFilter, tokenFilter, sort, pathname]);
 
   const toggleSelected = (id: string) =>
     setSelected((prev) =>
@@ -141,8 +181,29 @@ export default function StreamsPage() {
     return () => { active = false; };
   }, [publicKey]);
 
-  const displayed = (tab === "receiving" ? receiving : sending).filter(
-    (row) => statusFilter === "ALL" || row.status === statusFilter,
+  const baseRows = tab === "receiving" ? receiving : sending;
+
+  // Distinct tokens present in the current tab, for the token filter's options.
+  const tokenOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const row of baseRows) {
+      if (!seen.has(row.info.token)) {
+        seen.set(
+          row.info.token,
+          tokenByAddress(row.info.token, "testnet")?.symbol ?? truncateAddress(row.info.token),
+        );
+      }
+    }
+    return Array.from(seen, ([address, label]) => ({ address, label }));
+  }, [baseRows]);
+
+  const displayed = sortStreams(
+    baseRows.filter(
+      (row) =>
+        (statusFilter === "ALL" || row.status === statusFilter) &&
+        (tokenFilter === "ALL" || row.info.token === tokenFilter),
+    ),
+    sort,
   );
 
   return (
@@ -156,13 +217,16 @@ export default function StreamsPage() {
       </div>
 
       {/* Tabs and Filter */}
-      <div className="flex justify-between items-end border-b border-gray-200 dark:border-gray-800 mb-6">
+      <div className="flex flex-wrap justify-between items-end gap-y-2 border-b border-gray-200 dark:border-gray-800 mb-6">
         <div className="flex gap-1">
           {(["receiving", "sending"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => {
-                if (t !== tab) setSelected([]);
+                if (t !== tab) {
+                  setSelected([]);
+                  setTokenFilter("ALL");
+                }
                 setTab(t);
               }}
               className={[
@@ -176,8 +240,9 @@ export default function StreamsPage() {
             </button>
           ))}
         </div>
-        <div className="pb-2">
+        <div className="flex flex-wrap items-center gap-2 pb-2">
           <select
+            aria-label="Filter by status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
             className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
@@ -187,6 +252,31 @@ export default function StreamsPage() {
             <option value="paused">Paused</option>
             <option value="ended">Ended</option>
             <option value="cancelled">Cancelled</option>
+          </select>
+          <select
+            aria-label="Filter by token"
+            value={tokenFilter}
+            onChange={(e) => setTokenFilter(e.target.value)}
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+          >
+            <option value="ALL">All Tokens</option>
+            {tokenOptions.map((t) => (
+              <option key={t.address} value={t.address}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Sort streams"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+          >
+            {SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -351,6 +441,17 @@ export default function StreamsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function StreamsPage() {
+  // useSearchParams() must sit under a Suspense boundary in Next 15, or the
+  // whole route bails out of static rendering at build time (see the same
+  // pattern in app/streams/compare/page.tsx).
+  return (
+    <Suspense fallback={null}>
+      <StreamsView />
+    </Suspense>
   );
 }
 import { captureError } from "@/lib/error-tracking";
