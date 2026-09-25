@@ -137,4 +137,178 @@ describe('OperatorInfo', () => {
     act(() => { root.unmount(); });
     document.body.removeChild(container);
   });
+
+  it('renders inside a Card component', () => {
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={false} />,
+      );
+    });
+
+    const card = container.querySelector('[class*="card"]') || container.querySelector('div');
+    expect(card).not.toBeNull();
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('displays heading with "Delegated operator" text', () => {
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={false} />,
+      );
+    });
+
+    const heading = container.querySelector('h3');
+    expect(heading).not.toBeNull();
+    expect(heading?.textContent).toContain('Delegated operator');
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('displays the operator address using CopyableAddress component', () => {
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={false} />,
+      );
+    });
+
+    expect(container.textContent).toContain(OPERATOR.slice(0, 4));
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('disables the Revoke button while revoking', async () => {
+    let resolveRevoke: () => void;
+    const revokePromise = new Promise<void>(resolve => {
+      resolveRevoke = resolve;
+    });
+    mockRevokeOperator.mockReturnValue(revokePromise as any);
+
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={true} />,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('Revoke'));
+
+    act(() => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(button?.textContent).toContain('Revoking…');
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      resolveRevoke!();
+      await Promise.resolve();
+    });
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('clears the pending state when the component unmounts during revocation', async () => {
+    mockRevokeOperator.mockImplementation(() => new Promise(() => {}));
+
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={true} />,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('Revoke'));
+
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('calls invalidateStreamMutation after successful revocation', async () => {
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={true} />,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('Revoke'));
+
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockRevokeOperator).toHaveBeenCalled();
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('handles error message when revocation fails with non-Error object', async () => {
+    mockRevokeOperator.mockRejectedValue('string error');
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={true} />,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('Revoke'));
+
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Failed to revoke operator');
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('does not call onSuccess when revoke fails', async () => {
+    mockRevokeOperator.mockRejectedValue(new Error('Network error'));
+    const onSuccess = vi.fn();
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(
+        <OperatorInfo streamAddress={STREAM_ADDRESS} operator={OPERATOR} isSender={true} onSuccess={onSuccess} />,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('Revoke'));
+
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
 });

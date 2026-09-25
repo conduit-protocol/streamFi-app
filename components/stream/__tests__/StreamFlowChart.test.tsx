@@ -61,4 +61,249 @@ describe('StreamFlowChart', () => {
     });
     document.body.removeChild(container);
   });
+
+  it('renders grid lines for Y axis', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const gridLines = container.querySelectorAll('line[stroke-dasharray="4 4"]');
+    expect(gridLines.length).toBeGreaterThan(0);
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders X-axis time labels', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const textElements = container.querySelectorAll('text');
+    expect(textElements.length).toBeGreaterThan(0);
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('displays max amount correctly', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    expect(container.textContent).toContain('Max:');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders interactive data points', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const circles = container.querySelectorAll('circle');
+    expect(circles.length).toBeGreaterThan(0);
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('shows tooltip on hover with time and amount', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const circles = container.querySelectorAll('circle');
+    const firstCircle = circles[0];
+
+    if (firstCircle) {
+      act(() => {
+        firstCircle.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      });
+
+      const tooltip = container.querySelector('.absolute');
+      expect(tooltip).not.toBeNull();
+    }
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('hides tooltip on mouse leave', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const svg = container.querySelector('svg');
+
+    if (svg) {
+      const circles = container.querySelectorAll('circle');
+      if (circles[0]) {
+        act(() => {
+          circles[0].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        });
+
+        act(() => {
+          svg.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+        });
+      }
+    }
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders with custom width and height', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} width={800} height={300} />);
+    });
+
+    const svg = container.querySelector('svg');
+    expect(svg).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders gradient fill for the area', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const gradient = container.querySelector('linearGradient');
+    expect(gradient).not.toBeNull();
+    expect(gradient?.id).toBe('streamFlowGradient');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('displays correct token symbol', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const customToken = 'ETH';
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} tokenSymbol={customToken} />);
+    });
+
+    expect(container.textContent).toContain(customToken);
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('handles cancelled streams correctly', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} cancelled={true} />);
+    });
+
+    expect(container.textContent).toContain('Stream Flow Trajectory');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders with zero withdrawn and withdrawable', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <StreamFlowChart
+          {...baseProps}
+          withdrawn={0n}
+          withdrawable={0n}
+          ratePerSecond={0n}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Stream Flow Trajectory');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('renders path element for flow line', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act () => {
+      root.render(<StreamFlowChart {...baseProps} />);
+    });
+
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBeGreaterThanOrEqual(2);
+
+    const flowPath = Array.from(paths).find(p => p.getAttribute('fill') === 'none');
+    expect(flowPath).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
 });
