@@ -45,6 +45,14 @@ vi.mock('@/components/stream/StreamActions', () => ({
   StreamActions: ({ token }: { token: string }) =>
     React.createElement('div', { 'data-testid': 'stream-actions' }, token),
 }));
+vi.mock('@/components/stream/AddToCalendarButton', () => ({
+  AddToCalendarButton: ({ streamId, endTime }: { streamId: string; endTime: number }) =>
+    React.createElement('div', {
+      'data-testid': 'add-to-calendar',
+      'data-stream-id': streamId,
+      'data-end-time': String(endTime),
+    }),
+}));
 
 import { useWallet } from '@/contexts/WalletContext';
 import { getStreamAddress, getStreamInfo, getWithdrawable } from '@/lib/stream';
@@ -268,5 +276,47 @@ describe('StreamPage (app/stream/[id]/page.tsx)', () => {
     // a cancelled stream renders the "cancelled" badge, not a crash or a
     // silently stale "active" state from the first request.
     expect(container.querySelector('[data-testid="badge"]')?.textContent).toBe('cancelled');
+  });
+
+  it('#566 — offers the calendar action with the stream end date when the stream is bounded', async () => {
+    mockUseWallet.mockReturnValue({
+      publicKey: 'GRECIPIENT',
+      connected: true,
+    } as unknown as ReturnType<typeof useWallet>);
+    mockAddr.mockResolvedValue('STREAM_ADDR');
+    const endTime = Math.floor(Date.now() / 1000) + 3600;
+    mockInfo.mockResolvedValue(makeInfo({ endTime }));
+    mockWithdrawable.mockResolvedValue(0n);
+
+    await act(async () => {
+      root.render(React.createElement(StreamPage));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const action = container.querySelector('[data-testid="add-to-calendar"]');
+    expect(action).not.toBeNull();
+    expect(action?.getAttribute('data-stream-id')).toBe('42');
+    expect(action?.getAttribute('data-end-time')).toBe(String(endTime));
+  });
+
+  it('#566 — omits the calendar action for an open-ended stream (nothing to schedule)', async () => {
+    mockUseWallet.mockReturnValue({
+      publicKey: 'GRECIPIENT',
+      connected: true,
+    } as unknown as ReturnType<typeof useWallet>);
+    mockAddr.mockResolvedValue('STREAM_ADDR');
+    mockInfo.mockResolvedValue(makeInfo({ endTime: 0 }));
+    mockWithdrawable.mockResolvedValue(0n);
+
+    await act(async () => {
+      root.render(React.createElement(StreamPage));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-testid="add-to-calendar"]')).toBeNull();
   });
 });
