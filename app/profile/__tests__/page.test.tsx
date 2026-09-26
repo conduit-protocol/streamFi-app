@@ -17,6 +17,8 @@ let walletState: {
   connecting: false,
 };
 
+export const mockDisconnect = vi.fn();
+
 vi.mock("@/contexts/WalletContext", () => ({
   useWallet: () => ({
     publicKey: walletState.publicKey,
@@ -24,7 +26,7 @@ vi.mock("@/contexts/WalletContext", () => ({
     walletName: walletState.walletName,
     connecting: walletState.connecting,
     connect: vi.fn(),
-    disconnect: vi.fn(),
+    disconnect: mockDisconnect,
     signTx: vi.fn(),
   }),
 }));
@@ -146,5 +148,60 @@ describe("ProfilePage", () => {
     const container = renderProfilePage();
 
     expect(container.textContent).toContain("Unknown");
+  });
+
+  it("calls disconnect when Disconnect Wallet button is clicked", () => {
+    walletState.connected = true;
+    walletState.publicKey = "GABCDE1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF";
+    walletState.walletName = "Freighter";
+    const container = renderProfilePage();
+
+    const disconnectBtn = Array.from(container.querySelectorAll("button")).find(
+      (btn) => btn.textContent?.includes("Disconnect Wallet")
+    );
+    expect(disconnectBtn).toBeDefined();
+
+    act(() => {
+      disconnectBtn!.click();
+    });
+
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles between shortened and full public key and links to Stellar Expert", () => {
+    walletState.connected = true;
+    const fullKey = "GABCDE1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF";
+    walletState.publicKey = fullKey;
+    walletState.walletName = "Freighter";
+    const container = renderProfilePage();
+
+    // Initially displays shortened key and "Show full" button
+    expect(container.textContent).toContain("GABCDE...CDEF");
+    const toggleBtn = Array.from(container.querySelectorAll("button")).find(
+      (btn) => btn.textContent?.includes("Show full")
+    );
+    expect(toggleBtn).toBeDefined();
+
+    // Toggle to full key
+    act(() => {
+      toggleBtn!.click();
+    });
+
+    expect(container.textContent).toContain(fullKey);
+    expect(container.textContent).toContain("Show shortened");
+
+    // Toggle back to shortened key
+    act(() => {
+      toggleBtn!.click();
+    });
+    expect(container.textContent).toContain("GABCDE...CDEF");
+
+    // Stellar Expert link check
+    const explorerLink = container.querySelector(
+      `a[href="https://stellar.expert/explorer/testnet/account/${fullKey}"]`
+    ) as HTMLAnchorElement | null;
+    expect(explorerLink).not.toBeNull();
+    expect(explorerLink?.target).toBe("_blank");
+    expect(explorerLink?.rel).toContain("noopener");
   });
 });
