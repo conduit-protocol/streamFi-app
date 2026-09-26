@@ -38,10 +38,12 @@ export function Navbar() {
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
+  const isActive = (href: string) => path.startsWith(href);
+
   const linkClass = (href: string) =>
     [
       'px-3 py-1.5 rounded text-sm font-medium transition-colors',
-      path.startsWith(href)
+      isActive(href)
         ? 'bg-black text-white dark:bg-white dark:text-black'
         : 'text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800',
     ].join(' ');
@@ -61,7 +63,7 @@ export function Navbar() {
         {/* Desktop nav links */}
         <nav className="hidden sm:flex items-center gap-1">
           {NAV.map(n => (
-            <Link key={n.href} href={n.href} className={linkClass(n.href)}>
+            <Link key={n.href} href={n.href} className={linkClass(n.href)} aria-current={isActive(n.href) ? 'page' : undefined}>
               {n.label}
             </Link>
           ))}
@@ -129,6 +131,7 @@ export function Navbar() {
                   href={n.href}
                   onClick={() => setMenuOpen(false)}
                   className={linkClass(n.href)}
+                  aria-current={isActive(n.href) ? 'page' : undefined}
                 >
                   {n.label}
                 </Link>

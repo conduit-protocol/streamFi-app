@@ -59,6 +59,13 @@ const schema = z.object({
  * Must stay well below START_TIME_BUFFER_S so that start_time is always in the
  * future even on a congested network (see #373).
  */
+const DURATION_PRESETS = [
+  { label: '1 day',   seconds: 86_400 },
+  { label: '1 week',  seconds: 604_800 },
+  { label: '1 month', seconds: 2_592_000 },
+  { label: '1 year',  seconds: 31_536_000 },
+] as const;
+
 const CREATE_STREAM_TIMEOUT_MS = 60_000;
 
 /**
@@ -506,6 +513,18 @@ export default function CreatePage() {
             className="input"
             type="number"
           />
+          <div className="flex flex-wrap gap-2 mt-2" role="group" aria-label="Duration presets">
+            {DURATION_PRESETS.map(p => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => setValue('durationSeconds', p.seconds, { shouldValidate: true, shouldDirty: true })}
+                className="px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-white"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
             {duration ? `${Math.floor(duration / 86400)}d ${Math.floor((duration % 86400) / 3600)}h` : ''}
           </p>
