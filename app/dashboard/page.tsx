@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, AlertCircle, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import "@/lib/i18n";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
@@ -136,6 +138,8 @@ async function loadRows(
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  // Proof-of-concept for the i18n migration (#558) — see lib/i18n/index.ts.
+  const { t } = useTranslation("dashboard");
   const { publicKey, connected } = useWallet();
   // When the RPC is unreachable, a global banner (NetworkTroubleBanner)
   // already explains the situation — suppress the per-page error card and the
@@ -190,9 +194,7 @@ export default function DashboardPage() {
           setSending(sent.rows);
           const totalFailed = recv.failedCount + sent.failedCount;
           setPartialError(
-            totalFailed > 0
-              ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} couldn\u2019t load`
-              : null,
+            totalFailed > 0 ? t("partialError", { count: totalFailed }) : null,
           );
           setError(null);
           lastFetchAtRef.current = Date.now();
@@ -201,7 +203,7 @@ export default function DashboardPage() {
         if (!signal.aborted && isCurrent()) {
           console.error(e);
           captureError(e, { tags: { source: "dashboard-page" } });
-          setError("Failed to load streams. Please try again.");
+          setError(t("loadError"));
         }
       } finally {
         // Only the most recent fetch clears the in-flight latch — an older,
@@ -212,7 +214,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [publicKey],
+    [publicKey, t],
   );
 
   const refetch = useCallback(
@@ -310,19 +312,19 @@ export default function DashboardPage() {
 
   const STATS = [
     {
-      label: "Active streams",
+      label: t("stats.activeStreams"),
       value: loading ? "…" : error ? "—" : String(activeCount),
     },
     {
-      label: "Receiving /s",
+      label: t("stats.receivingPerSecond"),
       value: loading ? "…" : error ? "—" : fromStroops(receivingRate),
     },
     {
-      label: "Total received",
+      label: t("stats.totalReceived"),
       value: loading ? "…" : error ? "—" : fromStroops(totalWithdrawn),
     },
     {
-      label: "Senders",
+      label: t("stats.senders"),
       value: loading ? "…" : error ? "—" : String(senderCount),
     },
   ];
@@ -331,10 +333,10 @@ export default function DashboardPage() {
     <div className="max-w-3xl mx-auto px-4 py-10">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-black tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-black tracking-tight">{t("title")}</h1>
         {connected && (
           <Link href="/create" className="btn-primary text-sm">
-            <Plus className="w-4 h-4" /> New stream
+            <Plus className="w-4 h-4" /> {t("newStream")}
           </Link>
         )}
       </div>
@@ -343,7 +345,7 @@ export default function DashboardPage() {
       {connected && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <label htmlFor="dashboard-range" className="text-xs text-gray-400 dark:text-gray-500">
-            Totals for
+            {t("totalsFor")}
           </label>
           <select
             id="dashboard-range"
@@ -366,7 +368,7 @@ export default function DashboardPage() {
                 onChange={(e) => setCustomStart(e.target.value)}
                 className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
               />
-              <span className="text-xs text-gray-400">to</span>
+              <span className="text-xs text-gray-400">{t("rangeTo")}</span>
               <input
                 type="date"
                 aria-label="Range end"
@@ -444,34 +446,34 @@ export default function DashboardPage() {
             disabled={loading}
             className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
-            {loading ? "Retrying\u2026" : "retry"}
+            {loading ? t("retrying") : t("retryLower")}
           </button>
         </div>
       )}
 
       {!connected ? (
         <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-          Connect your wallet to see your streams.
+          {t("connectWallet")}
         </div>
       ) : (
         <>
           {/* Tabs */}
           <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800 mb-6">
-            {(["receiving", "sending"] as Tab[]).map((t) => (
+            {(["receiving", "sending"] as Tab[]).map((tabOption) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabOption}
+                onClick={() => setTab(tabOption)}
                 className={[
                   "px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors",
-                  tab === t
+                  tab === tabOption
                     ? "border-black text-black dark:border-white dark:text-white"
                     : "border-transparent text-gray-400 hover:text-black dark:hover:text-white",
                 ].join(" ")}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t(`tabs.${tabOption}`)}
                 {!loading && (
                   <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-gray-500">
-                    ({(t === "receiving" ? filteredReceiving : filteredSending).length})
+                    ({(tabOption === "receiving" ? filteredReceiving : filteredSending).length})
                   </span>
                 )}
               </button>
@@ -520,12 +522,12 @@ export default function DashboardPage() {
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
-                Retry
+                {t("retryButton")}
               </button>
             </div>
           ) : displayed.length === 0 && error ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-              Your streams will appear here once the connection is back.
+              {t("connectionRestoredMessage")}
             </div>
           ) : displayed.length === 0 && partialError ? (
             <div className="card text-center py-12 text-sm text-gray-500 dark:text-gray-400">
@@ -535,12 +537,12 @@ export default function DashboardPage() {
                 disabled={loading}
                 className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
               >
-                {loading ? "Retrying…" : "Retry"}
+                {loading ? t("retrying") : t("retryButton")}
               </button>
             </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-              No {tab} streams yet.
+              {t("noStreamsYet", { tab })}
               {tab === "sending" && (
                 <>
                   {" "}
@@ -548,7 +550,7 @@ export default function DashboardPage() {
                     href="/create"
                     className="underline hover:text-black dark:hover:text-white"
                   >
-                    Create your first stream
+                    {t("createFirstStream")}
                   </Link>
                 </>
               )}

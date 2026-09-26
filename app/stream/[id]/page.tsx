@@ -12,6 +12,7 @@ import { RateTicker } from "@/components/stream/RateTicker";
 import { StreamTimeline } from "@/components/stream/StreamTimeline";
 import { StreamFlowChart } from "@/components/stream/StreamFlowChart";
 import { StreamActions } from "@/components/stream/StreamActions";
+import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
 import { OperatorInfo } from "@/components/stream/OperatorInfo";
 import { StreamNoteEditor } from "@/components/stream/StreamNoteEditor";
 import { useWallet } from "@/contexts/WalletContext";
@@ -283,6 +284,14 @@ export default function StreamPage() {
         </div>
         <div className="flex items-center gap-2">
           <Badge status={status} />
+          {/* Add stream end date to an external calendar (#566) */}
+          {info.endTime > 0 && (
+            <AddToCalendarButton
+              streamId={id}
+              streamAddress={streamAddress}
+              endTime={info.endTime}
+            />
+          )}
           {/* Download PDF summary — triggers the @media print stylesheet (#571) */}
           <button
             type="button"
