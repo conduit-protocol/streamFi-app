@@ -9,8 +9,9 @@ import { ThemeToggle }      from '@/components/ThemeToggle';
 import { ErrorBoundary }    from '@/components/ErrorBoundary';
 import { NetworkBadge }     from '@/components/NetworkBadge';
 import { useSelectedNetwork } from '@/hooks/useSelectedNetwork';
+import { useSettings } from '@/hooks/useSettings';
 
-const NAV = [
+const BASE_NAV = [
   { href: '/streams',      label: 'Streams'    },
   { href: '/transactions', label: 'History'    },
   { href: '/create',       label: 'Create'     },
@@ -22,6 +23,15 @@ export function Navbar() {
   const path = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const network = useSelectedNetwork();
+  const { advancedMode } = useSettings();
+
+  // The side-by-side compare view is an advanced/power-user tool, so it is
+  // only linked in the nav when advanced mode is enabled (#586). The route
+  // itself stays directly reachable via /streams/compare?ids=… so shared
+  // links keep working.
+  const NAV = advancedMode
+    ? [...BASE_NAV, { href: '/streams/compare', label: 'Compare' }]
+    : BASE_NAV;
 
   // Close the mobile menu whenever the route changes (e.g. after a nav tap).
   useEffect(() => {

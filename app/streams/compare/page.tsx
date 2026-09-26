@@ -8,6 +8,7 @@ import { ArrowLeft }                     from 'lucide-react';
 import { Badge }             from '@/components/ui/Badge';
 import { StreamProgressBar } from '@/components/stream/StreamProgressBar';
 import { useWallet }         from '@/contexts/WalletContext';
+import { useSettings } from '@/hooks/useSettings';
 import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { fromStroops, formatDuration, formatTimestamp, truncateAddress } from '@/lib/format';
 import { tokenByAddress }    from '@/lib/tokens';
@@ -122,6 +123,7 @@ function CompareView() {
   const searchParams          = useSearchParams();
   const idsParam              = searchParams.get('ids');
   const { publicKey, connected } = useWallet();
+  const { advancedMode } = useSettings();
 
   const [columns, setColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(false);
@@ -207,6 +209,39 @@ function CompareView() {
                 ))}
               </tr>
             ))}
+            {/* Raw stroop rates + full token contract addresses — advanced mode only (#586) */}
+            {advancedMode && (
+              <>
+                <tr className="border-b last:border-b-0 border-gray-100 dark:border-gray-800/60">
+                  <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top">
+                    Rate (stroops/s)
+                  </th>
+                  {columns.map((col) => (
+                    <td key={col.id} className="p-3 align-top font-mono text-xs break-all">
+                      {col.kind === 'error' ? (
+                        <span className="text-gray-300 dark:text-gray-700">—</span>
+                      ) : (
+                        col.info.ratePerSecond.toString()
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="border-b last:border-b-0 border-gray-100 dark:border-gray-800/60">
+                  <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top">
+                    Token contract
+                  </th>
+                  {columns.map((col) => (
+                    <td key={col.id} className="p-3 align-top font-mono text-xs break-all">
+                      {col.kind === 'error' ? (
+                        <span className="text-gray-300 dark:text-gray-700">—</span>
+                      ) : (
+                        col.info.token
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
