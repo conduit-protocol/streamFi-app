@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter }        from 'next/navigation';
 import { useForm }          from 'react-hook-form';
 import { zodResolver }      from '@hookform/resolvers/zod';
@@ -22,37 +22,56 @@ import { isValidStellarAddress, isValidStellarContract, isValidStellarPublicKey 
 import { withTimeout } from '@/lib/with-timeout';
 
 
-const schema = z.object({
-  recipient:       z.string()
-    .min(56, 'Must be a valid Stellar address (56 characters)')
-    .max(56, 'Must be a valid Stellar address (56 characters)')
-    .refine(
-      (v) => isValidStellarPublicKey(v) || isValidStellarContract(v),
-      'Must be a valid Stellar address (G… account or C… contract)',
-    ),
-  token:           z.string().min(1, 'Select a token'),
-  depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
-  // #319 — no upper bound previously meant an accidental extra digit (e.g.
-  // 25920000 instead of 2592000) had no client-side guard before signing.
-  // 10 years mirrors DripGovernor's own default max_duration_seconds cap.
-  durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour').max(315_360_000, 'Maximum 10 years'),
-  clawback:        z.boolean(),
-  // #392 — only meaningful for a C… recipient; see the superRefine below.
-  acknowledgeContractRecipient: z.boolean(),
-}).superRefine((data, ctx) => {
-  // A contract can be set as a stream's recipient, but only an address that
-  // can *call* DripStream::withdraw as the recipient can ever pull the funds
-  // out. A SAC, a plain token contract, or a vault without that call path
-  // leaves the whole deposit stranded, and nothing on-chain can tell us in
-  // advance which kind we were handed — so the user has to say so.
-  if (isValidStellarContract(data.recipient) && !data.acknowledgeContractRecipient) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['acknowledgeContractRecipient'],
-      message: 'Confirm this contract can call withdraw() before creating the stream.',
-    });
-  }
-});
+const createStreamSchema = (connectedPublicKey?: string | null) =>
+  z.object({
+    recipient:       z.string()
+      .min(56, 'Must be a valid Stellar address (56 characters)')
+      .max(56, 'Must be a valid Stellar address (56 characters)')
+      .refine(
+        (v) => isValidStellarPublicKey(v) || isValidStellarContract(v),
+        'Must be a valid Stellar address (G… account or C… contract)',
+      ),
+    token:           z.string().min(1, 'Select a token'),
+    depositAmount:   z.string().regex(/^\d+(\.\d+)?$/, 'Enter a valid amount').refine(val => parseFloat(val) > 0, 'Amount must be greater than 0'),
+    // #319 — no upper bound previously meant an accidental extra digit (e.g.
+    // 25920000 instead of 2592000) had no client-side guard before signing.
+    // 10 years mirrors DripGovernor's own default max_duration_seconds cap.
+    durationSeconds: z.coerce.number().min(3600, 'Minimum 1 hour').max(315_360_000, 'Maximum 10 years'),
+    clawback:        z.boolean(),
+    // #392 — only meaningful for a C… recipient; see the superRefine below.
+    acknowledgeContractRecipient: z.boolean(),
+    // #591 — only meaningful when recipient matches connected wallet publicKey
+    acknowledgeSelfRecipient: z.boolean(),
+  }).superRefine((data, ctx) => {
+    // A contract can be set as a stream's recipient, but only an address that
+    // can *call* DripStream::withdraw as the recipient can ever pull the funds
+    // out. A SAC, a plain token contract, or a vault without that call path
+    // leaves the whole deposit stranded, and nothing on-chain can tell us in
+    // advance which kind we were handed — so the user has to say so.
+    if (isValidStellarContract(data.recipient) && !data.acknowledgeContractRecipient) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['acknowledgeContractRecipient'],
+        message: 'Confirm this contract can call withdraw() before creating the stream.',
+      });
+    }
+
+    // #591 — streaming to yourself is rarely intentional; require confirmation
+    if (
+      connectedPublicKey &&
+      data.recipient &&
+      data.recipient.trim() === connectedPublicKey.trim() &&
+      !data.acknowledgeSelfRecipient
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['acknowledgeSelfRecipient'],
+        message: 'Confirm you want to create a stream to your own connected address.',
+      });
+    }
+  });
+
+const schema = createStreamSchema();
 
 /**
  * Timeout for the full create-stream pipeline (simulate + sign + submit + poll).
@@ -95,13 +114,16 @@ export default function CreatePage() {
     'idle' | 'checking' | 'valid' | 'not-found' | 'error' | 'contract-checking' | 'contract-no-withdraw'
   >('idle');
 
+  const formSchema = useMemo(() => createStreamSchema(publicKey), [publicKey]);
+
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       token: 'XLM',
       clawback: false,
       durationSeconds: 2592000,
       acknowledgeContractRecipient: false,
+      acknowledgeSelfRecipient: false,
     },
   });
 
@@ -110,14 +132,19 @@ export default function CreatePage() {
   const token    = watch('token');
   const recipient = watch('recipient');
   const acknowledgedContractRecipient = watch('acknowledgeContractRecipient');
+  const acknowledgedSelfRecipient = watch('acknowledgeSelfRecipient');
 
   // #392 — a C… recipient needs an explicit acknowledgement before submit.
   const isContractRecipient = !!recipient && isValidStellarContract(recipient);
 
-  // The acknowledgement is about one specific contract, so editing the
+  // #591 — warning when recipient is sender's own connected address.
+  const isSelfRecipient = !!publicKey && !!recipient && recipient.trim() === publicKey.trim();
+
+  // The acknowledgement is about one specific address, so editing the
   // address always withdraws it.
   useEffect(() => {
     setValue('acknowledgeContractRecipient', false);
+    setValue('acknowledgeSelfRecipient', false);
   }, [recipient, setValue]);
 
   // Debounce the recipient input with a 600ms delay to reduce RPC calls
@@ -249,6 +276,16 @@ export default function CreatePage() {
     // user hasn't confirmed can withdraw from the stream.
     if (isValidStellarContract(data.recipient) && !data.acknowledgeContractRecipient) {
       setError('Confirm this contract can call withdraw() before creating the stream.');
+      return;
+    }
+    // #591 — belt and braces guard when recipient matches the connected sender address
+    if (
+      publicKey &&
+      data.recipient &&
+      data.recipient.trim() === publicKey.trim() &&
+      !data.acknowledgeSelfRecipient
+    ) {
+      setError('Confirm you want to create a stream to your own connected address.');
       return;
     }
     setPending(true);
@@ -460,6 +497,37 @@ export default function CreatePage() {
               )}
             </div>
           )}
+
+          {/* #591 — self-recipient warning when recipient equals connected wallet */}
+          {!errors.recipient && isSelfRecipient && (
+            <div
+              className="mt-2 border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/20 rounded px-3 py-2"
+              role="alert"
+            >
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                Self-recipient warning — streaming to your own address.
+              </p>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1">
+                The recipient address matches your connected wallet. Streaming to yourself is rarely
+                intentional and may be a copy-paste error that will lock funds in a self-referential stream.
+              </p>
+              <label className={`flex items-start gap-2 mt-2 cursor-pointer ${styles.flexRowStart}`}>
+                <input
+                  {...register('acknowledgeSelfRecipient')}
+                  type="checkbox"
+                  className="mt-0.5 rounded border-gray-300"
+                />
+                <span className="text-xs text-gray-700 dark:text-gray-300">
+                  I understand and confirm I want to stream to my own connected address.
+                </span>
+              </label>
+              {errors.acknowledgeSelfRecipient && (
+                <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                  {errors.acknowledgeSelfRecipient.message}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Token */}
@@ -570,7 +638,8 @@ export default function CreatePage() {
             recipientStatus === 'not-found' ||
             recipientStatus === 'contract-no-withdraw' ||
             recipientStatus === 'checking' ||
-            (isContractRecipient && !acknowledgedContractRecipient)
+            (isContractRecipient && !acknowledgedContractRecipient) ||
+            (isSelfRecipient && !acknowledgedSelfRecipient)
           }
           className="btn-primary w-full"
         >
