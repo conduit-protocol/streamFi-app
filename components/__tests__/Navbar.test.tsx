@@ -276,4 +276,12 @@ describe('Navbar', () => {
     expect(container.querySelector('[data-testid="connect-button"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="theme-toggle"]')).toBeTruthy();
   });
+
+  it('renders the active-network indicator next to the wordmark (#559)', () => {
+    act(() => {
+      root.render(React.createElement(Navbar));
+    });
+
+    expect(container.querySelector('.badge-network')).toBeTruthy();
+  });
 });
