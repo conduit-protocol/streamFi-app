@@ -26,6 +26,7 @@ import {
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { fromStroops, formatTimestamp, truncateAddress } from "@/lib/format";
 import { tokenByAddress } from "@/lib/tokens";
+import { tryGetFactoryContractId } from "@/lib/env";
 import { useSettings, MIN_REFRESH_INTERVAL_S } from "@/hooks/useSettings";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ export default function StreamPage() {
   // NetworkTroubleBanner — defer to it rather than printing a raw
   // "circuit breaker open" string here.
   const { status: networkStatus } = useNetworkStatus();
-  const { autoRefreshInterval } = useSettings();
+  const { autoRefreshInterval, advancedMode } = useSettings();
   const mounted = useRef(true);
   const loadSeq = useRef(0);
 
@@ -430,7 +431,17 @@ export default function StreamPage() {
               <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">
                 Rate
               </td>
-              <td className="py-2.5 font-mono text-black dark:text-white text-right">{`${fromStroops(info.ratePerSecond)} / sec`}</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">
+                {`${fromStroops(info.ratePerSecond)} / sec`}
+                {advancedMode && (
+                  <span
+                    className="block text-[11px] text-gray-400 dark:text-gray-500"
+                    title={`${info.ratePerSecond.toString()} stroops per second`}
+                  >
+                    {info.ratePerSecond.toString()} stroops/s
+                  </span>
+                )}
+              </td>
             </tr>
             <tr>
               <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">
@@ -438,6 +449,11 @@ export default function StreamPage() {
               </td>
               <td className="py-2.5 font-mono text-black dark:text-white text-right">
                 {fromStroops(totalDeposited)}
+                {advancedMode && (
+                  <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                    {totalDeposited.toString()} stroops
+                  </span>
+                )}
               </td>
             </tr>
             <tr>
@@ -446,6 +462,11 @@ export default function StreamPage() {
               </td>
               <td className="py-2.5 font-mono text-black dark:text-white text-right">
                 {fromStroops(info.withdrawn)}
+                {advancedMode && (
+                  <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                    {info.withdrawn.toString()} stroops
+                  </span>
+                )}
               </td>
             </tr>
             <tr>
@@ -477,6 +498,87 @@ export default function StreamPage() {
           </tbody>
         </table>
       </Card>
+
+      {/* Advanced details — only when advanced mode is enabled (#586).
+          Surfaces raw stroop values and full contract addresses inline so
+          power users can verify on-chain state without leaving the page. */}
+      {advancedMode && (
+        <Card className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
+            Advanced details
+          </h2>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Stream contract
+              </dt>
+              <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                <CopyableAddress address={streamAddress} />
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Token contract
+              </dt>
+              <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                <CopyableAddress address={info.token} />
+              </dd>
+            </div>
+            {tryGetFactoryContractId() && (
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                  Factory contract
+                </dt>
+                <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                  <CopyableAddress
+                    address={tryGetFactoryContractId() as string}
+                  />
+                </dd>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Rate (stroops/s)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {info.ratePerSecond.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Withdrawable (stroops)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {withdrawable.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Withdrawn (stroops)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {info.withdrawn.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Start (unix)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white">
+                {info.startTime}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                End (unix)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white">
+                {info.endTime}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+      )}
 
       {/* Actions */}
       {(isSender || isRecipient) && (

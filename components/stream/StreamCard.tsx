@@ -8,6 +8,7 @@ import { StreamProgressBar } from "@/components/stream/StreamProgressBar";
 import { fromStroops } from "@/lib/format";
 import { CopyAddress } from "@/components/ui/CopyAddress";
 import { getStreamNote } from "@/lib/stream-notes-storage";
+import { useSettings } from "@/hooks/useSettings";
 
 interface StreamCardProps {
   id: string;
@@ -39,6 +40,7 @@ export function StreamCard({
   streamAddress,
 }: StreamCardProps) {
   const rateFormatted = fromStroops(ratePerSecond);
+  const { advancedMode } = useSettings();
   const [note, setNote] = useState<string | null>(null);
 
   // Load note from storage
@@ -86,11 +88,22 @@ export function StreamCard({
         </div>
 
         {/* Rate number centered, green text */}
-        <div
-          className="amount text-xs sm:text-sm font-bold text-green-600 dark:text-green-400 truncate text-center px-1"
-          aria-label={`streaming rate: ${rateFormatted} per second`}
-        >
-          {rateFormatted}/s
+        <div className="flex flex-col items-center px-1 min-w-0">
+          <div
+            className="amount text-xs sm:text-sm font-bold text-green-600 dark:text-green-400 truncate text-center"
+            aria-label={`streaming rate: ${rateFormatted} per second`}
+          >
+            {rateFormatted}/s
+          </div>
+          {/* Raw stroop rate — only in advanced mode (#586) */}
+          {advancedMode && (
+            <span
+              className="font-mono text-[10px] text-gray-400 dark:text-gray-500 truncate"
+              title={`${ratePerSecond.toString()} stroops per second`}
+            >
+              {ratePerSecond.toString()} stroops/s
+            </span>
+          )}
         </div>
 
         <div className="shrink-0">

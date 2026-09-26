@@ -9,6 +9,7 @@ import {
   type TimeFormat,
   type RefreshIntervalSeconds,
   REFRESH_INTERVAL_OPTIONS,
+  notifySettingsUpdated,
 } from "@/hooks/useSettings";
 
 type Currency = "USD" | "EUR" | "XLM";
@@ -90,6 +91,9 @@ export default function SettingsPage() {
 
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      // Wake up mounted useSettings() subscribers in this tab — the
+      // `storage` event only fires in *other* tabs (#586).
+      notifySettingsUpdated();
     } catch {
       // Storage can be unavailable in private browsing or embedded webviews.
     }
@@ -298,15 +302,27 @@ export default function SettingsPage() {
               className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
             />
           </label>
-          <label className="flex flex-row items-center justify-between cursor-pointer">
-            <span className="text-sm">Advanced Mode</span>
+          <div className="flex flex-row items-start justify-between gap-3">
+            <div>
+              <label
+                htmlFor="advanced-mode-toggle"
+                className="text-sm cursor-pointer"
+              >
+                Advanced Mode
+              </label>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                Shows raw stroop amounts, full contract addresses, and the
+                stream compare link in the navigation.
+              </p>
+            </div>
             <input
+              id="advanced-mode-toggle"
               type="checkbox"
               checked={settings.advancedMode}
               onChange={(e) => updateSetting("advancedMode", e.target.checked)}
-              className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
+              className="w-5 h-5 mt-0.5 shrink-0 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white cursor-pointer"
             />
-          </label>
+          </div>
         </div>
       </section>
 
