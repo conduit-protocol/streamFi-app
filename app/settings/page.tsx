@@ -11,11 +11,11 @@ import {
   REFRESH_INTERVAL_OPTIONS,
 } from "@/hooks/useSettings";
 
-type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
+
 
 interface SettingsState {
   network: NetworkName;
-  slippageTolerance: Slippage;
+
   notificationsEnabled: boolean;
   /** Display timestamps as relative ("2h ago") or absolute date-time. Added #556. */
   timeFormat: TimeFormat;
@@ -32,7 +32,7 @@ function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
     return {
       network: "testnet" as NetworkName,
-      slippageTolerance: 1.0,
+
       notificationsEnabled: true,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
@@ -44,7 +44,7 @@ function loadSettings(): SettingsState {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
         network: parsed.network ?? ("testnet" as NetworkName),
-        slippageTolerance: parsed.slippageTolerance ?? 1.0,
+
         notificationsEnabled: parsed.notificationsEnabled ?? true,
         timeFormat: parsed.timeFormat === "relative" ? "relative" : "absolute",
         autoRefreshInterval: REFRESH_INTERVAL_OPTIONS.some(
@@ -59,7 +59,7 @@ function loadSettings(): SettingsState {
   }
   return {
     network: "testnet" as NetworkName,
-    slippageTolerance: 1.0,
+
     notificationsEnabled: true,
     timeFormat: "absolute",
     autoRefreshInterval: 0,
@@ -102,7 +102,7 @@ export default function SettingsPage() {
   const handleReset = useCallback(() => {
     const defaults: SettingsState = {
       network: "testnet" as NetworkName,
-      slippageTolerance: 1.0,
+
       notificationsEnabled: true,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
@@ -180,26 +180,6 @@ export default function SettingsPage() {
         <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">
           Preferences
         </h2>
-        <div className="flex flex-col space-y-4">
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-sm">Slippage Tolerance</span>
-            <div className="flex gap-2">
-              {([0.5, 1.0, 2.0, 5.0] as Slippage[]).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => updateSetting("slippageTolerance", s)}
-                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                    settings.slippageTolerance === s
-                      ? "bg-black text-white dark:bg-white dark:text-black"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  {s}%
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Timestamp Format — issue #556 */}
           <div className="flex flex-row items-center justify-between">
             <div>
