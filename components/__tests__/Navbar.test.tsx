@@ -20,10 +20,10 @@ vi.mock('next/navigation', () => ({
 
 // Mock Next.js Link component
 vi.mock('next/link', () => ({
-  default: ({ href, children, onClick, className }: any) =>
+  default: ({ href, children, onClick, className, 'aria-current': ariaCurrent }: any) =>
     React.createElement(
       'a',
-      { href, onClick, className, 'data-testid': `link-${href}` },
+      { href, onClick, className, 'aria-current': ariaCurrent, 'data-testid': `link-${href}` },
       children,
     ),
 }));
@@ -70,6 +70,16 @@ describe('Navbar', () => {
     expect(container.textContent).toContain('Create');
     expect(container.textContent).toContain('Dashboard');
     expect(container.textContent).toContain('Profile');
+  });
+
+  it('sets aria-current="page" only on the active route link (#594)', () => {
+    act(() => {
+      root.render(React.createElement(Navbar));
+    });
+
+    const active = container.querySelector('[data-testid="link-/streams"]');
+    expect(active?.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('[data-testid="link-/create"]')?.hasAttribute('aria-current')).toBe(false);
   });
 
   it('opens and closes the mobile menu when hamburger button is clicked', () => {
