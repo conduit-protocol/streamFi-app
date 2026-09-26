@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { Download } from 'lucide-react';
 import { fromStroops, formatTimestamp } from '@/lib/format';
 
 export interface StreamFlowChartProps {
@@ -43,7 +44,23 @@ export function StreamFlowChart({
   // Client-only wall-clock snapshot to avoid SSR hydration mismatch.
   // Use startTime as the SSR-safe default; the real time is set in
   // useEffect after hydration — matching the StreamTimeline pattern.
-  const [now, setNow] = useState(() => (startTime > 0 ? startTime : Math.floor(Date.now() / 1000)));
+  const [now, setNow] = useState(() => startTime);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const handleDownload = () => {
+    if (!svgRef.current) return;
+    const svgData = new XMLSerializer().serializeToString(svgRef.current);
+    const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `stream-flow.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     setNow(Math.floor(Date.now() / 1000));
@@ -149,13 +166,24 @@ export function StreamFlowChart({
         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
           Stream Flow Trajectory
         </span>
-        <span className="text-xs font-mono text-gray-400">
-          Max: {fromStroops(maxAmount)} {tokenSymbol}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono text-gray-400">
+            Max: {fromStroops(maxAmount)} {tokenSymbol}
+          </span>
+          <button
+            onClick={handleDownload}
+            className="text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            title="Download Chart"
+            aria-label="Download Chart"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="relative w-full">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto overflow-visible"
           onMouseLeave={() => setHoverPoint(null)}
