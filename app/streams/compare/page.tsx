@@ -13,7 +13,9 @@ import { fromStroops, formatDuration, formatTimestamp, truncateAddress } from '@
 import { tokenByAddress }    from '@/lib/tokens';
 import {
   compareMetrics,
+  countCompareIds,
   parseCompareIds,
+  MAX_COMPARE,
   MIN_COMPARE,
   type CompareMetrics,
 } from '@/lib/stream-compare';
@@ -149,6 +151,8 @@ function CompareView() {
   }, [publicKey, idsParam]);
 
   const ids = parseCompareIds(idsParam);
+  const requested = countCompareIds(idsParam);
+  const overLimit = requested > MAX_COMPARE;
 
   let body: React.ReactNode;
   if (!connected || !publicKey) {
@@ -219,6 +223,12 @@ function CompareView() {
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
       <h1 className="text-2xl font-black tracking-tight mb-8">Compare streams</h1>
+      {overLimit && connected && publicKey && (
+        <div role="status" className="card mb-4 text-sm text-gray-500 dark:text-gray-400">
+          You can compare up to {MAX_COMPARE} streams at a time. Showing the first {MAX_COMPARE} of the{' '}
+          {requested} you selected.
+        </div>
+      )}
       {body}
     </div>
   );

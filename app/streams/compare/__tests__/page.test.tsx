@@ -123,4 +123,26 @@ describe('ComparePage', () => {
     expect(container.textContent).toContain('Connect your wallet');
     cleanup();
   });
+
+  it('caps the table at MAX_COMPARE columns and explains the limit', async () => {
+    currentIds = '1,2,3,4,5,6';
+    mockInfo.mockImplementation(async () => makeInfo());
+
+    const { container, cleanup } = await render();
+    const headers = Array.from(container.querySelectorAll('thead th')).map((th) => th.textContent);
+    expect(headers).toEqual(['Metric', 'Stream #1', 'Stream #2', 'Stream #3', 'Stream #4']);
+    // Only the capped ids are fetched — no request burst for the extras.
+    expect(mockAddr).toHaveBeenCalledTimes(4);
+    expect(container.textContent).toContain('You can compare up to 4 streams at a time');
+    expect(container.textContent).toContain('Showing the first 4 of the 6 you selected');
+    cleanup();
+  });
+
+  it('shows no limit message when within the cap', async () => {
+    mockInfo.mockImplementation(async () => makeInfo());
+
+    const { container, cleanup } = await render();
+    expect(container.textContent).not.toContain('You can compare up to');
+    cleanup();
+  });
 });

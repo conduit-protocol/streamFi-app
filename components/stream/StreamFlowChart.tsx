@@ -120,6 +120,29 @@ export function StreamFlowChart({
     return `${pathD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
   }, [pathD, points, padding.top, graphHeight]);
 
+  // A brand-new (or not-yet-started) stream has no points or only zero
+  // amounts; an empty SVG reads as broken, so explain it instead.
+  const hasFlowData = points.some((p) => p.amount > 0n);
+  if (!hasFlowData) {
+    return (
+      <div className="relative w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 p-4">
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+          Stream Flow Trajectory
+        </span>
+        <div
+          role="status"
+          data-testid="stream-flow-empty"
+          className="flex flex-col items-center justify-center text-center py-10"
+        >
+          <p className="text-sm font-semibold">No flow data yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            The chart will fill in once tokens start streaming.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 p-4">
       <div className="flex items-center justify-between mb-2">

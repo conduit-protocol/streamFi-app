@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { StreamInfo } from '@/lib/stream';
-import { compareMetrics, parseCompareIds, MAX_COMPARE } from './stream-compare';
+import { compareMetrics, countCompareIds, parseCompareIds, MAX_COMPARE } from './stream-compare';
 
 const NOW = 1_000_000;
 
@@ -73,5 +73,14 @@ describe('parseCompareIds', () => {
 
   it(`caps the list at ${MAX_COMPARE}`, () => {
     expect(parseCompareIds('1,2,3,4,5,6')).toHaveLength(MAX_COMPARE);
+  });
+});
+
+describe('countCompareIds', () => {
+  it('counts distinct valid ids without applying the cap', () => {
+    expect(countCompareIds(null)).toBe(0);
+    expect(countCompareIds('1,2,2,abc,3')).toBe(3);
+    expect(countCompareIds('1,2,3,4,5,6')).toBe(6);
+    expect(countCompareIds('1,2,3,4,5,6')).toBeGreaterThan(MAX_COMPARE);
   });
 });

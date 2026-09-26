@@ -38,18 +38,90 @@ export function isIndexerNotConfiguredError(error: unknown): error is IndexerNot
   return error instanceof IndexerNotConfiguredError;
 }
 
+/** GraphQL query for an account's transaction history, newest first. */
+export const TX_HISTORY_QUERY = `query TransactionHistory($address: String!) {
+  transactions(where: { account: $address }, orderBy: timestamp, orderDirection: desc) {
+    type
+    amount
+    token
+    status
+    timestamp
+    hash
+  }
+}`;
+
+/** Subgraph/indexer GraphQL endpoint, or `undefined` when none is configured. */
+export function subgraphUrl(): string | undefined {
+  const url = process.env.NEXT_PUBLIC_SUBGRAPH_URL?.trim();
+  return url ? url : undefined;
+}
+
+interface SubgraphTransaction {
+  type:      string;
+  amount:    string;
+  token:     string;
+  status:    string;
+  /** Unix seconds (subgraphs commonly serialise BigInt as a string). */
+  timestamp: string | number;
+  hash:      string;
+}
+
+const TX_STATUSES: ReadonlyArray<TransactionRow['status']> = ['Success', 'Pending', 'Failed'];
+
+function toTransactionRow(tx: SubgraphTransaction): TransactionRow {
+  const status = TX_STATUSES.find((s) => s.toLowerCase() === String(tx.status).toLowerCase());
+  return {
+    type:   tx.type,
+    amount: tx.amount,
+    token:  tx.token,
+    status: status ?? 'Pending',
+    date:   Number(tx.timestamp),
+    hash:   tx.hash,
+  };
+}
+
+/** POST the transaction-history query to the subgraph and map the result. */
+async function querySubgraph(
+  url: string,
+  publicKey: string,
+  signal?: AbortSignal,
+): Promise<TransactionRow[]> {
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { 'content-type': 'application/json' },
+    body:    JSON.stringify({ query: TX_HISTORY_QUERY, variables: { address: publicKey } }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
+
+  const body = (await res.json()) as {
+    data?:   { transactions?: SubgraphTransaction[] | null };
+    errors?: Array<{ message?: string }>;
+  };
+  if (body.errors?.length) {
+    throw new Error(`Subgraph query failed: ${body.errors[0]?.message ?? 'unknown error'}`);
+  }
+  if (!Array.isArray(body.data?.transactions)) {
+    throw new Error('Subgraph returned an unexpected response shape.');
+  }
+  return body.data.transactions.map(toTransactionRow);
+}
+
 /**
  * Fetch transaction history from the subgraph/indexer.
  *
  * The `signal` allows callers to abort a hung request. If the signal fires
- * while a real network call is in-flight, the promise rejects with an
+ * while the network call is in-flight, the promise rejects with an
  * AbortError so the UI shows an error state instead of an infinite spinner.
  *
- * Demo data is only ever returned in demo mode (`isMock()` — i.e.
- * `NEXT_PUBLIC_DEMO_MODE=true`). A fully-configured production deploy has no
- * real subgraph wired up yet, so it rejects rather than serving fabricated
- * transactions to real users (#341), matching `lib/factory.ts`'s `isMock()`
- * contract from #279.
+ * - Demo mode (`isMock()`, i.e. `NEXT_PUBLIC_DEMO_MODE=true`) returns demo
+ *   data and never touches the network.
+ * - Otherwise, when `NEXT_PUBLIC_SUBGRAPH_URL` is set, the account's history
+ *   is queried from that GraphQL endpoint.
+ * - A configured deploy without a subgraph URL rejects with
+ *   {@link IndexerNotConfiguredError} rather than serving fabricated
+ *   transactions to real users (#341), matching `lib/factory.ts`'s
+ *   `isMock()` contract from #279.
  *
  * @param publicKey - The wallet's public key to fetch transactions for.
  * @param signal    - AbortSignal for cancellation
@@ -60,47 +132,15 @@ export async function fetchTransactionHistory(
 ): Promise<TransactionRow[]> {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-  return new Promise<TransactionRow[]>((resolve, reject) => {
-    let onAbort: (() => void) | undefined;
-    if (signal) {
-      onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
+  // Demo mode only — never serve fabricated history to a configured deploy.
+  if (isMock()) return publicKey ? [] : DEMO_TXS;
 
-    // TODO: Replace with real GraphQL/indexer call once the subgraph is ready.
-    // Example implementation:
-    //   const res = await fetch('/api/graphql', {
-    //     method: 'POST',
-    //     signal,
-    //     body: JSON.stringify({ query: TX_HISTORY_QUERY, variables: { address: publicKey } }),
-    //   });
-    //   if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
-    //   return (await res.json()).data.transactions;
+  const url = subgraphUrl();
+  if (!url) throw new IndexerNotConfiguredError();
+  // No connected account means there is no history to look up.
+  if (!publicKey) return [];
 
-    const settle = (fn: () => void) => {
-      // Always clean up the abort listener to avoid leaking when the signal
-      // is reused across many calls — { once: true } only fires if the
-      // signal actually aborts, not on normal resolution (#355).
-      if (signal && onAbort) {
-        signal.removeEventListener('abort', onAbort);
-      }
-      fn();
-    };
-
-    // Demo mode only — never serve fabricated history to a configured deploy.
-    let mock: boolean;
-    try {
-      mock = isMock();
-    } catch (err) {
-      settle(() => reject(err instanceof Error ? err : new Error(String(err))));
-      return;
-    }
-    if (mock) {
-      settle(() => resolve(publicKey ? [] : DEMO_TXS));
-    } else {
-      settle(() => reject(new IndexerNotConfiguredError()));
-    }
-  });
+  return querySubgraph(url, publicKey, signal);
 }
 
 /**
