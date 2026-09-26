@@ -11,15 +11,12 @@ import {
   REFRESH_INTERVAL_OPTIONS,
 } from "@/hooks/useSettings";
 
-type Currency = "USD" | "EUR" | "XLM";
 type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
 
 interface SettingsState {
   network: NetworkName;
-  currency: Currency;
   slippageTolerance: Slippage;
   notificationsEnabled: boolean;
-  advancedMode: boolean;
   /** Display timestamps as relative ("2h ago") or absolute date-time. Added #556. */
   timeFormat: TimeFormat;
   /**
@@ -35,10 +32,8 @@ function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
     return {
       network: "testnet" as NetworkName,
-      currency: "USD",
       slippageTolerance: 1.0,
       notificationsEnabled: true,
-      advancedMode: false,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
     };
@@ -49,10 +44,8 @@ function loadSettings(): SettingsState {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
         network: parsed.network ?? ("testnet" as NetworkName),
-        currency: parsed.currency ?? "USD",
         slippageTolerance: parsed.slippageTolerance ?? 1.0,
         notificationsEnabled: parsed.notificationsEnabled ?? true,
-        advancedMode: parsed.advancedMode ?? false,
         timeFormat: parsed.timeFormat === "relative" ? "relative" : "absolute",
         autoRefreshInterval: REFRESH_INTERVAL_OPTIONS.some(
           (o) => o.value === parsed.autoRefreshInterval,
@@ -66,10 +59,8 @@ function loadSettings(): SettingsState {
   }
   return {
     network: "testnet" as NetworkName,
-    currency: "USD",
     slippageTolerance: 1.0,
     notificationsEnabled: true,
-    advancedMode: false,
     timeFormat: "absolute",
     autoRefreshInterval: 0,
   };
@@ -111,10 +102,8 @@ export default function SettingsPage() {
   const handleReset = useCallback(() => {
     const defaults: SettingsState = {
       network: "testnet" as NetworkName,
-      currency: "USD",
       slippageTolerance: 1.0,
       notificationsEnabled: true,
-      advancedMode: false,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
     };
@@ -192,20 +181,6 @@ export default function SettingsPage() {
           Preferences
         </h2>
         <div className="flex flex-col space-y-4">
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-sm">Display Currency</span>
-            <select
-              value={settings.currency}
-              onChange={(e) =>
-                updateSetting("currency", e.target.value as Currency)
-              }
-              className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
-            >
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="XLM">XLM</option>
-            </select>
-          </div>
           <div className="flex flex-row items-center justify-between">
             <span className="text-sm">Slippage Tolerance</span>
             <div className="flex gap-2">
@@ -295,15 +270,6 @@ export default function SettingsPage() {
               onChange={(e) =>
                 updateSetting("notificationsEnabled", e.target.checked)
               }
-              className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
-            />
-          </label>
-          <label className="flex flex-row items-center justify-between cursor-pointer">
-            <span className="text-sm">Advanced Mode</span>
-            <input
-              type="checkbox"
-              checked={settings.advancedMode}
-              onChange={(e) => updateSetting("advancedMode", e.target.checked)}
               className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
             />
           </label>

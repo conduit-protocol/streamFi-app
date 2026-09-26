@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/Badge";
-import { CopyableAddress } from "@/components/ui/CopyableAddress";
 import { StreamProgressBar } from "@/components/stream/StreamProgressBar";
 import { fromStroops } from "@/lib/format";
 import { CopyAddress } from "@/components/ui/CopyAddress";
@@ -81,7 +80,7 @@ export function StreamCard({
             {role === "recipient" ? "From" : "To"}
           </p>
           <div className="truncate max-w-[110px] sm:max-w-[180px]">
-            <CopyableAddress address={counterparty} />
+            <CopyAddress address={counterparty} />
           </div>
         </div>
 

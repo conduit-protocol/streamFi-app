@@ -7,7 +7,7 @@ import { ArrowLeft, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { CopyableAddress } from "@/components/ui/CopyableAddress";
+import { CopyAddress } from "@/components/ui/CopyAddress";
 import { RateTicker } from "@/components/stream/RateTicker";
 import { StreamTimeline } from "@/components/stream/StreamTimeline";
 import { StreamFlowChart } from "@/components/stream/StreamFlowChart";
@@ -278,7 +278,7 @@ export default function StreamPage() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
-            <CopyableAddress address={streamAddress} />
+            <CopyAddress address={streamAddress} />
           </p>
           <h1 className="text-2xl font-black tracking-tight">Stream #{id}</h1>
         </div>
@@ -407,7 +407,7 @@ export default function StreamPage() {
                 Sender
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.sender} />
+                <CopyAddress address={info.sender} />
               </td>
             </tr>
             <tr>
@@ -415,7 +415,7 @@ export default function StreamPage() {
                 Recipient
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.recipient} />
+                <CopyAddress address={info.recipient} />
               </td>
             </tr>
             <tr>
@@ -423,7 +423,7 @@ export default function StreamPage() {
                 Token
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.token} />
+                <CopyAddress address={info.token} />
               </td>
             </tr>
             <tr>

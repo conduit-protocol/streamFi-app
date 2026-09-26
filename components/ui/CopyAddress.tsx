@@ -9,6 +9,8 @@ import { QrCodeModal } from '@/components/ui/QrCodeModal';
 interface CopyAddressProps {
   /** The full address to copy */
   address: string;
+  /** Number of characters to show on each side (default: 4) */
+  chars?: number;
   /** Optional extra class names */
   className?: string;
   /** Max width for the truncated display */
@@ -26,6 +28,7 @@ interface CopyAddressProps {
  */
 export function CopyAddress({
   address,
+  chars = 4,
   className = '',
   maxWidth = 'max-w-[110px] sm:max-w-[180px]',
   showQrCode = false,
@@ -87,7 +90,7 @@ export function CopyAddress({
           className,
         ].join(' ')}
       >
-        <span className="truncate">{truncateAddress(address)}</span>
+        <span className="truncate">{truncateAddress(address, chars)}</span>
         {copied
           ? <Check className="w-3 h-3 shrink-0 text-green-600 dark:text-green-400" aria-hidden="true" />
           : <Copy  className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />}
