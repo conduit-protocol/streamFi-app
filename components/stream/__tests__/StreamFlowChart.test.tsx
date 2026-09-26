@@ -291,7 +291,7 @@ describe('StreamFlowChart', () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    act () => {
+    act(() => {
       root.render(<StreamFlowChart {...baseProps} />);
     });
 

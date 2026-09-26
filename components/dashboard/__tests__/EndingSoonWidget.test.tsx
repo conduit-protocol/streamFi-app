@@ -11,8 +11,8 @@ vi.mock('next/link', () => ({
     React.createElement('a', { href, className, 'data-testid': `link-${href}` }, children),
 }));
 
-vi.mock('@/components/ui/CopyableAddress', () => ({
-  CopyableAddress: ({ address }: { address: string }) =>
+vi.mock('@/components/ui/CopyAddress', () => ({
+  CopyAddress: ({ address }: { address: string }) =>
     React.createElement('span', { 'data-testid': 'copyable-address' }, address),
 }));
 

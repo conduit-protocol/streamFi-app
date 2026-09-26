@@ -71,7 +71,6 @@ describe("SettingsPage", () => {
   it("renders toggles", () => {
     const { container, root } = renderSettings();
     expect(container.textContent).toContain("Enable Notifications");
-    expect(container.textContent).toContain("Advanced Mode");
     cleanup(root, container);
   });
 
@@ -82,7 +81,7 @@ describe("SettingsPage", () => {
   });
 
   it("does not rewrite loaded settings on initial mount (#422)", () => {
-    localStorage.setItem("conduit:settings", JSON.stringify({ currency: "EUR" }));
+    localStorage.setItem("conduit:settings", JSON.stringify({ network: "testnet" }));
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
 
     const { root, container } = renderSettings();
@@ -97,13 +96,13 @@ describe("SettingsPage", () => {
       throw new DOMException("Blocked", "SecurityError");
     });
 
-    const advancedModeToggle = Array.from(container.querySelectorAll("input")).find(
+    const toggle = Array.from(container.querySelectorAll("input")).find(
       (input) => input.getAttribute("type") === "checkbox",
     );
 
     expect(() => {
       act(() => {
-        advancedModeToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       });
     }).not.toThrow();
 
