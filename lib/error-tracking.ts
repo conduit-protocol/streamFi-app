@@ -1,12 +1,14 @@
 /**
- * Lightweight error tracking wrapper.
+ * Lightweight error tracking wrapper backed by Sentry.
  *
  * Captures unhandled errors and failed RPC calls with breadcrumbs.
  * Gated on NEXT_PUBLIC_SENTRY_DSN — when unset, all functions are
  * no-ops so the app runs identically without Sentry configured.
  *
- * #478: Sentry (or similar) error tracking wiring.
+ * #478: Sentry error tracking wiring.
  */
+
+import * as Sentry from '@sentry/nextjs'
 
 interface ErrorBreadcrumb {
   message: string
@@ -54,15 +56,16 @@ export function captureError(
     return
   }
 
-  // When @sentry/react or @sentry/nextjs is installed, this would call:
-  //   Sentry.withScope(scope => {
-  //     if (context?.tags) Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, v))
-  //     if (context?.extra) Object.entries(context.extra).forEach(([k, v]) => scope.setExtra(k, v))
-  //     breadcrumbs.forEach(c => scope.addBreadcrumb(c))
-  //     Sentry.captureException(err)
-  //   })
-  // For now, we structure the API so adding Sentry is a one-line change.
-  console.error('[sentry]', err.message, { context, breadcrumbs: breadcrumbs.slice(-5) })
+  Sentry.withScope(scope => {
+    if (context?.tags) {
+      Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, v))
+    }
+    if (context?.extra) {
+      Object.entries(context.extra).forEach(([k, v]) => scope.setExtra(k, v))
+    }
+    breadcrumbs.forEach(c => scope.addBreadcrumb(c))
+    Sentry.captureException(err)
+  })
   breadcrumbs = []
 }
 
