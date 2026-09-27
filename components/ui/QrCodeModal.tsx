@@ -5,8 +5,15 @@ import qrcode from "qrcode-generator";
 import { Modal } from "@/components/ui/Modal";
 
 interface QrCodeModalProps {
-  /** The address encoded into the QR code. */
-  address: string;
+  /** The address encoded into the QR code (legacy prop, kept for backwards compat). */
+  address?: string;
+  /**
+   * Generic payload encoded into the QR code (e.g. a stream claim URL).
+   * Takes precedence over `address` when both are provided (#688).
+   */
+  value?: string;
+  /** Modal title. Defaults to "Scan address" for address codes. */
+  title?: string;
   onClose: () => void;
 }
 
@@ -21,11 +28,14 @@ const CELL_SIZE = 4;
  * `createSvgTag` HTML-string output, so it needs no `dangerouslySetInnerHTML`
  * and can follow the app's light/dark theme.
  */
-export function QrCodeModal({ address, onClose }: QrCodeModalProps) {
+export function QrCodeModal({ address, value, title, onClose }: QrCodeModalProps) {
+  // #688 — generic share payload (stream claim URL) with legacy address fallback.
+  const payload = value ?? address ?? "";
+  const modalTitle = title ?? "Scan address";
   const modules = useMemo(() => {
     // Type number 0 = auto-select the smallest size that fits the data.
     const qr = qrcode(0, "M");
-    qr.addData(address);
+    qr.addData(payload);
     qr.make();
     const count = qr.getModuleCount();
     const cells: boolean[][] = [];
@@ -37,12 +47,12 @@ export function QrCodeModal({ address, onClose }: QrCodeModalProps) {
       cells.push(line);
     }
     return cells;
-  }, [address]);
+  }, [payload]);
 
   const size = modules.length * CELL_SIZE;
 
   return (
-    <Modal title="Scan address" onClose={onClose}>
+    <Modal title={modalTitle} onClose={onClose}>
       <div className="flex flex-col items-center gap-4">
         <div className="p-3 bg-white rounded">
           <svg
@@ -50,7 +60,7 @@ export function QrCodeModal({ address, onClose }: QrCodeModalProps) {
             width={size * 4}
             height={size * 4}
             role="img"
-            aria-label={`QR code for address ${address}`}
+            aria-label={`QR code for ${payload}`}
             className="block"
           >
             <rect x={0} y={0} width={size} height={size} fill="#fff" />
@@ -71,7 +81,7 @@ export function QrCodeModal({ address, onClose }: QrCodeModalProps) {
           </svg>
         </div>
         <p className="font-mono text-xs text-center break-all text-gray-500 dark:text-gray-400">
-          {address}
+          {payload}
         </p>
       </div>
     </Modal>

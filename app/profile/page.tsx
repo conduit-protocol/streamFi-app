@@ -1,12 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/contexts/WalletContext";
 import { useSelectedNetwork } from "@/hooks/useSelectedNetwork";
 import { CopyHashButton } from "@/components/ui/CopyHashButton";
 import { ProfileSkeleton } from "@/components/ProfileSkeleton";
 import { isValidStellarPublicKey } from "@/lib/stellar-address";
+import { CashflowChart } from "@/components/profile/CashflowChart";
+import {
+  computeCashflow,
+  CASHFLOW_WINDOW_DAYS,
+  type CashflowStream,
+} from "@/lib/profile-analytics";
+import { streamsBySender, streamsByRecipient } from "@/lib/factory";
+import { getStreamAddress, getStreamInfo } from "@/lib/stream";
+import { fromStroops } from "@/lib/format";
 
 type ConnectionState =
   | { status: "loading" }
@@ -22,6 +31,108 @@ function useConnectionState(): ConnectionState {
     return { status: "connected", publicKey, walletName };
   }
   return { status: "disconnected" };
+}
+
+/**
+ * Aggregated incoming vs outgoing streaming volume over the trailing 30 days
+ * (#690). Resolves the user's stream IDs in both directions, estimates
+ * per-day volume as rate × overlap, and renders totals + a stacked bar chart.
+ */
+function CashflowSection({ publicKey }: { publicKey: string }) {
+  const [streams, setStreams] = useState<CashflowStream[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    (async () => {
+      try {
+        const [senderIds, recipientIds] = await Promise.all([
+          streamsBySender(publicKey, publicKey, 0, 50).catch(() => [] as bigint[]),
+          streamsByRecipient(publicKey, publicKey, 0, 50).catch(() => [] as bigint[]),
+        ]);
+        const jobs: { id: bigint; direction: "incoming" | "outgoing" }[] = [
+          ...senderIds.map((id) => ({ id, direction: "outgoing" as const })),
+          ...recipientIds.map((id) => ({ id, direction: "incoming" as const })),
+        ];
+        const settled = await Promise.allSettled(
+          jobs.map(async (job) => {
+            const addr = await getStreamAddress(publicKey, job.id);
+            if (!addr) return null;
+            const info = await getStreamInfo(publicKey, addr);
+            return { info, direction: job.direction } as CashflowStream;
+          }),
+        );
+        if (!active) return;
+        setStreams(
+          settled.flatMap((r) =>
+            r.status === "fulfilled" && r.value ? [r.value] : [],
+          ),
+        );
+      } catch {
+        if (active) setStreams([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [publicKey]);
+
+  const summary = useMemo(
+    () =>
+      computeCashflow(
+        streams,
+        Math.floor(Date.now() / 1000),
+        CASHFLOW_WINDOW_DAYS,
+      ),
+    [streams],
+  );
+
+  return (
+    <div className="card mb-6">
+      <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">
+        Cash Flow — past {CASHFLOW_WINDOW_DAYS} days
+      </h2>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+        Estimated streaming income vs expenditure from active stream rates.
+      </p>
+      {loading ? (
+        <div className="py-10 text-center text-sm text-gray-400" aria-busy="true">
+          Loading cash flow…
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            <div>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">Income</p>
+              <p className="text-lg font-black font-mono" data-testid="cashflow-incoming">
+                {fromStroops(summary.totalIncoming)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">Spent</p>
+              <p className="text-lg font-black font-mono" data-testid="cashflow-outgoing">
+                {fromStroops(summary.totalOutgoing)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">Net</p>
+              <p
+                className={`text-lg font-black font-mono ${summary.net >= 0n ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                data-testid="cashflow-net"
+              >
+                {summary.net >= 0n ? "+" : "−"}
+                {fromStroops(summary.net >= 0n ? summary.net : -summary.net)}
+              </p>
+            </div>
+          </div>
+          <CashflowChart daily={summary.daily} />
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function ProfilePage() {
@@ -124,6 +235,8 @@ export default function ProfilePage() {
                 </div>
               </div>
             </div>
+
+            <CashflowSection publicKey={publicKey} />
 
             <div className="card">
               <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">

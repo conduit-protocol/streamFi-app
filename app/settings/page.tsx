@@ -6,6 +6,15 @@ import { NetworkName, NETWORKS } from "@/lib/network-config";
 import { saveSelectedNetwork } from "@/lib/network-storage";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import {
+  clearCustomRpcUrl,
+  getCustomRpcUrl,
+  isValidRpcUrl,
+  pingRpcEndpoint,
+  saveCustomRpcUrl,
+  type RpcPingResult,
+} from "@/lib/custom-rpc";
+import { resetServer } from "@/lib/soroban";
+import {
   type TimeFormat,
   type RefreshIntervalSeconds,
   REFRESH_INTERVAL_OPTIONS,
@@ -73,6 +82,18 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const didMount = useRef(false);
 
+  // #691 — custom RPC endpoint override (local sandbox / private node).
+  const [customRpc, setCustomRpc] = useState("");
+  const [savedCustomRpc, setSavedCustomRpc] = useState<string | null>(null);
+  const [ping, setPing] = useState<RpcPingResult | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [rpcMessage, setRpcMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSavedCustomRpc(getCustomRpcUrl());
+    setCustomRpc(getCustomRpcUrl() ?? "");
+  }, []);
+
   useEffect(() => {
     if (!didMount.current) {
       didMount.current = true;
@@ -112,6 +133,59 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [setTheme]);
+
+  const handleTestPing = useCallback(async () => {
+    setRpcMessage(null);
+    setPing(null);
+    if (!isValidRpcUrl(customRpc)) {
+      setPing({ ok: false, latencyMs: null, error: "Enter a valid http(s) RPC URL." });
+      return;
+    }
+    setPinging(true);
+    try {
+      const result = await pingRpcEndpoint(customRpc.trim());
+      setPing(result);
+    } finally {
+      setPinging(false);
+    }
+  }, [customRpc]);
+
+  const handleSaveCustomRpc = useCallback(async () => {
+    setRpcMessage(null);
+    const url = customRpc.trim();
+    if (!isValidRpcUrl(url)) {
+      setPing({ ok: false, latencyMs: null, error: "Enter a valid http(s) RPC URL." });
+      return;
+    }
+    // Validate latency before saving — ping first, save only on success.
+    setPinging(true);
+    try {
+      const result = await pingRpcEndpoint(url);
+      setPing(result);
+      if (!result.ok) return;
+      saveCustomRpcUrl(url);
+      resetServer();
+      setSavedCustomRpc(url);
+      setRpcMessage(`Custom RPC saved (${result.latencyMs} ms).`);
+    } catch (e) {
+      setPing({
+        ok: false,
+        latencyMs: null,
+        error: e instanceof Error ? e.message : "Could not save the RPC endpoint.",
+      });
+    } finally {
+      setPinging(false);
+    }
+  }, [customRpc]);
+
+  const handleClearCustomRpc = useCallback(() => {
+    clearCustomRpcUrl();
+    resetServer();
+    setSavedCustomRpc(null);
+    setCustomRpc("");
+    setPing(null);
+    setRpcMessage("Custom RPC cleared — using the preset network endpoint.");
+  }, []);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10 space-y-8">
@@ -172,6 +246,78 @@ export default function SettingsPage() {
               </option>
             ))}
           </select>
+        </div>
+
+        {/* Custom RPC endpoint override (#691) */}
+        <div className="mt-5 border-t border-gray-100 dark:border-gray-800 pt-4">
+          <span className="text-sm font-medium">Custom RPC endpoint</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 mb-3">
+            Override the preset endpoint with a local sandbox or private node
+            (e.g. QuickNode, Triton). Ping it first — saving requires a
+            successful response.
+          </p>
+          <div className="flex flex-col gap-2">
+            <input
+              type="url"
+              value={customRpc}
+              onChange={(e) => {
+                setCustomRpc(e.target.value);
+                setPing(null);
+                setRpcMessage(null);
+              }}
+              placeholder="https://my-private-rpc.example.com"
+              aria-label="Custom RPC endpoint"
+              className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm font-mono"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestPing}
+                disabled={pinging || !customRpc.trim()}
+                className="px-4 py-1.5 rounded text-sm font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pinging ? "Pinging…" : "Test Ping"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCustomRpc}
+                disabled={pinging || !isValidRpcUrl(customRpc)}
+                className="px-4 py-1.5 rounded text-sm font-medium bg-black text-white dark:bg-white dark:text-black disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save endpoint
+              </button>
+              {savedCustomRpc && (
+                <button
+                  type="button"
+                  onClick={handleClearCustomRpc}
+                  className="px-4 py-1.5 rounded text-sm font-medium text-gray-500 hover:text-black dark:hover:text-white underline"
+                >
+                  Clear override
+                </button>
+              )}
+            </div>
+            {ping && (
+              <p
+                role="status"
+                data-testid="rpc-ping-result"
+                className={`text-xs font-mono ${ping.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+              >
+                {ping.ok
+                  ? `Reachable — ${ping.latencyMs} ms.`
+                  : `Unreachable${ping.latencyMs !== null ? ` (${ping.latencyMs} ms)` : ""}: ${ping.error ?? "no response"}`}
+              </p>
+            )}
+            {rpcMessage && (
+              <p role="status" className="text-xs text-gray-500 dark:text-gray-400">
+                {rpcMessage}
+              </p>
+            )}
+            {savedCustomRpc && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 break-all">
+                Active override: <span className="font-mono">{savedCustomRpc}</span>
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
