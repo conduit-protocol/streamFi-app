@@ -20,9 +20,16 @@ function read(): OfflineTransaction[] {
 
 function write(items: OfflineTransaction[]) { localStorage.setItem(KEY, JSON.stringify(items)); }
 
+function notifyQueueChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('offline-transactions-changed'));
+  }
+}
+
 export function queueTransaction(transaction: NewOfflineTransaction): string {
   const id = crypto.randomUUID();
   write([...read(), { ...transaction, id } as OfflineTransaction]);
+  notifyQueueChanged();
   navigator.serviceWorker?.controller?.postMessage({ type: 'REGISTER_BACKGROUND_SYNC' });
   return id;
 }
@@ -37,6 +44,7 @@ export async function flushQueuedTransactions(signTx: SignTransaction): Promise<
       if (item.kind === 'cancel') await cancel(item.publicKey, item.streamAddress, signTx);
       if (item.kind === 'topup') await topUp(item.publicKey, item.streamAddress, BigInt(item.amount), signTx);
       write(read().filter((queued) => queued.id !== item.id));
+      notifyQueueChanged();
     } catch (error) {
       console.error('Queued transaction failed:', error);
       break;

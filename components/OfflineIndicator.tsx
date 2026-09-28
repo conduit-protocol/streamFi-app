@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { queuedTransactions } from '@/lib/offline-transactions';
 
 interface OfflineIndicatorProps {
   className?: string;
@@ -8,25 +9,37 @@ interface OfflineIndicatorProps {
 
 export function OfflineIndicator({ className = '' }: OfflineIndicatorProps) {
   const [isOnline, setIsOnline] = useState(true);
+  const [queuedCount, setQueuedCount] = useState(0);
 
   useEffect(() => {
     setIsOnline(navigator.onLine);
+    setQueuedCount(queuedTransactions().length);
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+    const handleQueueChange = () => setQueuedCount(queuedTransactions().length);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('offline-transactions-changed', handleQueueChange);
+    window.addEventListener('storage', handleQueueChange);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('offline-transactions-changed', handleQueueChange);
+      window.removeEventListener('storage', handleQueueChange);
     };
   }, []);
 
   if (isOnline) {
     return null;
   }
+
+  const queueMessage =
+    queuedCount === 0
+      ? 'transactions will be queued.'
+      : `${queuedCount} transaction${queuedCount === 1 ? '' : 's'} queued for sync.`;
 
   return (
     <div
@@ -39,7 +52,7 @@ export function OfflineIndicator({ className = '' }: OfflineIndicatorProps) {
       aria-live="polite"
       aria-label="Offline status"
     >
-      You are currently offline. Cached data is shown; transactions will be queued.
+      You are currently offline. Cached data is shown; {queueMessage}
     </div>
   );
 }
