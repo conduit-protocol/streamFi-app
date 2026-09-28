@@ -7,6 +7,7 @@
  */
 
 import type { QueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { queryKeys } from './query-keys';
 import type { StreamInfo } from './stream';
 
@@ -92,18 +93,95 @@ export function optimisticWithdrawUpdate(
   return previous;
 }
 
+export interface RollbackWithdrawOptions {
+  /** Override the default revert explanation shown in the toast. */
+  reason?: string;
+  /** Skip the toast (e.g. caller already surfaced the error). Defaults to false. */
+  silent?: boolean;
+}
+
+const ROLLBACK_SHAKE_STYLE_ID = 'optimistic-rollback-shake-style';
+
+/**
+ * Inject the error-shake keyframes once per document (#695). The animation
+ * is applied via `triggerRollbackShake` to balance elements so a reverted
+ * optimistic withdrawal is visually explained instead of silently snapping.
+ */
+function ensureRollbackShakeStyle(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(ROLLBACK_SHAKE_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = ROLLBACK_SHAKE_STYLE_ID;
+  style.textContent = [
+    '@keyframes optimistic-rollback-shake {',
+    '  0%, 100% { transform: translateX(0); }',
+    '  20% { transform: translateX(-4px); }',
+    '  40% { transform: translateX(4px); }',
+    '  60% { transform: translateX(-3px); }',
+    '  80% { transform: translateX(3px); }',
+    '}',
+    '.optimistic-rollback-shake { animation: optimistic-rollback-shake 0.4s ease; }',
+    '@media (prefers-reduced-motion: reduce) {',
+    '  .optimistic-rollback-shake { animation: none; }',
+    '}',
+  ].join('\n');
+  document.head.appendChild(style);
+}
+
+/**
+ * Trigger the error-shake animation on withdrawable balance elements (#695).
+ * Falls back to a document-level CustomEvent (`optimistic-withdraw-rollback`)
+ * so any mounted balance display can animate even without the data attribute.
+ */
+export function triggerRollbackShake(streamAddress: string): void {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  ensureRollbackShakeStyle();
+
+  window.dispatchEvent(
+    new CustomEvent('optimistic-withdraw-rollback', { detail: { streamAddress } }),
+  );
+
+  const selector = `[data-withdrawable="${streamAddress}"]`;
+  const targets = document.querySelectorAll(selector);
+  targets.forEach(el => {
+    el.classList.remove('optimistic-rollback-shake');
+    // Force reflow so repeated rollbacks re-trigger the animation.
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add('optimistic-rollback-shake');
+    window.setTimeout(() => el.classList.remove('optimistic-rollback-shake'), 450);
+  });
+}
+
 /**
  * Roll back an optimistic withdraw update.
+ *
+ * When a withdrawal transaction reverts, the restored number no longer snaps
+ * silently: an error-shake animation is triggered and a toast explains the
+ * revert (#695). Pass `{ silent: true }` if the caller already surfaced the
+ * failure to avoid a duplicate toast.
  */
 export function rollbackWithdraw(
   qc: QueryClient,
   streamAddress: string,
   snapshot: bigint | undefined,
+  options?: RollbackWithdrawOptions,
 ): void {
   const key = queryKeys.streams.withdrawable(streamAddress);
   if (snapshot !== undefined) {
     qc.setQueryData(key, snapshot);
   } else {
     qc.removeQueries({ queryKey: key });
+  }
+
+  triggerRollbackShake(streamAddress);
+
+  if (options?.silent !== true && typeof window !== 'undefined') {
+    const message =
+      options?.reason ?? 'Withdrawal reverted — your balance was restored.';
+    try {
+      toast.error(message);
+    } catch {
+      // No toaster mounted — the CustomEvent above still lets UI animate.
+    }
   }
 }

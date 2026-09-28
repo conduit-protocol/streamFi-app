@@ -30,6 +30,8 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
   const close = useCallback(() => {
@@ -76,6 +78,28 @@ export function CommandPalette() {
     },
     [close, router],
   );
+
+  // Clamp the active index when the filtered list shrinks (#651).
+  useEffect(() => {
+    setActiveIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
+
+  // Auto-scroll the active option into view for keyboard navigation (#651).
+  useEffect(() => {
+    itemRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open, query]);
+
+  // Global Escape dismissal so the palette closes even when focus is not
+  // in the search input (e.g. after mouse hover) (#651).
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [open, close]);
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown") {
@@ -136,6 +160,9 @@ export function CommandPalette() {
               <button
                 key={item.id}
                 id={`cmdk-${item.id}`}
+                ref={(el) => {
+                  itemRefs.current[i] = el;
+                }}
                 type="button"
                 role="option"
                 aria-selected={i === activeIndex}

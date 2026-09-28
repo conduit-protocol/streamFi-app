@@ -24,6 +24,14 @@
 
 import { useRef, useEffect, useState } from 'react';
 
+export interface StreamMilestone {  /** Unix timestamp (seconds) of the milestone (e.g. cliff unlock, cancellation window). */
+  timestamp: number;
+  /** Tooltip / accessible label for the marker. Defaults to a formatted time. */
+  label?: string;
+  /** Visual variant — cliff and cancellation markers get distinct titles. */
+  kind?: 'cliff' | 'cancellation' | 'custom';
+}
+
 interface StreamProgressBarProps {
   /** Unix timestamp (seconds) when the stream started */
   startTime: number;
@@ -35,6 +43,10 @@ interface StreamProgressBarProps {
   pausedAt?: number;
   /** aria-label for screen readers */
   label?: string;
+  /** Unix timestamp (seconds) when the cliff unlocks — rendered as a tick marker (#652) */
+  cliffTimestamp?: number;
+  /** Explicit milestone markers (cliffs, cancellation windows) rendered as ticks (#652) */
+  milestones?: StreamMilestone[];
 }
 
 export function StreamProgressBar({
@@ -43,6 +55,8 @@ export function StreamProgressBar({
   status,
   pausedAt,
   label,
+  cliffTimestamp,
+  milestones = [],
 }: StreamProgressBarProps) {
   const fillRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +145,31 @@ export function StreamProgressBar({
   const elapsedSec  = totalSec > 0 ? Math.max(0, referenceSec - startTime) : 0;
   const ariaNow     = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
 
+  // ── Milestone markers (#652) ────────────────────────────────────────────
+  // Merge the cliffTimestamp shorthand with the explicit milestones array,
+  // then convert each in-range timestamp to a % offset along the bar.
+  // Out-of-range timestamps and open-ended streams render no markers.
+  const totalMs = endTime > 0 ? endTime * 1_000 - startTime * 1_000 : 0;
+  const allMilestones: StreamMilestone[] = [
+    ...(typeof cliffTimestamp === 'number'
+      ? [{ timestamp: cliffTimestamp, kind: 'cliff' as const }]
+      : []),
+    ...milestones,
+  ];
+  const markers = totalMs > 0
+    ? allMilestones
+        .map((m, i) => {
+          const pct = ((m.timestamp - startTime) / (endTime - startTime)) * 100;
+          if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+          const kindLabel = m.kind === 'cancellation' ? 'Cancellation window'
+            : m.kind === 'cliff' ? 'Cliff unlock'
+            : 'Milestone';
+          const markerLabel = m.label ?? `${kindLabel} at ${new Date(m.timestamp * 1_000).toLocaleString()}`;
+          return { ...m, pct, key: `${m.timestamp}-${i}`, markerLabel };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+    : [];
+
   return (
     <>
       <div
@@ -156,6 +195,17 @@ export function StreamProgressBar({
             })(),
           }}
         />
+        {markers.map(m => (
+          <div
+            key={m.key}
+            title={m.markerLabel}
+            aria-label={m.markerLabel}
+            role="img"
+            data-milestone={m.kind ?? 'custom'}
+            className="absolute top-0 bottom-0 w-[2px] -translate-x-1/2 bg-white border-x border-black/60 dark:bg-black dark:border-white/70 pointer-events-auto"
+            style={{ left: `${m.pct.toFixed(2)}%` }}
+          />
+        ))}
       </div>
     </>
   );

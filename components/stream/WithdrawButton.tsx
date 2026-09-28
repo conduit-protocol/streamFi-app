@@ -44,6 +44,26 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
     return () => { mounted.current = false; };
   }, []);
 
+  // Rollback shake target (#695) — `triggerRollbackShake` in
+  // lib/optimistic-updates.ts animates `[data-withdrawable="<address>"]`
+  // and emits `optimistic-withdraw-rollback` when a reverted optimistic
+  // withdrawal restores the balance.
+  const amountRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onRollback = (e: Event) => {
+      const addr = (e as CustomEvent<{ streamAddress?: string }>).detail?.streamAddress;
+      if (addr && addr !== streamAddress) return;
+      const el = amountRef.current;
+      if (!el) return;
+      el.classList.remove('optimistic-rollback-shake');
+      void el.offsetWidth;
+      el.classList.add('optimistic-rollback-shake');
+      window.setTimeout(() => el.classList.remove('optimistic-rollback-shake'), 450);
+    };
+    window.addEventListener('optimistic-withdraw-rollback', onRollback);
+    return () => window.removeEventListener('optimistic-withdraw-rollback', onRollback);
+  }, [streamAddress]);
+
   async function handleWithdraw() {
     if (!publicKey) {
       setError('Connect your wallet first.');
@@ -146,7 +166,7 @@ export function WithdrawButton({ streamAddress, withdrawable, token, onSuccess }
   }
 
   return (
-    <div className="space-y-2">
+    <div ref={amountRef as unknown as React.RefObject<HTMLDivElement>} data-withdrawable={streamAddress} className="space-y-2">
       {!isEmpty && (
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Protocol fee applies</span>
