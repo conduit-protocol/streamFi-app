@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link                 from 'next/link';
 import { usePathname }      from 'next/navigation';
 import { Menu, X }          from 'lucide-react';
@@ -21,6 +21,8 @@ const NAV = [
 export function Navbar() {
   const path = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const network = useSelectedNetwork();
 
   // Close the mobile menu whenever the route changes (e.g. after a nav tap).
@@ -28,11 +30,38 @@ export function Navbar() {
     setMenuOpen(false);
   }, [path]);
 
-  // Close on Escape for keyboard users.
+  // Move focus into the drawer, trap it there, and return it to the trigger
+  // when closed. This makes the visual drawer usable without a mouse.
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen) {
+      previousFocusRef.current?.focus();
+      previousFocusRef.current = null;
+      return;
+    }
+
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusableSelector = 'a[href], button:not([disabled])';
+    const focusable = () => Array.from(
+      mobileMenuRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+    );
+    requestAnimationFrame(() => focusable()[0]?.focus());
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuOpen(false);
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0]!;
+      const last = items[items.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
@@ -61,7 +90,7 @@ export function Navbar() {
         <NetworkBadge network={network} />
 
         {/* Desktop nav links */}
-        <nav className="hidden sm:flex items-center gap-1">
+        <nav className="hidden md:flex items-center gap-1">
           {NAV.map(n => (
             <Link key={n.href} href={n.href} className={linkClass(n.href)} aria-current={isActive(n.href) ? 'page' : undefined}>
               {n.label}
@@ -96,7 +125,7 @@ export function Navbar() {
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
             aria-controls="mobile-nav"
-            className="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
+            className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
           >
             {menuOpen
               ? <X    className="w-5 h-5" aria-hidden="true" />
@@ -118,13 +147,17 @@ export function Navbar() {
             aria-label="Close menu"
             tabIndex={-1}
             onClick={() => setMenuOpen(false)}
-            className="sm:hidden fixed inset-0 top-16 z-40 bg-black/20 cursor-default"
+            className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm cursor-default"
           />
           <nav
             id="mobile-nav"
-            className="sm:hidden absolute top-16 inset-x-0 z-50 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shadow-lg"
+            ref={mobileMenuRef}
+            aria-label="Mobile navigation"
+            aria-modal="true"
+            role="dialog"
+            className="md:hidden fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] border-l border-gray-200 bg-white pt-20 shadow-2xl transition-transform duration-300 ease-out dark:border-gray-800 dark:bg-gray-950"
           >
-            <div className="max-w-5xl mx-auto px-4 py-2 flex flex-col gap-1">
+            <div className="px-4 py-2 flex flex-col gap-1">
               {NAV.map(n => (
                 <Link
                   key={n.href}
