@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { toIcsUtcDate, buildIcsEvent, downloadIcsFile } from './calendar';
+import { buildGoogleCalendarUrl, toIcsUtcDate, buildIcsEvent, downloadIcsFile } from './calendar';
 
 describe('toIcsUtcDate', () => {
   it('formats a unix timestamp as YYYYMMDDTHHMMSSZ in UTC', () => {
@@ -67,6 +67,25 @@ describe('buildIcsEvent', () => {
 
     expect(ics).toContain('SUMMARY:a\\, b\\; c\\\\d');
     expect(ics).toContain('DESCRIPTION:line1\\nline2');
+  });
+});
+
+describe('buildGoogleCalendarUrl', () => {
+  it('creates a pre-filled event with UTC dates and the contract URL in its details', () => {
+    const timestamp = Date.UTC(2024, 5, 1, 12, 0, 0) / 1000;
+    const url = buildGoogleCalendarUrl({
+      id: 'CSTREAMADDR',
+      title: 'Stream #42 ends',
+      timestamp,
+      description: 'The stream completes at this time.',
+      url: 'https://stellar.expert/explorer/public/contract/CSTREAMADDR',
+    });
+
+    const parsed = new URL(url);
+    expect(parsed.origin + parsed.pathname).toBe('https://calendar.google.com/calendar/render');
+    expect(parsed.searchParams.get('action')).toBe('TEMPLATE');
+    expect(parsed.searchParams.get('dates')).toBe('20240601T120000Z/20240601T120000Z');
+    expect(parsed.searchParams.get('details')).toContain('CSTREAMADDR');
   });
 });
 

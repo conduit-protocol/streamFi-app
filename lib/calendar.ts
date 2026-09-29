@@ -14,6 +14,12 @@ export interface CalendarEventInput {
   description?: string;
 }
 
+/** Details needed to open a pre-filled Google Calendar event. */
+export interface GoogleCalendarEventInput extends CalendarEventInput {
+  /** A URL to the on-chain stream contract. */
+  url: string;
+}
+
 function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }
@@ -65,6 +71,27 @@ export function buildIcsEvent({ id, title, timestamp, description }: CalendarEve
   lines.push('END:VEVENT', 'END:VCALENDAR');
   // RFC 5545 requires CRLF line endings.
   return lines.join('\r\n') + '\r\n';
+}
+
+/**
+ * Return a Google Calendar "create event" URL for a point-in-time stream
+ * reminder. Google uses the same UTC timestamps as an iCalendar event, so
+ * recipients see the completion time in their own timezone.
+ */
+export function buildGoogleCalendarUrl({
+  title,
+  timestamp,
+  description,
+  url,
+}: GoogleCalendarEventInput): string {
+  const date = toIcsUtcDate(timestamp);
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${date}/${date}`,
+    details: [description, url].filter(Boolean).join('\n\n'),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
 /**
