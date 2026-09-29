@@ -140,8 +140,8 @@ export function Navbar() {
           `document` for taps on non-interactive areas, so a listener-based
           outside-click would never close the menu there (issue #143). Tapping
           this element reliably closes the dropdown on every browser. */}
-      {menuOpen && (
-        <>
+      <>
+        {menuOpen && (
           <button
             type="button"
             aria-label="Close menu"
@@ -149,30 +149,32 @@ export function Navbar() {
             onClick={() => setMenuOpen(false)}
             className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm cursor-default"
           />
-          <nav
-            id="mobile-nav"
-            ref={mobileMenuRef}
-            aria-label="Mobile navigation"
-            aria-modal="true"
-            role="dialog"
-            className="md:hidden fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] border-l border-gray-200 bg-white pt-20 shadow-2xl transition-transform duration-300 ease-out dark:border-gray-800 dark:bg-gray-950"
-          >
-            <div className="px-4 py-2 flex flex-col gap-1">
-              {NAV.map(n => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  onClick={() => setMenuOpen(false)}
-                  className={linkClass(n.href)}
-                  aria-current={isActive(n.href) ? 'page' : undefined}
-                >
-                  {n.label}
-                </Link>
-              ))}
-            </div>
-          </nav>
-        </>
-      )}
+        )}
+        <nav
+          id="mobile-nav"
+          ref={mobileMenuRef}
+          aria-label="Mobile navigation"
+          aria-modal="true"
+          aria-hidden={!menuOpen}
+          role="dialog"
+          className={`md:hidden fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] border-l border-gray-200 bg-white pt-20 shadow-2xl transition-all duration-300 ease-out dark:border-gray-800 dark:bg-gray-950 ${menuOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}
+        >
+          <div className="px-4 py-2 flex flex-col gap-1">
+            {NAV.map(n => (
+              <Link
+                key={n.href}
+                href={n.href}
+                onClick={() => setMenuOpen(false)}
+                tabIndex={menuOpen ? undefined : -1}
+                className={linkClass(n.href)}
+                aria-current={isActive(n.href) ? 'page' : undefined}
+              >
+                {n.label}
+              </Link>
+            ))}
+          </div>
+        </nav>
+      </>
     </header>
   );
 }
