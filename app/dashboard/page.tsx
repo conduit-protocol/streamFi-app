@@ -276,56 +276,50 @@ export default function DashboardPage() {
   const filteredReceiving = useMemo(() => filterByRange(receiving), [receiving, filterByRange]);
   const filteredSending = useMemo(() => filterByRange(sending), [sending, filterByRange]);
 
-  const activeCount = useMemo(
-    () =>
-      [...filteredReceiving, ...filteredSending].filter((s) => s.status === "active").length,
+  // A wallet can be both the sender and recipient of the same stream. Dedupe
+  // by contract address so the portfolio KPIs never count that stream twice.
+  const allStreams = useMemo(
+    () => Array.from(new Map([...filteredReceiving, ...filteredSending].map((row) => [row.address, row])).values()),
     [filteredReceiving, filteredSending],
   );
-  const receivingRate = useMemo(
-    () =>
-      filteredReceiving
-        .filter(
-          (s) =>
-            s.status === "active" &&
-            s.info &&
-            typeof s.info.ratePerSecond === "bigint",
-        )
-        .reduce((a, s) => a + s.info.ratePerSecond, 0n),
-    [filteredReceiving],
+  const activeStreams = useMemo(
+    () => allStreams.filter((stream) => stream.status === "active"),
+    [allStreams],
   );
-  const totalWithdrawn = useMemo(
-    () =>
-      filteredReceiving
-        .filter((s) => s.info && typeof s.info.withdrawn === "bigint")
-        .reduce((a, s) => a + s.info.withdrawn, 0n),
-    [filteredReceiving],
+  const activeRunRate = useMemo(
+    () => activeStreams.reduce((total, stream) => total + stream.info.ratePerSecond, 0n),
+    [activeStreams],
   );
-  const senderCount = useMemo(
-    () =>
-      new Set(
-        filteredReceiving.filter((s) => s.info?.sender).map((s) => s.info.sender),
-      ).size,
-    [filteredReceiving],
+  // `withdrawn` is the amount already claimed and `withdrawable` is the
+  // accrued, unclaimed balance. Together they are the value streamed so far.
+  const totalValueStreamed = useMemo(
+    () => allStreams.reduce((total, stream) => total + stream.info.withdrawn + stream.withdrawable, 0n),
+    [allStreams],
   );
+  const expiringSoon = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const weekFromNow = now + 7 * 24 * 60 * 60;
+    return activeStreams.filter((stream) => stream.info.endTime > now && stream.info.endTime <= weekFromNow).length;
+  }, [activeStreams]);
 
   const displayed = tab === "receiving" ? filteredReceiving : filteredSending;
 
   const STATS = [
     {
       label: t("stats.activeStreams"),
-      value: loading ? "…" : error ? "—" : String(activeCount),
+      value: loading ? "…" : error ? "—" : String(activeStreams.length),
     },
     {
-      label: t("stats.receivingPerSecond"),
-      value: loading ? "…" : error ? "—" : fromStroops(receivingRate),
+      label: t("stats.activeRunRate"),
+      value: loading ? "…" : error ? "—" : `${fromStroops(activeRunRate)} /s`,
     },
     {
-      label: t("stats.totalReceived"),
-      value: loading ? "…" : error ? "—" : fromStroops(totalWithdrawn),
+      label: t("stats.totalValueStreamed"),
+      value: loading ? "…" : error ? "—" : fromStroops(totalValueStreamed),
     },
     {
-      label: t("stats.senders"),
-      value: loading ? "…" : error ? "—" : String(senderCount),
+      label: t("stats.expiringSoon"),
+      value: loading ? "…" : error ? "—" : String(expiringSoon),
     },
   ];
 

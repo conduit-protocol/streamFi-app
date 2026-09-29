@@ -5,9 +5,9 @@
   "rangeTo": "to",
   "stats": {
     "activeStreams": "Active streams",
-    "receivingPerSecond": "Receiving /s",
-    "totalReceived": "Total received",
-    "senders": "Senders"
+    "activeRunRate": "Active run rate",
+    "totalValueStreamed": "Total value streamed",
+    "expiringSoon": "Expiring soon"
   },
   "connectWallet": "Connect your wallet to see your streams.",
   "loadError": "Failed to load streams. Please try again.",
