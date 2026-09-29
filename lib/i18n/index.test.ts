@@ -32,4 +32,14 @@ describe('lib/i18n', () => {
     expect(i18n.t('dashboard:partialError', { count: 1 })).toBe("1 stream couldn’t load");
     expect(i18n.t('dashboard:partialError', { count: 3 })).toBe("3 streams couldn’t load");
   });
+
+  it('includes complete Spanish and Portuguese dashboard dictionaries', () => {
+    const es = i18n.getFixedT('es', 'dashboard');
+    const pt = i18n.getFixedT('pt', 'dashboard');
+
+    expect(es('title')).toBe('Panel de control');
+    expect(es('partialError', { count: 2 })).toBe('No se pudieron cargar 2 flujos');
+    expect(pt('title')).toBe('Painel');
+    expect(pt('partialError', { count: 2 })).toBe('Não foi possível carregar 2 fluxos');
+  });
 });

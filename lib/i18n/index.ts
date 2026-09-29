@@ -17,12 +17,20 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import dashboardEn from './locales/en/dashboard.json';
+import dashboardEs from './locales/es/dashboard.json';
+import dashboardPt from './locales/pt/dashboard.json';
 
 if (!i18n.isInitialized) {
   i18n.use(initReactI18next).init({
     resources: {
       en: {
         dashboard: dashboardEn,
+      },
+      es: {
+        dashboard: dashboardEs,
+      },
+      pt: {
+        dashboard: dashboardPt,
       },
     },
     lng: 'en',
@@ -34,8 +42,6 @@ if (!i18n.isInitialized) {
       // escape values passed through JSX.
       escapeValue: false,
     },
-    // No secondary language yet — surfacing missing-key warnings would just
-    // be noise while only `en` exists (#558 is deliberately single-locale).
     returnEmptyString: false,
   });
 }
