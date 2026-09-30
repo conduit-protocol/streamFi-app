@@ -246,6 +246,7 @@ describe('StreamActions — pending / in-flight state', () => {
 
     const cancelBtn = button('Cancel')!;
     await click(cancelBtn);
+    await click(button('Confirm cancellation')!);
 
     expect(container.textContent).toContain('Simulation failed');
     expect(cancelBtn.disabled).toBe(false);
@@ -273,12 +274,47 @@ describe('StreamActions — offline queueing', () => {
 
     render(<StreamActions {...baseProps} isSender status="active" />);
     await click(button('Cancel')!);
+    await click(button('Confirm cancellation')!);
 
     expect(mockQueueTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'cancel', publicKey: PUBLIC_KEY, streamAddress: STREAM_ADDRESS }),
     );
     expect(mockCancel).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Queued while offline');
+  });
+});
+
+describe('StreamActions — cancel confirmation', () => {
+  it('shows the settlement breakdown before invoking the contract', async () => {
+    render(
+      <StreamActions
+        {...baseProps}
+        isSender
+        withdrawn={20000000n}
+        withdrawable={30000000n}
+        totalDeposited={100000000n}
+      />,
+    );
+
+    await click(button('Cancel')!);
+
+    expect(container.textContent).toContain('Cancellation is irreversible');
+    expect(container.textContent).toContain('Already paid to recipient');
+    expect(container.textContent).toContain('2.00 USDC');
+    expect(container.textContent).toContain('3.00 USDC');
+    expect(container.textContent).toContain('Sender refund');
+    expect(container.textContent).toContain('5.00 USDC');
+    expect(mockCancel).not.toHaveBeenCalled();
+  });
+
+  it('invokes cancel only after confirmation', async () => {
+    render(<StreamActions {...baseProps} isSender />);
+
+    await click(button('Cancel')!);
+    expect(mockCancel).not.toHaveBeenCalled();
+
+    await click(button('Confirm cancellation')!);
+    expect(mockCancel).toHaveBeenCalledWith(PUBLIC_KEY, STREAM_ADDRESS, expect.any(Function));
   });
 });
 

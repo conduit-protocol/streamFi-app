@@ -509,6 +509,8 @@ export default function StreamPage() {
             isSender={isSender}
             isRecipient={isRecipient}
             withdrawable={withdrawable}
+            totalDeposited={totalDeposited}
+            withdrawn={info.withdrawn}
             token={tokenSymbol}
             onSuccess={loadStream}
           />
