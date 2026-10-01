@@ -16,6 +16,7 @@ import { StreamActions } from "@/components/stream/StreamActions";
 import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
 import { OperatorInfo } from "@/components/stream/OperatorInfo";
 import { StreamNoteEditor } from "@/components/stream/StreamNoteEditor";
+import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
 import { useWallet } from "@/contexts/WalletContext";
 import { useStreamNote } from "@/hooks/useStreamNote";
 import {
@@ -324,6 +325,17 @@ export default function StreamPage() {
             <FileText className="w-3.5 h-3.5" aria-hidden="true" />
             PDF
           </button>
+          {/* Add the stream's end date to an external calendar (#566) — only
+              bounded streams have an end date to schedule. */}
+          {info.endTime > 0 && (
+            <AddToCalendarButton
+              streamId={id}
+              endTime={info.endTime}
+              startTime={info.startTime}
+              streamAddress={streamAddress}
+              tokenSymbol={tokenSymbol}
+            />
+          )}
         </div>
       </div>
 
