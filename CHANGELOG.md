@@ -5,6 +5,18 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 ## [Unreleased]
 
 ### Added
+- `lib/i18n/` — i18next/react-i18next bootstrap and a `dashboard` message namespace;
+  `/dashboard` is fully externalized as the proof-of-concept page for the string-externalization
+  migration (#558)
+- Navbar — persistent network badge (`NetworkBadge`) shows the active Stellar network name
+  whenever it isn't mainnet, so it's always obvious when connected to testnet/local; driven by
+  `hooks/useSelectedNetwork.ts`, which subscribes to `lib/network-storage.ts` for same-tab and
+  cross-tab updates (#559)
+- `WithdrawButton` — withdrawals at or above a configurable threshold
+  (`NEXT_PUBLIC_LARGE_WITHDRAWAL_THRESHOLD`, default 1000 display units) now require retyping
+  the exact amount in a confirmation modal before submitting (#560)
+- `/stream/[id]` — **Add to calendar** button downloads a `.ics` file for the stream's end date
+  via the new `lib/calendar.ts` (#566)
 - `lib/format.ts` — `formatTimestampRelative(ts)` returns human-readable relative strings
   ("just now", "2h ago", "3d ago") falling back to `formatTimestamp` for events older than
   7 days; consumed via the new `timeFormat` setting (#556)

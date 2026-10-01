@@ -1,110 +1,52 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { CalendarPlus, Check } from 'lucide-react';
-import toast from 'react-hot-toast';
-
-import {
-  buildStreamEndIcs,
-  downloadIcs,
-  streamEndIcsFilename,
-} from '@/lib/calendar';
+import { CalendarPlus, ChevronDown, Download } from 'lucide-react';
+import { buildGoogleCalendarUrl, buildIcsEvent, downloadIcsFile } from '@/lib/calendar';
 
 interface AddToCalendarButtonProps {
-  /** Stream id as it appears in the URL. */
   streamId: string;
-  /** Stream end time in unix seconds — the date the event is built for. */
+  streamAddress: string;
+  /** Unix timestamp (seconds) the stream ends. */
   endTime: number;
-  /** Stream start time in unix seconds, when known. */
-  startTime?: number;
-  /** On-chain stream contract address, when known. */
-  streamAddress?: string;
-  /** Display symbol of the streamed token, when it resolves. */
-  tokenSymbol?: string;
-  /** URL of the stream page, when one can be built. */
-  appUrl?: string;
 }
 
-/**
- * "Add to calendar" action for a stream's end date (#566).
- *
- * Downloads a standard `.ics` invitation for the stream's completion date so a
- * recipient can set a reminder without re-entering the date. Rendered by
- * `/stream/[id]` only for bounded streams — an open-ended stream has no end
- * date to schedule.
- */
-export function AddToCalendarButton({
-  streamId,
-  endTime,
-  startTime,
-  streamAddress,
-  tokenSymbol,
-  appUrl,
-}: AddToCalendarButtonProps) {
-  const [saved, setSaved] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mounted = useRef(true);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, []);
+/** Downloads a .ics file reminding the user when a stream ends (#566). */
+export function AddToCalendarButton({ streamId, streamAddress, endTime }: AddToCalendarButtonProps) {
+  const contractUrl = `https://stellar.expert/explorer/public/contract/${streamAddress}`;
+  const title = `Stream #${streamId} ends`;
+  const description = `Conduit stream #${streamId} completes at this time.\n\nContract: ${contractUrl}`;
 
   function handleClick() {
-    try {
-      const ics = buildStreamEndIcs({
-        streamId,
-        endTime,
-        startTime,
-        streamAddress,
-        tokenSymbol,
-        // Only meaningful on the client, and only used at click time.
-        appUrl:
-          appUrl ??
-          (typeof window !== 'undefined'
-            ? `${window.location.origin}/stream/${streamId}`
-            : undefined),
-      });
-      downloadIcs(streamEndIcsFilename(streamId), ics);
-
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      setSaved(true);
-      timeoutRef.current = setTimeout(() => {
-        if (mounted.current) setSaved(false);
-        timeoutRef.current = null;
-      }, 2500);
-
-      toast.success('Calendar file downloaded');
-    } catch {
-      // Reached for open-ended streams (endTime === 0) or a blocked download —
-      // say so instead of failing silently.
-      toast.error('Could not create the calendar file.');
-    }
+    const ics = buildIcsEvent({
+      id: streamAddress,
+      title,
+      timestamp: endTime,
+      description,
+    });
+    downloadIcsFile(`conduit-stream-${streamId}.ics`, ics);
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors print:hidden"
-      aria-label="Add stream end date to calendar"
-      title="Download an .ics file for the stream end date"
-    >
-      {saved ? (
-        <Check
-          className="w-3.5 h-3.5 text-green-600 dark:text-green-400"
-          aria-hidden="true"
-        />
-      ) : (
+    <details className="relative inline-block print:hidden">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-xs font-medium text-black transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-white dark:hover:bg-gray-900 [&::-webkit-details-marker]:hidden">
         <CalendarPlus className="w-3.5 h-3.5" aria-hidden="true" />
-      )}
-      {saved ? 'Saved' : 'Calendar'}
-    </button>
+        Add to calendar
+        <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-48 rounded border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-800 dark:bg-gray-950">
+        <a
+          href={buildGoogleCalendarUrl({ title, timestamp: endTime, description, url: contractUrl })}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-900"
+        >
+          Add to Google Calendar
+        </a>
+        <button type="button" onClick={handleClick} className="flex w-full items-center gap-1.5 rounded px-3 py-2 text-left text-xs hover:bg-gray-100 dark:hover:bg-gray-900">
+          <Download className="w-3.5 h-3.5" aria-hidden="true" />
+          Download .ics file
+        </button>
+      </div>
+    </details>
   );
 }

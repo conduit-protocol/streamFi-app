@@ -54,10 +54,21 @@ export function compareMetrics(info: StreamInfo, now: number): CompareMetrics {
 /** Parse the `?ids=1,2,3` query param into a de-duplicated list of numeric
  *  stream ids, dropping anything that isn't a non-negative integer. */
 export function parseCompareIds(param: string | null): string[] {
+  return uniqueCompareIds(param).slice(0, MAX_COMPARE);
+}
+
+/** Number of distinct valid stream ids requested, before the
+ *  {@link MAX_COMPARE} cap — lets the page tell the user when some were
+ *  dropped instead of silently comparing only the first few. */
+export function countCompareIds(param: string | null): number {
+  return uniqueCompareIds(param).length;
+}
+
+function uniqueCompareIds(param: string | null): string[] {
   if (!param) return [];
   const ids = param
     .split(',')
     .map((s) => s.trim())
     .filter((s) => /^\d+$/.test(s));
-  return Array.from(new Set(ids)).slice(0, MAX_COMPARE);
+  return Array.from(new Set(ids));
 }

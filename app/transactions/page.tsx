@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { AlertCircle, RefreshCw, Info, Download, Printer } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card';
@@ -46,6 +47,32 @@ const STATUS_CLASS: Record<string, string> = {
   Failed:  'text-gray-500 bg-gray-200 line-through',
 };
 
+// Status filter tabs (#692) — client-side only so users troubleshooting a
+// stuck/failed transaction don't scroll through dozens of confirmed items.
+// "Confirmed" maps to the indexer's `Success` status; "Failed" also matches a
+// `Reverted` status alias for chains that report reverts under that name.
+export type TransactionStatusFilter = 'All' | 'Confirmed' | 'Pending' | 'Failed';
+
+export const TRANSACTION_STATUS_FILTERS: readonly TransactionStatusFilter[] = [
+  'All',
+  'Confirmed',
+  'Pending',
+  'Failed',
+] as const;
+
+/** Normalizes a row status for filter comparison (case-insensitive). */
+export function matchesStatusFilter(
+  status: string,
+  filter: TransactionStatusFilter,
+): boolean {
+  if (filter === 'All') return true;
+  const normalized = status.trim().toLowerCase();
+  if (filter === 'Confirmed') return normalized === 'success' || normalized === 'confirmed';
+  if (filter === 'Pending') return normalized === 'pending';
+  // Failed covers both "Failed" and the "Reverted" alias from the issue title.
+  return normalized === 'failed' || normalized === 'reverted';
+}
+
 export default function TransactionsPage() {
   const { publicKey, connected } = useWallet();
   const { timeFormat } = useSettings();
@@ -56,10 +83,31 @@ export default function TransactionsPage() {
     retry: (failureCount, queryError) =>
       !isIndexerNotConfiguredError(queryError) && failureCount < 1,
   });
+  const [statusFilter, setStatusFilter] = useState<TransactionStatusFilter>('All');
+
+  const filteredTxs = useMemo(
+    () => txs.filter((tx) => matchesStatusFilter(tx.status, statusFilter)),
+    [txs, statusFilter],
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<TransactionStatusFilter, number> = {
+      All: txs.length,
+      Confirmed: 0,
+      Pending: 0,
+      Failed: 0,
+    };
+    for (const tx of txs) {
+      if (matchesStatusFilter(tx.status, 'Confirmed')) counts.Confirmed += 1;
+      else if (matchesStatusFilter(tx.status, 'Pending')) counts.Pending += 1;
+      else if (matchesStatusFilter(tx.status, 'Failed')) counts.Failed += 1;
+    }
+    return counts;
+  }, [txs]);
 
   const isDemoData = connected && txs.length > 0;
   const isIndexerComingSoon = status === 'error' && isIndexerNotConfiguredError(error);
-  const canExport = txs.length > 0;
+  const canExport = filteredTxs.length > 0;
 
   /** Format a timestamp respecting the user's time-format preference (#556). */
   const formatDate = (ts: number) =>
@@ -68,7 +116,7 @@ export default function TransactionsPage() {
   const handleExport = () => {
     if (!canExport) return;
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadCsv(`conduit-transactions-${stamp}.csv`, transactionsToCsv(txs));
+    downloadCsv(`conduit-transactions-${stamp}.csv`, transactionsToCsv(filteredTxs));
   };
 
   const handlePrint = () => window.print();
@@ -164,10 +212,45 @@ export default function TransactionsPage() {
           </div>
         </Card>
       ) : (
+        <>
+          {/* Status filter tabs — client-side only (#692) */}
+          <div
+            role="tablist"
+            aria-label="Filter transactions by status"
+            className="flex flex-wrap gap-2 mb-4 print:hidden"
+          >
+            {TRANSACTION_STATUS_FILTERS.map((filter) => {
+              const isSelected = statusFilter === filter;
+              return (
+                <button
+                  key={filter}
+                  type="button"
+                  role="tab"
+                  aria-selected={isSelected}
+                  onClick={() => setStatusFilter(filter)}
+                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                    isSelected
+                      ? 'bg-black text-white dark:bg-white dark:text-black'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  {filter} ({statusCounts[filter]})
+                </button>
+              );
+            })}
+          </div>
+
+          {filteredTxs.length === 0 ? (
+            <Card>
+              <div className="py-16 text-center text-sm text-gray-400">
+                No {statusFilter === 'All' ? '' : `${statusFilter} `}transactions.
+              </div>
+            </Card>
+          ) : (
         <Card padded={false}>
           {/* Mobile Layout */}
           <div className="sm:hidden flex flex-col divide-y divide-gray-100">
-            {txs.map((tx) => {
+            {filteredTxs.map((tx) => {
               const isPositive = tx.type === 'Stream Created';
               const isNegative = tx.type === 'Withdrawn';
               const isCancelled = tx.type === 'Cancelled';
@@ -226,7 +309,7 @@ export default function TransactionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {txs.map((tx) => {
+                {filteredTxs.map((tx) => {
                   const isPositive = tx.type === 'Stream Created';
                   const isNegative = tx.type === 'Withdrawn';
                   const isCancelled = tx.type === 'Cancelled';
@@ -264,6 +347,8 @@ export default function TransactionsPage() {
             </table>
           </div>
         </Card>
+          )}
+        </>
       )}
     </div>
   );

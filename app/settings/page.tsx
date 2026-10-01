@@ -6,20 +6,27 @@ import { NetworkName, NETWORKS } from "@/lib/network-config";
 import { saveSelectedNetwork } from "@/lib/network-storage";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import {
+  clearCustomRpcUrl,
+  getCustomRpcUrl,
+  isValidRpcUrl,
+  pingRpcEndpoint,
+  saveCustomRpcUrl,
+  type RpcPingResult,
+} from "@/lib/custom-rpc";
+import { resetServer } from "@/lib/soroban";
+import {
   type TimeFormat,
   type RefreshIntervalSeconds,
   REFRESH_INTERVAL_OPTIONS,
+  notifySettingsUpdated,
 } from "@/hooks/useSettings";
 
-type Currency = "USD" | "EUR" | "XLM";
-type Slippage = 0.5 | 1.0 | 2.0 | 5.0;
+
 
 interface SettingsState {
   network: NetworkName;
-  currency: Currency;
-  slippageTolerance: Slippage;
+
   notificationsEnabled: boolean;
-  advancedMode: boolean;
   /** Display timestamps as relative ("2h ago") or absolute date-time. Added #556. */
   timeFormat: TimeFormat;
   /**
@@ -35,10 +42,8 @@ function loadSettings(): SettingsState {
   if (typeof window === "undefined") {
     return {
       network: "testnet" as NetworkName,
-      currency: "USD",
-      slippageTolerance: 1.0,
+
       notificationsEnabled: true,
-      advancedMode: false,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
     };
@@ -49,10 +54,8 @@ function loadSettings(): SettingsState {
       const parsed = JSON.parse(raw) as Partial<SettingsState>;
       return {
         network: parsed.network ?? ("testnet" as NetworkName),
-        currency: parsed.currency ?? "USD",
-        slippageTolerance: parsed.slippageTolerance ?? 1.0,
+
         notificationsEnabled: parsed.notificationsEnabled ?? true,
-        advancedMode: parsed.advancedMode ?? false,
         timeFormat: parsed.timeFormat === "relative" ? "relative" : "absolute",
         autoRefreshInterval: REFRESH_INTERVAL_OPTIONS.some(
           (o) => o.value === parsed.autoRefreshInterval,
@@ -66,10 +69,8 @@ function loadSettings(): SettingsState {
   }
   return {
     network: "testnet" as NetworkName,
-    currency: "USD",
-    slippageTolerance: 1.0,
+
     notificationsEnabled: true,
-    advancedMode: false,
     timeFormat: "absolute",
     autoRefreshInterval: 0,
   };
@@ -82,6 +83,18 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const didMount = useRef(false);
 
+  // #691 — custom RPC endpoint override (local sandbox / private node).
+  const [customRpc, setCustomRpc] = useState("");
+  const [savedCustomRpc, setSavedCustomRpc] = useState<string | null>(null);
+  const [ping, setPing] = useState<RpcPingResult | null>(null);
+  const [pinging, setPinging] = useState(false);
+  const [rpcMessage, setRpcMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSavedCustomRpc(getCustomRpcUrl());
+    setCustomRpc(getCustomRpcUrl() ?? "");
+  }, []);
+
   useEffect(() => {
     if (!didMount.current) {
       didMount.current = true;
@@ -90,6 +103,9 @@ export default function SettingsPage() {
 
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      // Wake up mounted useSettings() subscribers in this tab — the
+      // `storage` event only fires in *other* tabs (#586).
+      notifySettingsUpdated();
     } catch {
       // Storage can be unavailable in private browsing or embedded webviews.
     }
@@ -111,10 +127,8 @@ export default function SettingsPage() {
   const handleReset = useCallback(() => {
     const defaults: SettingsState = {
       network: "testnet" as NetworkName,
-      currency: "USD",
-      slippageTolerance: 1.0,
+
       notificationsEnabled: true,
-      advancedMode: false,
       timeFormat: "absolute",
       autoRefreshInterval: 0,
     };
@@ -123,6 +137,59 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }, [setTheme]);
+
+  const handleTestPing = useCallback(async () => {
+    setRpcMessage(null);
+    setPing(null);
+    if (!isValidRpcUrl(customRpc)) {
+      setPing({ ok: false, latencyMs: null, error: "Enter a valid http(s) RPC URL." });
+      return;
+    }
+    setPinging(true);
+    try {
+      const result = await pingRpcEndpoint(customRpc.trim());
+      setPing(result);
+    } finally {
+      setPinging(false);
+    }
+  }, [customRpc]);
+
+  const handleSaveCustomRpc = useCallback(async () => {
+    setRpcMessage(null);
+    const url = customRpc.trim();
+    if (!isValidRpcUrl(url)) {
+      setPing({ ok: false, latencyMs: null, error: "Enter a valid http(s) RPC URL." });
+      return;
+    }
+    // Validate latency before saving — ping first, save only on success.
+    setPinging(true);
+    try {
+      const result = await pingRpcEndpoint(url);
+      setPing(result);
+      if (!result.ok) return;
+      saveCustomRpcUrl(url);
+      resetServer();
+      setSavedCustomRpc(url);
+      setRpcMessage(`Custom RPC saved (${result.latencyMs} ms).`);
+    } catch (e) {
+      setPing({
+        ok: false,
+        latencyMs: null,
+        error: e instanceof Error ? e.message : "Could not save the RPC endpoint.",
+      });
+    } finally {
+      setPinging(false);
+    }
+  }, [customRpc]);
+
+  const handleClearCustomRpc = useCallback(() => {
+    clearCustomRpcUrl();
+    resetServer();
+    setSavedCustomRpc(null);
+    setCustomRpc("");
+    setPing(null);
+    setRpcMessage("Custom RPC cleared — using the preset network endpoint.");
+  }, []);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10 space-y-8">
@@ -184,6 +251,78 @@ export default function SettingsPage() {
             ))}
           </select>
         </div>
+
+        {/* Custom RPC endpoint override (#691) */}
+        <div className="mt-5 border-t border-gray-100 dark:border-gray-800 pt-4">
+          <span className="text-sm font-medium">Custom RPC endpoint</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 mb-3">
+            Override the preset endpoint with a local sandbox or private node
+            (e.g. QuickNode, Triton). Ping it first — saving requires a
+            successful response.
+          </p>
+          <div className="flex flex-col gap-2">
+            <input
+              type="url"
+              value={customRpc}
+              onChange={(e) => {
+                setCustomRpc(e.target.value);
+                setPing(null);
+                setRpcMessage(null);
+              }}
+              placeholder="https://my-private-rpc.example.com"
+              aria-label="Custom RPC endpoint"
+              className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm font-mono"
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestPing}
+                disabled={pinging || !customRpc.trim()}
+                className="px-4 py-1.5 rounded text-sm font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pinging ? "Pinging…" : "Test Ping"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCustomRpc}
+                disabled={pinging || !isValidRpcUrl(customRpc)}
+                className="px-4 py-1.5 rounded text-sm font-medium bg-black text-white dark:bg-white dark:text-black disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save endpoint
+              </button>
+              {savedCustomRpc && (
+                <button
+                  type="button"
+                  onClick={handleClearCustomRpc}
+                  className="px-4 py-1.5 rounded text-sm font-medium text-gray-500 hover:text-black dark:hover:text-white underline"
+                >
+                  Clear override
+                </button>
+              )}
+            </div>
+            {ping && (
+              <p
+                role="status"
+                data-testid="rpc-ping-result"
+                className={`text-xs font-mono ${ping.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+              >
+                {ping.ok
+                  ? `Reachable — ${ping.latencyMs} ms.`
+                  : `Unreachable${ping.latencyMs !== null ? ` (${ping.latencyMs} ms)` : ""}: ${ping.error ?? "no response"}`}
+              </p>
+            )}
+            {rpcMessage && (
+              <p role="status" className="text-xs text-gray-500 dark:text-gray-400">
+                {rpcMessage}
+              </p>
+            )}
+            {savedCustomRpc && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 break-all">
+                Active override: <span className="font-mono">{savedCustomRpc}</span>
+              </p>
+            )}
+          </div>
+        </div>
       </section>
 
       {/* Currency & Slippage */}
@@ -191,40 +330,6 @@ export default function SettingsPage() {
         <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">
           Preferences
         </h2>
-        <div className="flex flex-col space-y-4">
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-sm">Display Currency</span>
-            <select
-              value={settings.currency}
-              onChange={(e) =>
-                updateSetting("currency", e.target.value as Currency)
-              }
-              className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm"
-            >
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-              <option value="XLM">XLM</option>
-            </select>
-          </div>
-          <div className="flex flex-row items-center justify-between">
-            <span className="text-sm">Slippage Tolerance</span>
-            <div className="flex gap-2">
-              {([0.5, 1.0, 2.0, 5.0] as Slippage[]).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => updateSetting("slippageTolerance", s)}
-                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                    settings.slippageTolerance === s
-                      ? "bg-black text-white dark:bg-white dark:text-black"
-                      : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-                  }`}
-                >
-                  {s}%
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Timestamp Format — issue #556 */}
           <div className="flex flex-row items-center justify-between">
             <div>
@@ -295,15 +400,6 @@ export default function SettingsPage() {
               onChange={(e) =>
                 updateSetting("notificationsEnabled", e.target.checked)
               }
-              className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
-            />
-          </label>
-          <label className="flex flex-row items-center justify-between cursor-pointer">
-            <span className="text-sm">Advanced Mode</span>
-            <input
-              type="checkbox"
-              checked={settings.advancedMode}
-              onChange={(e) => updateSetting("advancedMode", e.target.checked)}
               className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white"
             />
           </label>

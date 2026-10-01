@@ -1,180 +1,112 @@
 /**
- * Calendar-event (.ics) generation for stream end dates (#566).
- *
- * `/stream/[id]` surfaces a bounded stream's end date through `StreamTimeline`,
- * but there was no way to carry that date into an external calendar — a
- * recipient waiting on a stream to complete (for accounting, invoicing, a
- * reminder) had to re-type it by hand.
- *
- * `buildStreamEndIcs` turns the on-chain end timestamp into an RFC 5545
- * iCalendar document that Google Calendar, Apple Calendar and Outlook all
- * import, and `downloadIcs` hands it to the browser as a file download.
- *
- * Only bounded streams have something to schedule: an open-ended stream
- * (`endTime === 0`) has no end date, so building an event for it throws rather
- * than writing a bogus 1970 timestamp into somebody's calendar.
+ * Build and trigger downloads for .ics (iCalendar, RFC 5545) files — used by
+ * the "add to calendar" action for a stream's end date (#566).
  */
 
-/** Product identifier required by RFC 5545 — names the app the event came from. */
-const PRODID = '-//Conduit Protocol//StreamFi//EN';
+export interface CalendarEventInput {
+  /** Unique-ish identifier for the UID field, e.g. the stream address. */
+  id: string;
+  /** Event title. */
+  title: string;
+  /** Unix timestamp (seconds) the event occurs at. */
+  timestamp: number;
+  /** Optional free-text description. */
+  description?: string;
+}
 
-/** The event is scheduled as a one-hour block starting at the stream end time. */
-const EVENT_DURATION_S = 3600;
+/** Details needed to open a pre-filled Google Calendar event. */
+export interface GoogleCalendarEventInput extends CalendarEventInput {
+  /** A URL to the on-chain stream contract. */
+  url: string;
+}
 
-/** Reminder that precedes the event by one hour. */
-const ALARM_TRIGGER = '-PT1H';
-
-export interface StreamCalendarEventInput {
-  /** Numeric stream id exactly as it appears in the URL (`/stream/42` → `"42"`). */
-  streamId: string;
-  /** Stream end time in unix seconds. Required — open-ended streams have none. */
-  endTime: number;
-  /** Stream start time in unix seconds; added to the description when known. */
-  startTime?: number;
-  /** On-chain stream contract address; added to the description when known. */
-  streamAddress?: string;
-  /** Display symbol of the streamed token, when it resolves. */
-  tokenSymbol?: string;
-  /** Page URL of the stream, when one can be built. */
-  appUrl?: string;
-  /**
-   * Timestamp (unix seconds) used for `DTSTAMP`. Injectable so tests can assert
-   * the exact document instead of chasing the wall clock.
-   */
-  now?: number;
+function pad(n: number): string {
+  return n.toString().padStart(2, '0');
 }
 
 /**
- * Escape a value for an iCalendar TEXT field (RFC 5545 §3.3.11): backslash,
- * semicolon, comma and newlines must be escaped, and a raw newline would
- * otherwise terminate the content line and corrupt the document.
+ * Format a unix timestamp (seconds) as an iCalendar UTC date-time
+ * (`YYYYMMDDTHHMMSSZ`), per RFC 5545.
  */
-export function escapeIcsText(value: string): string {
-  return value
+export function toIcsUtcDate(timestamp: number): string {
+  const d = new Date(timestamp * 1000);
+  return (
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+  );
+}
+
+/** Escape text per RFC 5545 §3.3.11 (backslash, semicolon, comma, newline). */
+function escapeIcsText(text: string): string {
+  return text
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
+    .replace(/\n/g, '\\n');
 }
 
 /**
- * Unix seconds → iCalendar UTC timestamp (`20261001T120000Z`).
- *
- * Sub-second precision is dropped: RFC 5545 DATE-TIME with the `Z` suffix is
- * second-resolution, and a malformed fractional part makes some clients reject
- * the whole file.
+ * Build a minimal single-VEVENT .ics file marking a point-in-time event
+ * (e.g. a stream's end date). DTSTART and DTEND are the same instant since
+ * there's no meaningful duration to a "stream ends" reminder.
  */
-export function toIcsTimestamp(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000)
-    .toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\.\d{3}Z$/, 'Z');
-}
-
-/**
- * Fold a content line at 75 octets with a leading-space continuation
- * (RFC 5545 §3.1). Everything written here is ASCII, so octets and characters
- * line up; long contract addresses in the description are the reason this exists.
- */
-export function foldIcsLine(line: string): string {
-  if (line.length <= 75) return line;
-  const folded = [line.slice(0, 75)];
-  let rest = line.slice(75);
-  while (rest.length > 0) {
-    // A continuation line carries a leading space, so only 74 octets of payload fit.
-    folded.push(` ${rest.slice(0, 74)}`);
-    rest = rest.slice(74);
-  }
-  return folded.join('\r\n');
-}
-
-/** File name for the downloaded invitation, safe for every filesystem. */
-export function streamEndIcsFilename(streamId: string): string {
-  const safeId = String(streamId).replace(/[^A-Za-z0-9_-]/g, '');
-  return `stream-${safeId || 'unknown'}-end.ics`;
-}
-
-/**
- * Build the `.ics` document for a stream's end date.
- *
- * @throws Error when the stream has no usable end time (open-ended streams), so
- * callers can surface a real message instead of importing a 1970 event.
- */
-export function buildStreamEndIcs(input: StreamCalendarEventInput): string {
-  const { streamId, endTime, startTime, streamAddress, tokenSymbol, appUrl } = input;
-
-  if (typeof endTime !== 'number' || !Number.isFinite(endTime) || endTime <= 0) {
-    throw new Error(
-      `Cannot build a calendar event for stream #${streamId}: it has no end date (open-ended stream).`,
-    );
-  }
-
-  const dtstamp = toIcsTimestamp(Math.floor(input.now ?? Date.now() / 1000));
-
-  const descriptionParts = [
-    `Stream #${streamId} completes and its remaining balance becomes withdrawable.`,
-  ];
-  if (tokenSymbol) descriptionParts.push(`Token: ${tokenSymbol}`);
-  if (startTime !== undefined && startTime > 0) {
-    descriptionParts.push(`Stream started: ${new Date(startTime * 1000).toISOString()}`);
-  }
-  if (streamAddress) descriptionParts.push(`Contract: ${streamAddress}`);
-
+export function buildIcsEvent({ id, title, timestamp, description }: CalendarEventInput): string {
+  const dtstamp = toIcsUtcDate(Math.floor(Date.now() / 1000));
+  const dtstart = toIcsUtcDate(timestamp);
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    `PRODID:${PRODID}`,
+    'PRODID:-//Conduit//Stream Calendar Export//EN',
     'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    // Deterministic UID: re-importing the same stream updates the existing event
-    // instead of piling up duplicates.
-    `UID:stream-${streamId}-end@streamfi`,
+    `UID:${id}@conduit.sh`,
     `DTSTAMP:${dtstamp}`,
-    `DTSTART:${toIcsTimestamp(endTime)}`,
-    `DTEND:${toIcsTimestamp(endTime + EVENT_DURATION_S)}`,
-    `SUMMARY:${escapeIcsText(`Stream #${streamId} completes`)}`,
-    `DESCRIPTION:${escapeIcsText(descriptionParts.join('\n'))}`,
-    'TRANSP:TRANSPARENT',
+    `DTSTART:${dtstart}`,
+    `DTEND:${dtstart}`,
+    `SUMMARY:${escapeIcsText(title)}`,
   ];
-
-  if (appUrl) lines.push(`URL:${escapeIcsText(appUrl)}`);
-
-  lines.push(
-    'BEGIN:VALARM',
-    `TRIGGER:${ALARM_TRIGGER}`,
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${escapeIcsText(`Stream #${streamId} completes in one hour`)}`,
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  );
-
-  // CRLF is mandatory in iCalendar; some clients silently reject bare LF.
-  return lines.map(foldIcsLine).join('\r\n') + '\r\n';
+  if (description) {
+    lines.push(`DESCRIPTION:${escapeIcsText(description)}`);
+  }
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  // RFC 5545 requires CRLF line endings.
+  return lines.join('\r\n') + '\r\n';
 }
 
 /**
- * Trigger a browser download of an `.ics` document.
- *
- * Kept here rather than in the component so the DOM plumbing is testable on its
- * own (jsdom has no real download).
+ * Return a Google Calendar "create event" URL for a point-in-time stream
+ * reminder. Google uses the same UTC timestamps as an iCalendar event, so
+ * recipients see the completion time in their own timezone.
  */
-export function downloadIcs(filename: string, ics: string): void {
-  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+export function buildGoogleCalendarUrl({
+  title,
+  timestamp,
+  description,
+  url,
+}: GoogleCalendarEventInput): string {
+  const date = toIcsUtcDate(timestamp);
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${date}/${date}`,
+    details: [description, url].filter(Boolean).join('\n\n'),
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+/**
+ * Trigger a browser download of the given .ics content. No-op outside the
+ * browser (SSR) since there's no `document` to build an anchor from.
+ */
+export function downloadIcsFile(filename: string, content: string): void {
+  if (typeof document === 'undefined') return;
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  try {
-    link.click();
-  } finally {
-    document.body.removeChild(link);
-    // Release the object URL once the browser has had a chance to start the
-    // download — revoking synchronously can cancel it in some browsers.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }

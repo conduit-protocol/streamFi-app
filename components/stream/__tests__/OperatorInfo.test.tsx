@@ -169,7 +169,7 @@ describe('OperatorInfo', () => {
     document.body.removeChild(container);
   });
 
-  it('displays the operator address using CopyableAddress component', () => {
+  it('displays the operator address using CopyAddress component', () => {
     const { container, root } = renderInto(<></>);
     act(() => {
       root.render(

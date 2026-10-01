@@ -1,0 +1,26 @@
+{
+  "title": "Panel de control",
+  "newStream": "Nuevo flujo",
+  "totalsFor": "Totales para",
+  "rangeTo": "hasta",
+  "stats": {
+    "activeStreams": "Flujos activos",
+    "receivingPerSecond": "Recibiendo /s",
+    "totalReceived": "Total recibido",
+    "senders": "Remitentes"
+  },
+  "connectWallet": "Conecta tu billetera para ver tus flujos.",
+  "loadError": "No se pudieron cargar los flujos. Inténtalo de nuevo.",
+  "partialError_one": "No se pudo cargar {{count}} flujo",
+  "partialError_other": "No se pudieron cargar {{count}} flujos",
+  "retryLower": "reintentar",
+  "retrying": "Reintentando…",
+  "retryButton": "Reintentar",
+  "tabs": {
+    "receiving": "Recibiendo",
+    "sending": "Enviando"
+  },
+  "noStreamsYet": "Aún no hay flujos {{tab}}.",
+  "createFirstStream": "Crea tu primer flujo",
+  "connectionRestoredMessage": "Tus flujos aparecerán aquí cuando se restablezca la conexión."
+}

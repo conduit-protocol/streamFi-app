@@ -42,11 +42,36 @@ export function RateTicker({ ratePerSecond, startBalance, endTime, decimals = 7 
     update();
     if (endTime > 0 && Date.now() >= endTime * 1000) return;
 
-    const id = setInterval(() => {
-      update();
-      if (endTime > 0 && Date.now() >= endTime * 1000) clearInterval(id);
-    }, 100);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | undefined;
+    const stop = () => {
+      if (id !== undefined) {
+        clearInterval(id);
+        id = undefined;
+      }
+    };
+    const start = () => {
+      if (id !== undefined) return;
+      id = setInterval(() => {
+        update();
+        if (endTime > 0 && Date.now() >= endTime * 1000) stop();
+      }, 100);
+    };
+    // Pause while the tab is hidden; resync immediately on becoming visible (#596).
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        update();
+        if (!(endTime > 0 && Date.now() >= endTime * 1000)) start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [ratePerSecond, endTime, decimals]);
 
   return (

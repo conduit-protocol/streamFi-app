@@ -15,15 +15,36 @@ export function OnboardingTour() {
   const totalSteps = ONBOARDING_STEPS.length;
 
   return (
-    <Modal onClose={skip} title={currentStep.title}>
+    <Modal
+      onClose={skip}
+      title={currentStep.title}
+      headerAction={
+        <button
+          type="button"
+          onClick={skip}
+          aria-label="Skip tour"
+          className="text-xs font-medium text-gray-500 underline underline-offset-2 hover:text-black dark:text-gray-400 dark:hover:text-white transition-colors"
+        >
+          Skip Tour
+        </button>
+      }
+    >
       <div className="space-y-4">
         <p className="text-gray-600">{currentStep.description}</p>
 
-        {/* Step indicator */}
-        <div className="flex items-center gap-2">
-          {ONBOARDING_STEPS.map((_, idx) => (
+        {/* Step indicator — dots + "Step X of N" counter (#694) */}
+        <div
+          className="flex items-center gap-2"
+          role="progressbar"
+          aria-valuemin={1}
+          aria-valuemax={totalSteps}
+          aria-valuenow={stepNumber}
+          aria-label={`Step ${stepNumber} of ${totalSteps}`}
+        >
+          {ONBOARDING_STEPS.map((step, idx) => (
             <div
-              key={idx}
+              key={step.id}
+              aria-hidden="true"
               className={`h-2 flex-1 rounded-full transition-colors ${
                 idx <= currentStepIndex ? 'bg-black' : 'bg-gray-200'
               }`}

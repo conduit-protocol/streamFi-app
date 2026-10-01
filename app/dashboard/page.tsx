@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, AlertCircle, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import "@/lib/i18n";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
@@ -20,6 +22,12 @@ import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { isFulfilled } from "@/lib/safe-operations";
+import {
+  DATE_RANGE_PRESETS,
+  presetToRange,
+  streamInRange,
+  type DateRangePreset,
+} from "@/lib/date-range";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
@@ -130,6 +138,8 @@ async function loadRows(
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  // Proof-of-concept for the i18n migration (#558) — see lib/i18n/index.ts.
+  const { t } = useTranslation("dashboard");
   const { publicKey, connected } = useWallet();
   // When the RPC is unreachable, a global banner (NetworkTroubleBanner)
   // already explains the situation — suppress the per-page error card and the
@@ -140,6 +150,12 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
+  // Date-range filter for the aggregate totals (#547). Defaults to "all
+  // time" so existing behavior (no filtering) is preserved until the user
+  // opts in.
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [partialError, setPartialError] = useState<string | null>(null);
@@ -178,9 +194,7 @@ export default function DashboardPage() {
           setSending(sent.rows);
           const totalFailed = recv.failedCount + sent.failedCount;
           setPartialError(
-            totalFailed > 0
-              ? `${totalFailed} stream${totalFailed === 1 ? "" : "s"} couldn\u2019t load`
-              : null,
+            totalFailed > 0 ? t("partialError", { count: totalFailed }) : null,
           );
           setError(null);
           lastFetchAtRef.current = Date.now();
@@ -189,7 +203,7 @@ export default function DashboardPage() {
         if (!signal.aborted && isCurrent()) {
           console.error(e);
           captureError(e, { tags: { source: "dashboard-page" } });
-          setError("Failed to load streams. Please try again.");
+          setError(t("loadError"));
         }
       } finally {
         // Only the most recent fetch clears the in-flight latch — an older,
@@ -200,7 +214,7 @@ export default function DashboardPage() {
         }
       }
     },
-    [publicKey],
+    [publicKey, t],
   );
 
   const refetch = useCallback(
@@ -241,55 +255,71 @@ export default function DashboardPage() {
     };
   }, [publicKey, refetch]);
 
-  const activeCount = useMemo(
-    () =>
-      [...receiving, ...sending].filter((s) => s.status === "active").length,
-    [receiving, sending],
-  );
-  const receivingRate = useMemo(
-    () =>
-      receiving
-        .filter(
-          (s) =>
-            s.status === "active" &&
-            s.info &&
-            typeof s.info.ratePerSecond === "bigint",
-        )
-        .reduce((a, s) => a + s.info.ratePerSecond, 0n),
-    [receiving],
-  );
-  const totalWithdrawn = useMemo(
-    () =>
-      receiving
-        .filter((s) => s.info && typeof s.info.withdrawn === "bigint")
-        .reduce((a, s) => a + s.info.withdrawn, 0n),
-    [receiving],
-  );
-  const senderCount = useMemo(
-    () =>
-      new Set(receiving.filter((s) => s.info?.sender).map((s) => s.info.sender))
-        .size,
-    [receiving],
+  const range = useMemo(() => {
+    if (rangePreset !== "custom") return presetToRange(rangePreset);
+    const start = customStart ? Math.floor(new Date(customStart).getTime() / 1000) : null;
+    const end = customEnd ? Math.floor(new Date(customEnd).getTime() / 1000) + 86_400 - 1 : null;
+    return {
+      start: start !== null && Number.isFinite(start) ? start : null,
+      end: end !== null && Number.isFinite(end) ? end : null,
+    };
+  }, [rangePreset, customStart, customEnd]);
+
+  const filterByRange = useCallback(
+    (rows: StreamRow[]) =>
+      range.start === null && range.end === null
+        ? rows
+        : rows.filter((r) => streamInRange(r.info.startTime, r.info.endTime, range)),
+    [range],
   );
 
-  const displayed = tab === "receiving" ? receiving : sending;
+  const filteredReceiving = useMemo(() => filterByRange(receiving), [receiving, filterByRange]);
+  const filteredSending = useMemo(() => filterByRange(sending), [sending, filterByRange]);
+
+  // A wallet can be both the sender and recipient of the same stream. Dedupe
+  // by contract address so the portfolio KPIs never count that stream twice.
+  const allStreams = useMemo(
+    () => Array.from(new Map([...filteredReceiving, ...filteredSending].map((row) => [row.address, row])).values()),
+    [filteredReceiving, filteredSending],
+  );
+  const activeStreams = useMemo(
+    () => allStreams.filter((stream) => stream.status === "active"),
+    [allStreams],
+  );
+  const activeRunRate = useMemo(
+    () => activeStreams.reduce((total, stream) => total + stream.info.ratePerSecond, 0n),
+    [activeStreams],
+  );
+  // `withdrawn` is the amount already claimed and `withdrawable` is the
+  // accrued, unclaimed balance. Together they are the value streamed so far.
+  const totalValueStreamed = useMemo(
+    () => allStreams.reduce((total, stream) => total + stream.info.withdrawn + stream.withdrawable, 0n),
+    [allStreams],
+  );
+  const expiringSoon = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const weekFromNow = now + 7 * 24 * 60 * 60;
+    return activeStreams.filter((stream) => stream.info.endTime > now && stream.info.endTime <= weekFromNow).length;
+  }, [activeStreams]);
+
+  const displayed = tab === "receiving" ? filteredReceiving : filteredSending;
 
   const STATS = [
     {
-      label: "Active streams",
-      value: loading ? "…" : error ? "—" : String(activeCount),
+      label: t("stats.activeStreams"),
+      value: loading ? "…" : error ? "—" : String(activeStreams.length),
     },
     {
-      label: "Receiving /s",
-      value: loading ? "…" : error ? "—" : fromStroops(receivingRate),
+      label: t("stats.activeRunRate"),
+      value: loading ? "…" : error ? "—" : `${fromStroops(activeRunRate)} /s`,
     },
     {
-      label: "Total received",
-      value: loading ? "…" : error ? "—" : fromStroops(totalWithdrawn),
+      label: t("stats.totalValueStreamed"),
+      value: loading ? "…" : error ? "—" : fromStroops(totalValueStreamed),
     },
     {
-      label: "Senders",
-      value: loading ? "…" : error ? "—" : String(senderCount),
+      label: t("stats.expiringSoon"),
+      value: loading ? "…" : error ? "—" : String(expiringSoon),
     },
   ];
 
@@ -297,13 +327,53 @@ export default function DashboardPage() {
     <div className="max-w-3xl mx-auto px-4 py-10">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-black tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-black tracking-tight">{t("title")}</h1>
         {connected && (
           <Link href="/create" className="btn-primary text-sm">
-            <Plus className="w-4 h-4" /> New stream
+            <Plus className="w-4 h-4" /> {t("newStream")}
           </Link>
         )}
       </div>
+
+      {/* Date-range filter (#547) */}
+      {connected && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <label htmlFor="dashboard-range" className="text-xs text-gray-400 dark:text-gray-500">
+            {t("totalsFor")}
+          </label>
+          <select
+            id="dashboard-range"
+            value={rangePreset}
+            onChange={(e) => setRangePreset(e.target.value as DateRangePreset)}
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+          >
+            {DATE_RANGE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          {rangePreset === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                aria-label="Range start"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+              <span className="text-xs text-gray-400">{t("rangeTo")}</span>
+              <input
+                type="date"
+                aria-label="Range end"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Aggregate stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
@@ -370,34 +440,34 @@ export default function DashboardPage() {
             disabled={loading}
             className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
           >
-            {loading ? "Retrying\u2026" : "retry"}
+            {loading ? t("retrying") : t("retryLower")}
           </button>
         </div>
       )}
 
       {!connected ? (
         <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-          Connect your wallet to see your streams.
+          {t("connectWallet")}
         </div>
       ) : (
         <>
           {/* Tabs */}
           <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800 mb-6">
-            {(["receiving", "sending"] as Tab[]).map((t) => (
+            {(["receiving", "sending"] as Tab[]).map((tabOption) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabOption}
+                onClick={() => setTab(tabOption)}
                 className={[
                   "px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors",
-                  tab === t
+                  tab === tabOption
                     ? "border-black text-black dark:border-white dark:text-white"
                     : "border-transparent text-gray-400 hover:text-black dark:hover:text-white",
                 ].join(" ")}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t(`tabs.${tabOption}`)}
                 {!loading && (
                   <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-gray-500">
-                    ({(t === "receiving" ? receiving : sending).length})
+                    ({(tabOption === "receiving" ? filteredReceiving : filteredSending).length})
                   </span>
                 )}
               </button>
@@ -446,12 +516,12 @@ export default function DashboardPage() {
                 className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
               >
                 <RefreshCw className="w-4 h-4" aria-hidden="true" />
-                Retry
+                {t("retryButton")}
               </button>
             </div>
           ) : displayed.length === 0 && error ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-              Your streams will appear here once the connection is back.
+              {t("connectionRestoredMessage")}
             </div>
           ) : displayed.length === 0 && partialError ? (
             <div className="card text-center py-12 text-sm text-gray-500 dark:text-gray-400">
@@ -461,12 +531,12 @@ export default function DashboardPage() {
                 disabled={loading}
                 className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
               >
-                {loading ? "Retrying…" : "Retry"}
+                {loading ? t("retrying") : t("retryButton")}
               </button>
             </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-              No {tab} streams yet.
+              {t("noStreamsYet", { tab })}
               {tab === "sending" && (
                 <>
                   {" "}
@@ -474,7 +544,7 @@ export default function DashboardPage() {
                     href="/create"
                     className="underline hover:text-black dark:hover:text-white"
                   >
-                    Create your first stream
+                    {t("createFirstStream")}
                   </Link>
                 </>
               )}

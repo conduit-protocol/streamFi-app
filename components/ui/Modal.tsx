@@ -9,6 +9,8 @@ interface ModalProps {
   children: React.ReactNode;
   /** Max width class; default 'max-w-md' */
   size?:    string;
+  /** Optional action rendered in the header next to the close button (#694). */
+  headerAction?: React.ReactNode;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -24,7 +26,7 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 }
 
-export function Modal({ title, onClose, children, size = 'max-w-md' }: ModalProps) {
+export function Modal({ title, onClose, children, size = 'max-w-md', headerAction }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -88,13 +90,16 @@ export function Modal({ title, onClose, children, size = 'max-w-md' }: ModalProp
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
           <h2 id="modal-title" className="font-bold text-sm">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-gray-400 hover:text-black hover:bg-gray-100 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {headerAction}
+            <button
+              onClick={onClose}
+              className="p-1 rounded text-gray-400 hover:text-black hover:bg-gray-100 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Providers } from '@/components/Providers';
 import { Navbar } from '@/components/Navbar';
+import { CommandPalette } from '@/components/CommandPalette';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { CircuitBreakerOverlay } from '@/components/CircuitBreakerOverlay';
 import { initErrorTracking } from '@/lib/error-tracking';
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="bg-white dark:bg-gray-950 text-black dark:text-white antialiased">
         <Providers>
           <Navbar />
+          <CommandPalette />
           <main className="pt-16 min-h-screen">
             {/* A render crash in one route (e.g. a component reading an
                 undefined value in a state hook) should not take down the

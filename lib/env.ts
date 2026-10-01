@@ -13,6 +13,7 @@
  */
 
 import { loadSelectedNetwork } from './network-storage';
+import { CUSTOM_RPC_STORAGE_KEY, isValidRpcUrl } from './custom-rpc';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -27,11 +28,18 @@ function required(name: string): string {
 /**
  * Return the RPC URL for the currently selected network.
  *
- * If the user has selected a known network (testnet/mainnet/local) from
- * settings, its well-known RPC URL is used. Otherwise falls back to
- * NEXT_PUBLIC_SOROBAN_RPC_URL so a custom/deployed URL can still be set.
+ * Precedence: an explicit custom override saved from Settings (#691) wins,
+ * then NEXT_PUBLIC_SOROBAN_RPC_URL, then the selected preset's well-known URL.
  */
 export function getRpcUrl(): string {
+  try {
+    if (typeof window !== 'undefined') {
+      const custom = window.localStorage.getItem(CUSTOM_RPC_STORAGE_KEY);
+      if (custom && isValidRpcUrl(custom)) return custom.trim();
+    }
+  } catch {
+    /* storage unavailable — fall through to presets */
+  }
   const selected = loadSelectedNetwork();
   return process.env['NEXT_PUBLIC_SOROBAN_RPC_URL'] || selected.rpcUrl;
 }

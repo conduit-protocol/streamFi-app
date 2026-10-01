@@ -67,6 +67,10 @@
   .badge-ended     { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
   .badge-cancelled { @apply badge border border-gray-200 text-gray-300 line-through dark:border-gray-700 dark:text-gray-600; }
 
+  /* Active-network indicator (#559) — dashed border keeps it visually
+     distinct from stream-status badges while staying black/white/gray. */
+  .badge-network   { @apply badge border border-dashed border-black text-black uppercase tracking-wide dark:border-white dark:text-white; }
+
   /* Amount display */
   .amount {
     @apply font-mono tabular-nums slashed-zero;
@@ -77,6 +81,31 @@
 @keyframes stream-progress-fill {
   from { width: 0%; }
   to   { width: 100%; }
+}
+
+/* Skeleton shimmer (#693) — linear-gradient sweep for loading placeholders.
+ * Applied alongside `animate-pulse` so skeletons shimmer instead of looking
+ * like flat, broken gray boxes. */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+  }
 }
 
 /* ── Print stylesheet (#555, #571) ────────────────────────────────────────── */

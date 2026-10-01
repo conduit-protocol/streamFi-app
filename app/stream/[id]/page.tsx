@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, FileText, Share2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { CopyableAddress } from "@/components/ui/CopyableAddress";
+import { CopyAddress } from "@/components/ui/CopyAddress";
+import { QrCodeModal } from "@/components/ui/QrCodeModal";
 import { RateTicker } from "@/components/stream/RateTicker";
 import { StreamTimeline } from "@/components/stream/StreamTimeline";
 import { StreamFlowChart } from "@/components/stream/StreamFlowChart";
 import { StreamActions } from "@/components/stream/StreamActions";
+import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
 import { OperatorInfo } from "@/components/stream/OperatorInfo";
 import { StreamNoteEditor } from "@/components/stream/StreamNoteEditor";
 import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
@@ -26,6 +28,7 @@ import {
 import { useNetworkStatus } from "@/hooks/useNetworkStatus";
 import { fromStroops, formatTimestamp, truncateAddress } from "@/lib/format";
 import { tokenByAddress } from "@/lib/tokens";
+import { tryGetFactoryContractId } from "@/lib/env";
 import { useSettings, MIN_REFRESH_INTERVAL_S } from "@/hooks/useSettings";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -55,7 +58,7 @@ export default function StreamPage() {
   // NetworkTroubleBanner — defer to it rather than printing a raw
   // "circuit breaker open" string here.
   const { status: networkStatus } = useNetworkStatus();
-  const { autoRefreshInterval } = useSettings();
+  const { autoRefreshInterval, advancedMode } = useSettings();
   const mounted = useRef(true);
   const loadSeq = useRef(0);
 
@@ -68,6 +71,8 @@ export default function StreamPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<StreamStatus>("active");
+  // #688 — shareable claim-link QR modal state.
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Use stream note hook — only available after streamAddress is resolved
   const noteHook = useStreamNote(streamAddress || "");
@@ -255,6 +260,14 @@ export default function StreamPage() {
     tokenByAddress(info.token, "testnet")?.symbol ??
     truncateAddress(info.token);
 
+  // #688 — direct stream claim URL for QR sharing. Built from the current
+  // origin on the client so a scanned code opens this exact stream page
+  // (claim/monitor) on the recipient's device.
+  const claimUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/stream/${id}`
+      : `/stream/${id}`;
+
   return (
     <div
       className="max-w-2xl mx-auto px-4 py-10 print-receipt"
@@ -278,12 +291,30 @@ export default function StreamPage() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
-            <CopyableAddress address={streamAddress} />
+            <CopyAddress address={streamAddress} />
           </p>
           <h1 className="text-2xl font-black tracking-tight">Stream #{id}</h1>
         </div>
         <div className="flex items-center gap-2">
           <Badge status={status} />
+          {/* Share stream claim link via QR code (#688) */}
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border border-gray-300 dark:border-gray-700 text-black dark:text-white hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors print:hidden"
+            aria-label="Share stream"
+          >
+            <Share2 className="w-3.5 h-3.5" aria-hidden="true" />
+            Share
+          </button>
+          {/* Add stream end date to an external calendar (#566) */}
+          {info.endTime > 0 && (
+            <AddToCalendarButton
+              streamId={id}
+              streamAddress={streamAddress}
+              endTime={info.endTime}
+            />
+          )}
           {/* Download PDF summary — triggers the @media print stylesheet (#571) */}
           <button
             type="button"
@@ -410,7 +441,7 @@ export default function StreamPage() {
                 Sender
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.sender} />
+                <CopyAddress address={info.sender} />
               </td>
             </tr>
             <tr>
@@ -418,7 +449,7 @@ export default function StreamPage() {
                 Recipient
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.recipient} />
+                <CopyAddress address={info.recipient} />
               </td>
             </tr>
             <tr>
@@ -426,14 +457,24 @@ export default function StreamPage() {
                 Token
               </td>
               <td className="py-2.5 text-black dark:text-white text-right">
-                <CopyableAddress address={info.token} />
+                <CopyAddress address={info.token} />
               </td>
             </tr>
             <tr>
               <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">
                 Rate
               </td>
-              <td className="py-2.5 font-mono text-black dark:text-white text-right">{`${fromStroops(info.ratePerSecond)} / sec`}</td>
+              <td className="py-2.5 font-mono text-black dark:text-white text-right">
+                {`${fromStroops(info.ratePerSecond)} / sec`}
+                {advancedMode && (
+                  <span
+                    className="block text-[11px] text-gray-400 dark:text-gray-500"
+                    title={`${info.ratePerSecond.toString()} stroops per second`}
+                  >
+                    {info.ratePerSecond.toString()} stroops/s
+                  </span>
+                )}
+              </td>
             </tr>
             <tr>
               <td className="py-2.5 text-gray-400 dark:text-gray-500 w-40">
@@ -441,6 +482,11 @@ export default function StreamPage() {
               </td>
               <td className="py-2.5 font-mono text-black dark:text-white text-right">
                 {fromStroops(totalDeposited)}
+                {advancedMode && (
+                  <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                    {totalDeposited.toString()} stroops
+                  </span>
+                )}
               </td>
             </tr>
             <tr>
@@ -449,6 +495,11 @@ export default function StreamPage() {
               </td>
               <td className="py-2.5 font-mono text-black dark:text-white text-right">
                 {fromStroops(info.withdrawn)}
+                {advancedMode && (
+                  <span className="block text-[11px] text-gray-400 dark:text-gray-500">
+                    {info.withdrawn.toString()} stroops
+                  </span>
+                )}
               </td>
             </tr>
             <tr>
@@ -481,6 +532,87 @@ export default function StreamPage() {
         </table>
       </Card>
 
+      {/* Advanced details — only when advanced mode is enabled (#586).
+          Surfaces raw stroop values and full contract addresses inline so
+          power users can verify on-chain state without leaving the page. */}
+      {advancedMode && (
+        <Card className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-3">
+            Advanced details
+          </h2>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Stream contract
+              </dt>
+              <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                <CopyableAddress address={streamAddress} />
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Token contract
+              </dt>
+              <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                <CopyableAddress address={info.token} />
+              </dd>
+            </div>
+            {tryGetFactoryContractId() && (
+              <div className="flex items-start justify-between gap-3">
+                <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                  Factory contract
+                </dt>
+                <dd className="text-right break-all font-mono text-xs text-black dark:text-white">
+                  <CopyableAddress
+                    address={tryGetFactoryContractId() as string}
+                  />
+                </dd>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Rate (stroops/s)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {info.ratePerSecond.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Withdrawable (stroops)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {withdrawable.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Withdrawn (stroops)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white break-all">
+                {info.withdrawn.toString()}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                Start (unix)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white">
+                {info.startTime}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-3">
+              <dt className="text-gray-400 dark:text-gray-500 shrink-0">
+                End (unix)
+              </dt>
+              <dd className="text-right font-mono text-xs text-black dark:text-white">
+                {info.endTime}
+              </dd>
+            </div>
+          </dl>
+        </Card>
+      )}
+
       {/* Actions */}
       {(isSender || isRecipient) && (
         <div className="print:hidden">
@@ -491,6 +623,8 @@ export default function StreamPage() {
             isSender={isSender}
             isRecipient={isRecipient}
             withdrawable={withdrawable}
+            totalDeposited={totalDeposited}
+            withdrawn={info.withdrawn}
             token={tokenSymbol}
             onSuccess={loadStream}
           />
@@ -526,6 +660,15 @@ export default function StreamPage() {
           ⚠ This stream has clawback enabled. The sender may reclaim unstreamed
           tokens at any time.
         </p>
+      )}
+
+      {/* Share stream claim-link QR modal (#688) */}
+      {shareOpen && (
+        <QrCodeModal
+          value={claimUrl}
+          title={`Share Stream #${id}`}
+          onClose={() => setShareOpen(false)}
+        />
       )}
     </div>
   );

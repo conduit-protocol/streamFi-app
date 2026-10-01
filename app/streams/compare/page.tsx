@@ -8,12 +8,15 @@ import { ArrowLeft }                     from 'lucide-react';
 import { Badge }             from '@/components/ui/Badge';
 import { StreamProgressBar } from '@/components/stream/StreamProgressBar';
 import { useWallet }         from '@/contexts/WalletContext';
+import { useSettings } from '@/hooks/useSettings';
 import { getStreamAddress, getStreamInfo, type StreamInfo } from '@/lib/stream';
 import { fromStroops, formatDuration, formatTimestamp, truncateAddress } from '@/lib/format';
 import { tokenByAddress }    from '@/lib/tokens';
 import {
   compareMetrics,
+  countCompareIds,
   parseCompareIds,
+  MAX_COMPARE,
   MIN_COMPARE,
   type CompareMetrics,
 } from '@/lib/stream-compare';
@@ -122,6 +125,7 @@ function CompareView() {
   const searchParams          = useSearchParams();
   const idsParam              = searchParams.get('ids');
   const { publicKey, connected } = useWallet();
+  const { advancedMode } = useSettings();
 
   const [columns, setColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(false);
@@ -149,6 +153,8 @@ function CompareView() {
   }, [publicKey, idsParam]);
 
   const ids = parseCompareIds(idsParam);
+  const requested = countCompareIds(idsParam);
+  const overLimit = requested > MAX_COMPARE;
 
   let body: React.ReactNode;
   if (!connected || !publicKey) {
@@ -172,16 +178,28 @@ function CompareView() {
       </div>
     );
   } else {
+    // #689 — responsive multi-column grid: 2 columns fit comfortably, 3–4
+    // columns scroll horizontally on small screens and sit side-by-side on
+    // lg+ (max-w-6xl). Each stream gets an equal min-width column so 3 or 4
+    // schedules remain comparable without squashing.
+    const columnCount = columns.length;
     body = (
-      <div className="card p-0 overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+      <div
+        className="card p-0 overflow-x-auto"
+        data-testid="compare-grid"
+        data-columns={columnCount}
+      >
+        <table
+          className="w-full text-sm border-collapse"
+          style={{ minWidth: columnCount >= 4 ? 860 : columnCount >= 3 ? 720 : 520 }}
+        >
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-800">
-              <th scope="col" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 w-32">
+              <th scope="col" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 w-32 min-w-[120px] sticky left-0 bg-white dark:bg-gray-950 z-10">
                 <span className="sr-only">Metric</span>
               </th>
               {columns.map((col) => (
-                <th key={col.id} scope="col" className="text-left p-3 font-black">
+                <th key={col.id} scope="col" className="text-left p-3 font-black min-w-[150px] sm:min-w-[170px]">
                   <Link href={`/stream/${col.id}`} className="hover:underline">Stream #{col.id}</Link>
                 </th>
               ))}
@@ -190,11 +208,11 @@ function CompareView() {
           <tbody>
             {ROWS.map((row) => (
               <tr key={row.label} className="border-b last:border-b-0 border-gray-100 dark:border-gray-800/60">
-                <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top">
+                <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top sticky left-0 bg-white dark:bg-gray-950 z-10">
                   {row.label}
                 </th>
                 {columns.map((col) => (
-                  <td key={col.id} className="p-3 align-top">
+                  <td key={col.id} className="p-3 align-top min-w-[150px] sm:min-w-[170px]">
                     {col.kind === 'error' ? (
                       row === ROWS[0] ? <span role="alert" className="text-xs text-gray-500">{col.message}</span> : <span className="text-gray-300 dark:text-gray-700">—</span>
                     ) : (
@@ -207,6 +225,39 @@ function CompareView() {
                 ))}
               </tr>
             ))}
+            {/* Raw stroop rates + full token contract addresses — advanced mode only (#586) */}
+            {advancedMode && (
+              <>
+                <tr className="border-b last:border-b-0 border-gray-100 dark:border-gray-800/60">
+                  <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top">
+                    Rate (stroops/s)
+                  </th>
+                  {columns.map((col) => (
+                    <td key={col.id} className="p-3 align-top font-mono text-xs break-all">
+                      {col.kind === 'error' ? (
+                        <span className="text-gray-300 dark:text-gray-700">—</span>
+                      ) : (
+                        col.info.ratePerSecond.toString()
+                      )}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="border-b last:border-b-0 border-gray-100 dark:border-gray-800/60">
+                  <th scope="row" className="text-left p-3 text-xs font-medium text-gray-400 dark:text-gray-500 whitespace-nowrap align-top">
+                    Token contract
+                  </th>
+                  {columns.map((col) => (
+                    <td key={col.id} className="p-3 align-top font-mono text-xs break-all">
+                      {col.kind === 'error' ? (
+                        <span className="text-gray-300 dark:text-gray-700">—</span>
+                      ) : (
+                        col.info.token
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
@@ -214,11 +265,23 @@ function CompareView() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
+    <div className="max-w-6xl mx-auto px-4 py-10">
       <Link href="/streams" className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-black dark:hover:text-white mb-6">
         <ArrowLeft className="w-3.5 h-3.5" /> All streams
       </Link>
-      <h1 className="text-2xl font-black tracking-tight mb-8">Compare streams</h1>
+      <h1 className="text-2xl font-black tracking-tight mb-2">Compare streams</h1>
+      {columns.length >= 2 && (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-6">
+          Comparing {columns.length} of up to {MAX_COMPARE} streams side-by-side
+        </p>
+      )}
+      {columns.length < 2 && <div className="mb-6" />}
+      {overLimit && connected && publicKey && (
+        <div role="status" className="card mb-4 text-sm text-gray-500 dark:text-gray-400">
+          You can compare up to {MAX_COMPARE} streams at a time. Showing the first {MAX_COMPARE} of the{' '}
+          {requested} you selected.
+        </div>
+      )}
       {body}
     </div>
   );

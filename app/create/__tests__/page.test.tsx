@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -6,9 +6,11 @@ import { createRoot } from 'react-dom/client';
 
 const TEST_RECIPIENT = 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL';
 
+let mockPublicKey: string | null = 'GSENDER1234567890ABCDEF';
+
 vi.mock('@/contexts/WalletContext', () => ({
   useWallet: () => ({
-    publicKey: 'GSENDER1234567890ABCDEF',
+    publicKey: mockPublicKey,
     connected: true,
     signTx: vi.fn(),
   }),
@@ -493,6 +495,108 @@ describe('CreatePage — recipient check debounce (#466)', () => {
 
     expect(mockCheckRecipientExists).toHaveBeenCalledTimes(1);
     expect(mockCheckRecipientExists).toHaveBeenCalledWith(SECOND_RECIPIENT, expect.any(Object));
+    cleanup(root, container);
+  });
+});
+
+describe('CreatePage — self-recipient warning (issue #591)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPublicKey = TEST_RECIPIENT;
+    mockCheckRecipientExists.mockResolvedValue(true);
+    mockIsMock.mockReturnValue(true);
+    mockCreateStream.mockResolvedValue({ hash: 'tx_hash_abc', streamId: 7n });
+    mockRefreshStreamData.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    mockPublicKey = 'GSENDER1234567890ABCDEF';
+  });
+
+  function selfAcknowledgement(container: HTMLElement): HTMLInputElement | null {
+    return container.querySelector('input[name="acknowledgeSelfRecipient"]');
+  }
+
+  it('warns when recipient equals connected wallet address and disables submit until acknowledged', async () => {
+    const { container, root } = renderCreatePage();
+
+    await fillRecipient(container, TEST_RECIPIENT);
+    await fillDeposit(container, '1000');
+
+    expect(container.textContent).toContain('Self-recipient warning — streaming to your own address.');
+    expect(container.textContent).toContain('The recipient address matches your connected wallet');
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(true);
+
+    cleanup(root, container);
+  });
+
+  it('never submits an unacknowledged self-recipient, even if submission is forced', async () => {
+    const { container, root } = renderCreatePage();
+
+    await fillRecipient(container, TEST_RECIPIENT);
+    await fillDeposit(container, '1000');
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(mockCreateStream).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Confirm you want to create a stream to your own connected address.');
+
+    cleanup(root, container);
+  });
+
+  it('creates the stream once the user confirms self-recipient stream', async () => {
+    const { container, root } = renderCreatePage();
+
+    await fillRecipient(container, TEST_RECIPIENT);
+    await fillDeposit(container, '1000');
+
+    const checkbox = selfAcknowledgement(container)!;
+    await act(async () => {
+      checkbox.click();
+    });
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.requestSubmit();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(mockCreateStream).toHaveBeenCalledTimes(1);
+    expect(mockCreateStream).toHaveBeenCalledWith(
+      expect.objectContaining({ recipient: TEST_RECIPIENT }),
+      expect.anything(),
+    );
+
+    cleanup(root, container);
+  });
+
+  it('withdraws the self-recipient acknowledgement when the recipient address is edited', async () => {
+    const { container, root } = renderCreatePage();
+
+    await fillRecipient(container, TEST_RECIPIENT);
+    await fillDeposit(container, '1000');
+    await act(async () => {
+      selfAcknowledgement(container)!.click();
+    });
+    expect(selfAcknowledgement(container)!.checked).toBe(true);
+
+    const SECOND_RECIPIENT = 'GCBBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILFH';
+    await fillRecipient(container, SECOND_RECIPIENT);
+    await fillRecipient(container, TEST_RECIPIENT);
+
+    expect(selfAcknowledgement(container)!.checked).toBe(false);
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(true);
+
     cleanup(root, container);
   });
 });

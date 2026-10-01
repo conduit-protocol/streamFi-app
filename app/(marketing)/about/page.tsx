@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PROTOCOL_CONTRACTS } from '@/lib/protocol-contracts';
 
 export const metadata = {
   title:       'About — Conduit',
@@ -41,20 +42,7 @@ export default function AboutPage() {
 
       <h2 className="text-lg font-black mb-3">Contracts</h2>
       <div className="space-y-3 mb-8">
-        {[
-          {
-            name: 'DripStream',
-            desc: 'One per stream. Holds the token balance. Enforces the release schedule. Self-contained.',
-          },
-          {
-            name: 'DripFactory',
-            desc: 'Singleton entry point. Deploys DripStream contracts, assigns IDs, maintains the global index.',
-          },
-          {
-            name: 'DripGovernor',
-            desc: 'Protocol configuration. Holds fee rates and minimum durations. Controlled by a multisig authority.',
-          },
-        ].map(c => (
+        {PROTOCOL_CONTRACTS.map(c => (
           <div key={c.name} className="card">
             <p className="font-mono font-bold text-sm mb-1">{c.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">{c.desc}</p>
@@ -65,13 +53,16 @@ export default function AboutPage() {
       <h2 className="text-lg font-black mb-3">Status</h2>
       <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400 mb-8">
         {([
-          ['DripStream contract',   '✓ Testnet'],
-          ['DripFactory contract',  '✓ Testnet'],
-          ['DripGovernor contract', '○ In progress'],
-          ['conduit-sdk',           '✓ v0.1'],
-          ['conduit-app',           '○ Beta'],
-          ['Mainnet deployment',    '○ Planned Q3 2026'],
-          ['Security audit',        '○ Not started'],
+          ['DripStream contract',              '✓ Testnet'],
+          ['DripFactory contract',             '✓ Testnet'],
+          ['DripGovernor contract',            '○ In progress'],
+          ['BatchTransferProcessor contract',  '○ In progress'],
+          ['Oracle contract',                  '○ In progress'],
+          ['TokenVault contract',              '○ In progress'],
+          ['conduit-sdk',                      '✓ v0.1'],
+          ['conduit-app',                      '○ Beta'],
+          ['Mainnet deployment',               '○ Planned Q3 2026'],
+          ['Security audit',                   '○ Not started'],
         ] as const).map(([label, value]) => (
           <div key={label} className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 py-1.5">
             <span>{label}</span>

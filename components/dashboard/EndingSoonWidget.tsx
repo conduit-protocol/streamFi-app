@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
-import { CopyableAddress } from '@/components/ui/CopyableAddress';
+import { CopyAddress } from '@/components/ui/CopyAddress';
 import { Badge } from '@/components/ui/Badge';
 import type { StreamInfo } from '@/lib/stream';
 
@@ -85,7 +85,7 @@ export function EndingSoonWidget({
                     {stream.role === 'recipient' ? 'Receiving from' : 'Sending to'}
                   </p>
                   <div className="truncate max-w-[180px]">
-                    <CopyableAddress address={stream.counterparty} />
+                    <CopyAddress address={stream.counterparty} />
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
