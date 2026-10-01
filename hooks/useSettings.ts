@@ -33,6 +33,13 @@ export interface PublicSettings {
   timeFormat: TimeFormat;
   /** 0 = disabled */
   autoRefreshInterval: RefreshIntervalSeconds;
+  /**
+   * When true, advanced/debugging details are surfaced across the app:
+   * raw stroop amounts, full contract addresses, and the stream compare
+   * view link. Mirrors the `advancedMode` toggle on the settings page
+   * (issue #586).
+   */
+  advancedMode: boolean;
 }
 
 const STORAGE_KEY = "conduit:settings";
@@ -40,6 +47,7 @@ const STORAGE_KEY = "conduit:settings";
 const DEFAULTS: PublicSettings = {
   timeFormat: "absolute",
   autoRefreshInterval: 0,
+  advancedMode: false,
 };
 
 function readFromStorage(): PublicSettings {
@@ -55,6 +63,7 @@ function readFromStorage(): PublicSettings {
       )
         ? (parsed.autoRefreshInterval as RefreshIntervalSeconds)
         : 0,
+      advancedMode: parsed.advancedMode === true,
     };
   } catch {
     return DEFAULTS;
@@ -62,18 +71,38 @@ function readFromStorage(): PublicSettings {
 }
 
 /**
- * Returns current public settings, and re-reads them whenever another tab or
- * the settings page writes to localStorage (via the `storage` event).
+ * Custom event fired on `window` after a same-tab settings write so mounted
+ * components re-read without waiting for a cross-tab `storage` event (which
+ * by spec never fires in the tab that performed the write). See #586.
+ */
+export const SETTINGS_UPDATED_EVENT = "conduit:settings-updated";
+
+/** Notify mounted `useSettings` subscribers to re-read from localStorage. */
+export function notifySettingsUpdated(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SETTINGS_UPDATED_EVENT));
+  }
+}
+
+/**
+ * Returns current public settings, and re-reads them whenever any tab (via
+ * the `storage` event) or the settings page in this tab (via
+ * {@link notifySettingsUpdated}) writes to localStorage.
  */
 export function useSettings(): PublicSettings {
   const [settings, setSettings] = useState<PublicSettings>(readFromStorage);
 
   useEffect(() => {
+    const refresh = () => setSettings(readFromStorage());
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setSettings(readFromStorage());
+      if (e.key === STORAGE_KEY) refresh();
     };
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(SETTINGS_UPDATED_EVENT, refresh);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, refresh);
+    };
   }, []);
 
   return settings;

@@ -18,6 +18,7 @@ import {
   type TimeFormat,
   type RefreshIntervalSeconds,
   REFRESH_INTERVAL_OPTIONS,
+  notifySettingsUpdated,
 } from "@/hooks/useSettings";
 
 
@@ -102,6 +103,9 @@ export default function SettingsPage() {
 
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      // Wake up mounted useSettings() subscribers in this tab — the
+      // `storage` event only fires in *other* tabs (#586).
+      notifySettingsUpdated();
     } catch {
       // Storage can be unavailable in private browsing or embedded webviews.
     }
