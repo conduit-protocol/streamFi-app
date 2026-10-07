@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { toCsv, downloadCsv } from './csv';
+import { toCsv, downloadCsv, streamsToCsv, DEFAULT_STREAM_COLUMNS } from './csv';
 
 describe('toCsv', () => {
   it('joins a header row and data rows with CRLF', () => {
@@ -40,6 +40,76 @@ describe('toCsv', () => {
     expect(toCsv(['n'], [['-50.42'], ['+3'], ['1000.00']])).toBe(
       'n\r\n-50.42\r\n+3\r\n1000.00',
     );
+  });
+});
+
+describe('streamsToCsv', () => {
+  const sampleStreams = [
+    {
+      id: 'stream-1',
+      sender: 'G_ALICE',
+      recipient: 'G_BOB',
+      amount: '500.00',
+      status: 'Active',
+      startTime: 1700000000,
+      endTime: 1705000000,
+    },
+    {
+      id: 'stream-2',
+      sender: 'G_CHARLIE',
+      recipient: 'G_DAVE',
+      amount: '1200.50',
+      status: 'Completed',
+      startTime: 1701000000,
+      endTime: 1706000000,
+    },
+  ];
+
+  it('exports with default column mapping', () => {
+    const csv = streamsToCsv(sampleStreams);
+    const headers = DEFAULT_STREAM_COLUMNS.map((c) => c.header).join(',');
+    expect(csv.startsWith(headers)).toBe(true);
+    expect(csv).toContain('stream-1,G_ALICE,G_BOB,500.00,Active');
+    expect(csv).toContain('stream-2,G_CHARLIE,G_DAVE,1200.50,Completed');
+  });
+
+  it('supports custom column selection and custom headers for accounting software', () => {
+    const customMappings = [
+      { key: 'id', header: 'Reference ID' },
+      { key: 'recipient', header: 'Payee Account' },
+      { key: 'amount', header: 'Gross Amount' },
+      { key: 'startTime', header: 'Start Date', dateFormat: 'date-only' as const },
+    ];
+
+    const csv = streamsToCsv(sampleStreams, { columnMappings: customMappings });
+    expect(csv).toContain('Reference ID,Payee Account,Gross Amount,Start Date');
+    expect(csv).toContain('stream-1,G_BOB,500.00,2023-11-14');
+    expect(csv).toContain('stream-2,G_DAVE,1200.50,2023-11-26');
+  });
+
+  it('supports custom formatters for columns', () => {
+    const customMappings = [
+      { key: 'id', header: 'ID' },
+      {
+        key: 'amount',
+        header: 'Formatted Amount',
+        format: (val: any) => `$${val}`,
+      },
+    ];
+
+    const csv = streamsToCsv(sampleStreams, { columnMappings: customMappings });
+    expect(csv).toContain('ID,Formatted Amount');
+    expect(csv).toContain('stream-1,$500.00');
+  });
+
+  it('supports unix timestamp format', () => {
+    const customMappings = [
+      { key: 'id', header: 'ID' },
+      { key: 'startTime', header: 'Epoch', dateFormat: 'unix' as const },
+    ];
+
+    const csv = streamsToCsv(sampleStreams, { columnMappings: customMappings });
+    expect(csv).toContain('stream-1,1700000000');
   });
 });
 
