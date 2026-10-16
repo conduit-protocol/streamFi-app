@@ -63,6 +63,8 @@ describe('CircuitBreakerOverlay', () => {
 
     expect(container.textContent).toContain(WRITE_SCOPE);
     expect(container.textContent).toContain('OPEN (13s)');
+    expect(container.textContent).toContain('Retrying in 13s...');
+    expect(container.querySelector('svg.animate-spin')).not.toBeNull();
   });
 
   it('shows a closed scope with its consecutive failure count', () => {

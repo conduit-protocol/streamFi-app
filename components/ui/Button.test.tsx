@@ -152,6 +152,28 @@ describe('Button — loading state', () => {
     expect(button().disabled).toBe(true);
     cleanup();
   });
+
+  it('sets aria-busy="true" when loading is true', () => {
+    const { button, cleanup } = render(<Button loading>Submit</Button>);
+    expect(button().getAttribute('aria-busy')).toBe('true');
+    cleanup();
+  });
+
+  it('does not set aria-busy when loading is false or omitted', () => {
+    const { button, cleanup } = render(<Button>Submit</Button>);
+    expect(button().getAttribute('aria-busy')).toBeNull();
+    cleanup();
+  });
+
+  it('supports loadingSpinner prop and sets aria-busy="true" with spinner', () => {
+    const { button, cleanup } = render(<Button loadingSpinner>Submitting...</Button>);
+    expect(button().disabled).toBe(true);
+    expect(button().getAttribute('aria-busy')).toBe('true');
+    const svg = button().querySelector('svg');
+    expect(svg).not.toBeNull();
+    expect(svg?.classList.contains('animate-spin')).toBe(true);
+    cleanup();
+  });
 });
 
 describe('Button — click handler', () => {

@@ -12,6 +12,8 @@ export function getNextTheme(theme?: string): ThemeChoice {
   return 'light';
 }
 
+export const THEME_STORAGE_KEY = 'streamfi-theme';
+
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -20,7 +22,17 @@ export function ThemeToggle() {
   // label would otherwise go stale until some unrelated re-render happened.
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('theme');
+      if (stored && (stored === 'light' || stored === 'dark' || stored === 'system') && stored !== theme) {
+        setTheme(stored);
+      }
+    } catch {
+      // Storage unavailable in private browsing
+    }
+  }, []);
 
   useEffect(() => {
     const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -44,9 +56,19 @@ export function ThemeToggle() {
         ? 'Switch to dark mode'
         : 'Switch to light mode';
 
+  const handleToggle = () => {
+    setTheme(nextTheme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      localStorage.setItem('theme', nextTheme);
+    } catch {
+      // Storage unavailable in private browsing
+    }
+  };
+
   return (
     <button
-      onClick={() => setTheme(nextTheme)}
+      onClick={handleToggle}
       className="inline-flex items-center justify-center w-9 h-9 rounded text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
       aria-label={label}
       title={label}

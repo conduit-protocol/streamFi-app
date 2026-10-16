@@ -142,6 +142,24 @@ export function isCircuitOpen(scope?: string): boolean {
   return false;
 }
 
+/**
+ * Test connectivity for a circuit breaker scope and update breaker state.
+ * Resets breaker on success or records failure.
+ */
+export async function testCircuit(scope?: string): Promise<boolean> {
+  try {
+    const server = getServer();
+    await server.getFeeStats();
+    resetCircuitBreaker(scope);
+    return true;
+  } catch (err) {
+    if (isTransportFailure(err)) {
+      recordFailure(scope);
+    }
+    return false;
+  }
+}
+
 function recordFailure(scope?: string): void {
   const key = getCircuitKey(scope);
   const state = getCircuitState(key);

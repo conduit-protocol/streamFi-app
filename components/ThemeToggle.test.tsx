@@ -14,4 +14,9 @@ describe('ThemeToggle theme cycling', () => {
     expect(getNextTheme('system')).toBe('light');
     expect(getNextTheme(undefined)).toBe('light');
   });
+
+  it('exports THEME_STORAGE_KEY matching next-themes configuration', () => {
+    const { THEME_STORAGE_KEY } = require('./ThemeToggle');
+    expect(THEME_STORAGE_KEY).toBe('streamfi-theme');
+  });
 });

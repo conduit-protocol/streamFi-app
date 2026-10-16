@@ -8,6 +8,7 @@ import { ConnectButton }    from '@/components/ConnectButton';
 import { ThemeToggle }      from '@/components/ThemeToggle';
 import { ErrorBoundary }    from '@/components/ErrorBoundary';
 import { NetworkBadge }     from '@/components/NetworkBadge';
+import { NetworkLatencyIndicator } from '@/components/NetworkLatencyIndicator';
 import { useSelectedNetwork } from '@/hooks/useSelectedNetwork';
 import { useSettings } from '@/hooks/useSettings';
 
@@ -96,8 +97,11 @@ export function Navbar() {
           conduit
         </Link>
 
-        {/* Active-network indicator — hidden on mainnet (#559) */}
-        <NetworkBadge network={network} />
+        {/* Active-network indicator & latency pill */}
+        <div className="flex items-center gap-2">
+          <NetworkBadge network={network} />
+          <NetworkLatencyIndicator />
+        </div>
 
         {/* Desktop nav links */}
         <nav className="hidden md:flex items-center gap-1">
