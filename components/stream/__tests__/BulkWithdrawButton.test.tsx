@@ -23,6 +23,11 @@ function renderInto(el: React.ReactElement) {
   return { container, root };
 }
 
+const confirmBtn = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('button')).find(
+    (b) => b.textContent === 'Confirm withdrawal',
+  ) as HTMLButtonElement;
+
 describe('BulkWithdrawButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,8 +93,11 @@ describe('BulkWithdrawButton', () => {
     const button = container.querySelector('button');
     expect(button?.disabled).toBe(false);
 
-    await act(async () => {
+    act(() => {
       button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      confirmBtn(container).dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise(resolve => setTimeout(resolve, 0)); // let async ops tick
     });
 
@@ -126,8 +134,11 @@ describe('BulkWithdrawButton', () => {
 
     const button = container.querySelector('button');
 
-    await act(async () => {
+    act(() => {
       button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      confirmBtn(container).dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await new Promise(resolve => setTimeout(resolve, 0)); // let async ops tick
     });
 
@@ -171,6 +182,9 @@ describe('BulkWithdrawButton', () => {
     act(() => {
       button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    act(() => {
+      confirmBtn(container).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
     // Should be in processing state
     expect(button?.disabled).toBe(true);
@@ -184,6 +198,49 @@ describe('BulkWithdrawButton', () => {
     // Back to ready state (but zero withdrawable streams usually disable the button if they were removed,
     // in this component we don't automatically remove them from the list, we just finish processing)
     expect(button?.textContent).toContain('Withdraw All Available');
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('shows a confirmation preview and does not withdraw until confirmed (#669)', async () => {
+    const streams = [
+      { id: 'stream1', address: 'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3', info: { withdrawable: 10_000_000n } },
+      { id: 'stream2', address: 'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3', info: { withdrawable: 25_000_000n } },
+    ];
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(<BulkWithdrawButton activeStreams={streams} />);
+    });
+
+    act(() => {
+      container.querySelector('button')!.click();
+    });
+
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.textContent).toContain('stream1');
+    expect(container.textContent).toContain('stream2');
+    expect(container.querySelector('[data-testid="bulk-total"]')?.textContent).toBe('3.50');
+    expect(container.querySelector('[data-testid="bulk-fee"]')?.textContent).toContain('XLM');
+    expect(mockWithdraw).not.toHaveBeenCalled();
+
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('cancelling the preview closes it without withdrawing (#669)', () => {
+    const stream = { id: 'stream1', address: 'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3', info: { withdrawable: 100n } };
+    const { container, root } = renderInto(<></>);
+    act(() => {
+      root.render(<BulkWithdrawButton activeStreams={[stream]} />);
+    });
+    act(() => { container.querySelector('button')!.click(); });
+
+    const cancel = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Cancel')!;
+    act(() => { cancel.click(); });
+
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(mockWithdraw).not.toHaveBeenCalled();
 
     act(() => { root.unmount(); });
     document.body.removeChild(container);

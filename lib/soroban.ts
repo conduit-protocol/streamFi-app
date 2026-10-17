@@ -342,6 +342,12 @@ function validateCall(
 
 let feeStatsCache: { fee: number; at: number } | undefined;
 
+/** Latest closed ledger sequence from the RPC node. */
+export async function getLatestLedgerSequence(): Promise<number> {
+  const { sequence } = await getServer().getLatestLedger();
+  return sequence;
+}
+
 /**
  * Price the inclusion (bid) fee for a contract transaction.
  *

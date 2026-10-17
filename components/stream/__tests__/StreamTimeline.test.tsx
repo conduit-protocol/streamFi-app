@@ -141,4 +141,29 @@ describe('StreamTimeline', () => {
     expect(clearIntervalSpy).toHaveBeenCalled();
     clearIntervalSpy.mockRestore();
   });
+
+  it('shows no ledger captions without an anchor (#668)', () => {
+    const { container, root } = renderInto(
+      <StreamTimeline startTime={START} endTime={END} paused={false} pausedAt={0} />,
+    );
+    expect(container.querySelectorAll('[data-testid="ledger-caption"]')).toHaveLength(0);
+    unmount(container, root);
+  });
+
+  it('shows estimated ledger captions under start and end when anchored (#668)', () => {
+    const { container, root } = renderInto(
+      <StreamTimeline
+        startTime={START}
+        endTime={END}
+        paused={false}
+        pausedAt={0}
+        ledgerAnchor={{ sequence: 1_000_000, timestamp: START }}
+      />,
+    );
+    const captions = Array.from(
+      container.querySelectorAll('[data-testid="ledger-caption"]'),
+    ).map((c) => c.textContent);
+    expect(captions).toEqual(['Ledger ≈ 1,000,000', 'Ledger ≈ 1,002,000']);
+    unmount(container, root);
+  });
 });

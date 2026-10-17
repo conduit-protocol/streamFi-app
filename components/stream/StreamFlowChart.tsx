@@ -139,6 +139,9 @@ export function StreamFlowChart({
 
   // A brand-new (or not-yet-started) stream has no points or only zero
   // amounts; an empty SVG reads as broken, so explain it instead.
+  // #667 — only a stream that is actually moving money gets the animation.
+  const isFlowing = !paused && !cancelled && (endTime === 0 || now < endTime);
+
   const hasFlowData = points.some((p) => p.amount > 0n);
   if (!hasFlowData) {
     return (
@@ -231,6 +234,26 @@ export function StreamFlowChart({
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+
+          {/* Animated pulse travelling along the flow line (#667). Decorative:
+              hidden from assistive tech and disabled for reduced-motion users
+              via the stream-flow-pulse rule in globals.css. */}
+          {isFlowing && (
+            <path
+              d={pathD}
+              data-testid="stream-flow-pulse"
+              className="stream-flow-pulse text-white dark:text-black"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 18"
+              opacity="0.7"
+              aria-hidden="true"
+              pointerEvents="none"
+            />
+          )}
 
           {/* Interactive Data Points */}
           {points.map((p, i) => (

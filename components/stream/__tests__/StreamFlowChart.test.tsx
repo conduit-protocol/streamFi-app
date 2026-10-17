@@ -306,4 +306,30 @@ describe('StreamFlowChart', () => {
     });
     document.body.removeChild(container);
   });
+
+  it('renders the animated pulse for an active stream (#667)', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act(() => {
+      root.render(<StreamFlowChart {...baseProps} endTime={4_000_000_000} />);
+    });
+    expect(container.querySelector('[data-testid="stream-flow-pulse"]')).not.toBeNull();
+    act(() => { root.unmount(); });
+    document.body.removeChild(container);
+  });
+
+  it('omits the pulse when the stream is paused or cancelled (#667)', () => {
+    for (const extra of [{ paused: true, pausedAt: 1700100000 }, { cancelled: true }]) {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      act(() => {
+        root.render(<StreamFlowChart {...baseProps} withdrawn={50000000n} {...extra} />);
+      });
+      expect(container.querySelector('[data-testid="stream-flow-pulse"]')).toBeNull();
+      act(() => { root.unmount(); });
+      document.body.removeChild(container);
+    }
+  });
 });

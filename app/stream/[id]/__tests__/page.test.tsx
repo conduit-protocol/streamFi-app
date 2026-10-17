@@ -8,6 +8,10 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ id: '42' }),
 }));
 
+vi.mock('@/lib/soroban', () => ({
+  getLatestLedgerSequence: vi.fn().mockRejectedValue(new Error('offline')),
+}));
+
 vi.mock('@/contexts/WalletContext', () => ({
   useWallet: vi.fn(),
 }));

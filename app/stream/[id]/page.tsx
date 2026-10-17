@@ -17,6 +17,8 @@ import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
 import { OperatorInfo } from "@/components/stream/OperatorInfo";
 import { StreamNoteEditor } from "@/components/stream/StreamNoteEditor";
 import { AddToCalendarButton } from "@/components/stream/AddToCalendarButton";
+import { getLatestLedgerSequence } from "@/lib/soroban";
+import type { LedgerAnchor } from "@/lib/ledger";
 import { useWallet } from "@/contexts/WalletContext";
 import { useStreamNote } from "@/hooks/useStreamNote";
 import {
@@ -68,6 +70,7 @@ export default function StreamPage() {
   const [nowSeconds, setNowSeconds] = useState(() =>
     Math.floor(Date.now() / 1000),
   );
+  const [ledgerAnchor, setLedgerAnchor] = useState<LedgerAnchor | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<StreamStatus>("active");
@@ -80,6 +83,22 @@ export default function StreamPage() {
   useEffect(() => {
     return () => {
       mounted.current = false;
+    };
+  }, []);
+
+  // #668 — anchor for estimating ledger sequences on the timeline. Purely
+  // informational, so a failed RPC call just hides the captions.
+  useEffect(() => {
+    let cancelled = false;
+    getLatestLedgerSequence()
+      .then((sequence) => {
+        if (!cancelled) {
+          setLedgerAnchor({ sequence, timestamp: Math.floor(Date.now() / 1000) });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -413,6 +432,7 @@ export default function StreamPage() {
             endTime={info.endTime}
             paused={info.paused}
             pausedAt={info.pausedAt}
+            ledgerAnchor={ledgerAnchor}
           />
         </div>
       )}

@@ -108,6 +108,24 @@
   }
 }
 
+/* ── Stream flow pulse (#667) ─────────────────────────────────────────────── */
+/* Dashes slide along the flow line; one dash period is 6 + 18 = 24 units. */
+@keyframes stream-flow-pulse {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.stream-flow-pulse {
+  animation: stream-flow-pulse 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-flow-pulse {
+    animation: none;
+  }
+}
+
 /* ── Print stylesheet (#555, #571) ────────────────────────────────────────── */
 /*
  * Applied via .print-receipt on /transactions and /stream/[id].

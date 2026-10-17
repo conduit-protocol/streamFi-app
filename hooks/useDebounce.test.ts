@@ -9,7 +9,7 @@ afterEach(() => {
 describe('useDebounce', () => {
   it('returns the initial value immediately', () => {
     const { result } = renderHook(() => useDebounce('hello', 300));
-    expect(result.current).toBe('hello');
+    expect(result.current[0]).toBe('hello');
   });
 
   it('does not fire before the delay elapses', () => {
@@ -21,7 +21,7 @@ describe('useDebounce', () => {
       { initialProps: { value: 'initial', delay: 300 } },
     );
 
-    expect(result.current).toBe('initial');
+    expect(result.current[0]).toBe('initial');
 
     rerender({ value: 'updated', delay: 300 });
 
@@ -29,13 +29,13 @@ describe('useDebounce', () => {
     act(() => {
       vi.advanceTimersByTime(200);
     });
-    expect(result.current).toBe('initial');
+    expect(result.current[0]).toBe('initial');
 
     // Once the full 300ms elapses the debounced value should update
     act(() => {
       vi.advanceTimersByTime(100);
     });
-    expect(result.current).toBe('updated');
+    expect(result.current[0]).toBe('updated');
   });
 
   it('cleans up timeout on unmount so no state update fires after', () => {
@@ -64,7 +64,7 @@ describe('useDebounce', () => {
       { initialProps: { value: 'a', delay: 300 } },
     );
 
-    expect(result.current).toBe('a');
+    expect(result.current[0]).toBe('a');
 
     // Rapidly push three updates, each partially through the delay window
     rerender({ value: 'b', delay: 300 });
@@ -80,13 +80,13 @@ describe('useDebounce', () => {
     rerender({ value: 'd', delay: 300 });
 
     // Only 200ms have passed since the last change — still the original value
-    expect(result.current).toBe('a');
+    expect(result.current[0]).toBe('a');
 
     // Advance the remaining time for the 'd' debounce period; only 'd' should fire
     act(() => {
       vi.advanceTimersByTime(300);
     });
-    expect(result.current).toBe('d');
+    expect(result.current[0]).toBe('d');
   });
 
   it('respects a custom delay', () => {
@@ -104,12 +104,78 @@ describe('useDebounce', () => {
     act(() => {
       vi.advanceTimersByTime(400);
     });
-    expect(result.current).toBe('first');
+    expect(result.current[0]).toBe('first');
 
     // After the full 500ms it should update
     act(() => {
       vi.advanceTimersByTime(100);
     });
-    expect(result.current).toBe('second');
+    expect(result.current[0]).toBe('second');
+  });
+
+  describe('flush / cancel', () => {
+    const setup = () =>
+      renderHook(
+        ({ value }: { value: string }) => useDebounce(value, 300),
+        { initialProps: { value: 'a' } },
+      );
+
+    it('flush applies the latest value immediately', () => {
+      vi.useFakeTimers();
+      const { result, rerender } = setup();
+
+      rerender({ value: 'b' });
+      expect(result.current[0]).toBe('a');
+
+      act(() => {
+        result.current[1].flush();
+      });
+      expect(result.current[0]).toBe('b');
+    });
+
+    it('flush drops the pending timer so it does not fire again', () => {
+      vi.useFakeTimers();
+      const { result, rerender } = setup();
+
+      rerender({ value: 'b' });
+      act(() => {
+        result.current[1].flush();
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('cancel discards the pending update', () => {
+      vi.useFakeTimers();
+      const { result, rerender } = setup();
+
+      rerender({ value: 'b' });
+      act(() => {
+        result.current[1].cancel();
+        vi.advanceTimersByTime(1000);
+      });
+      expect(result.current[0]).toBe('a');
+    });
+
+    it('debouncing resumes after cancel when the value changes again', () => {
+      vi.useFakeTimers();
+      const { result, rerender } = setup();
+
+      rerender({ value: 'b' });
+      act(() => {
+        result.current[1].cancel();
+      });
+      rerender({ value: 'c' });
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+      expect(result.current[0]).toBe('c');
+    });
+
+    it('returns stable control references across renders', () => {
+      const { result, rerender } = setup();
+      const first = result.current[1];
+      rerender({ value: 'b' });
+      expect(result.current[1]).toBe(first);
+    });
   });
 });
