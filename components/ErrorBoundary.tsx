@@ -122,7 +122,8 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback(this.state.error!, this.retry, this.reset);
       }
 
-      return React.createElement('div', { className: 'flex items-center justify-center min-h-[200px]' },
+      // Scoped to this boundary, so wrapping a single stream card keeps the rest of the page usable.
+      return React.createElement('div', { role: 'alert', className: 'flex items-center justify-center min-h-[200px]' },
         React.createElement('div', { className: 'text-center p-6 max-w-md' },
           React.createElement('h2', { className: 'text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2' }, 'Something went wrong'),
           React.createElement('p', { className: 'text-sm text-gray-500 dark:text-gray-400 mb-4' }, this.state.error?.message || 'An unexpected error occurred.'),

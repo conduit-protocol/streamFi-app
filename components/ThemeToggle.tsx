@@ -25,7 +25,10 @@ export function ThemeToggle() {
   useEffect(() => {
     setMounted(true);
     try {
-      const stored = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('theme');
+      const stored =
+        localStorage.getItem(THEME_STORAGE_KEY) ||
+        localStorage.getItem('conduit-theme') ||
+        localStorage.getItem('theme');
       if (stored && (stored === 'light' || stored === 'dark' || stored === 'system') && stored !== theme) {
         setTheme(stored);
       }

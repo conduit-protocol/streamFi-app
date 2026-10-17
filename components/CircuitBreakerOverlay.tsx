@@ -49,6 +49,9 @@ export function CircuitBreakerOverlay() {
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-lg border border-yellow-400/50 bg-yellow-50 p-3 text-xs shadow-lg dark:border-yellow-600/50 dark:bg-yellow-950/90 dark:text-yellow-100">
       <div className="mb-2 font-semibold">Circuit Breaker Monitor</div>
+      <p className="mb-2 text-[11px] opacity-80">
+        Some actions are paused while the network recovers. They resume automatically.
+      </p>
       <ul className="space-y-1.5">
         {states.map((s) => {
           const seconds = Math.ceil(s.remainingMs / 1000);
