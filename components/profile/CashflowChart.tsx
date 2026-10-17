@@ -55,9 +55,13 @@ export function CashflowChart({ daily }: CashflowChartProps) {
           return (
             <div
               key={d.dayStart}
-              className="flex-1 flex flex-col justify-end h-full min-w-0"
-              title={`${d.label}: +${fromStroops(d.incoming)} in / -${fromStroops(d.outgoing)} out`}
+              className="flex-1 flex flex-col justify-end h-full min-w-0 group relative"
+              title={`${d.label} (${new Date(d.dayStart).toISOString()}): +${fromStroops(d.incoming)} in / -${fromStroops(d.outgoing)} out`}
             >
+              {/* SVG tooltip indicator for exact timestamp and volume (#764) */}
+              <svg className="sr-only" aria-hidden="true">
+                <desc>{`Exact timestamp: ${new Date(d.dayStart).toISOString()}, Volume: ${fromStroops(d.incoming + d.outgoing)}`}</desc>
+              </svg>
               <div
                 data-testid={`cashflow-bar-${d.dayStart}`}
                 className="w-full flex flex-col-reverse rounded-sm overflow-hidden"

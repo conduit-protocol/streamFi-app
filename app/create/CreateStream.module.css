@@ -25,3 +25,12 @@
 .shrink0 {
   flex-shrink: 0;
 }
+
+/* High-contrast accessibility compliance (WCAG 2.1 AAA) (#765) */
+@media (prefers-contrast: more) {
+  .flexRow input,
+  .inlineFlexRow input {
+    border-color: #000000;
+    outline: 2px solid #000000;
+  }
+}
