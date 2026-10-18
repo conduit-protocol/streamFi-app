@@ -21,8 +21,32 @@ function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
 }
 
-function isMock(): boolean {
-  return !FACTORY();
+/** True only when NEXT_PUBLIC_DEMO_MODE is explicitly set to "true". */
+function isDemoMode(): boolean {
+  return process.env['NEXT_PUBLIC_DEMO_MODE'] === 'true';
+}
+
+/**
+ * Exported so callers that need to gate non-factory on-chain steps (e.g. the
+ * SEP-41 allowance check/approve step ahead of create_stream — see #218) can
+ * skip them under the exact same condition createStream() itself uses to
+ * skip the real RPC call.
+ */
+export function isMock(): boolean {
+  if (isDemoMode()) return true;
+
+  // #279 — require NEXT_PUBLIC_DEMO_MODE=true explicitly rather than
+  // silently falling back to mock data whenever the factory contract ID is
+  // unset. A misconfigured production deploy should fail loudly, not serve
+  // fake data to real users with no indication anything is wrong.
+  const id = FACTORY();
+  if (!id) {
+    throw new Error(
+      'NEXT_PUBLIC_FACTORY_CONTRACT_ID is not set. ' +
+      'Set it in .env.local, or set NEXT_PUBLIC_DEMO_MODE=true to run in demo mode with fake data.'
+    );
+  }
+  return false;
 }
 
 const MAX_U32 = 0xffff_ffff;
@@ -63,7 +87,8 @@ export async function streamsBySender(
     new Address(sender).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
-  ]);
+  ];
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_sender', scVals, options);
   return decodeU64Vec(result);
 }
 
@@ -81,7 +106,8 @@ export async function streamsByRecipient(
     new Address(recipient).toScVal(),
     nativeToScVal(offset, { type: 'u32' }),
     nativeToScVal(limit,  { type: 'u32' }),
-  ]);
+  ];
+  const result = await simulateReadOnly(source, FACTORY()!, 'streams_by_recipient', scVals, options);
   return decodeU64Vec(result);
 }
 
@@ -98,21 +124,35 @@ export interface CreateStreamArgs {
   clawback:     boolean;
 }
 
+export interface CreateStreamResult {
+  /** The create_stream transaction's hash. */
+  hash: string;
+  /**
+   * The newly assigned stream_id, decoded from the confirmed transaction's
+   * return value. `null` if the RPC/node didn't report a return value (older
+   * node, or the pipeline lost it) — callers should fall back to re-querying
+   * the factory (e.g. streamsBySender) in that case.
+   */
+  streamId: bigint | null;
+}
+
 /**
  * Create a new stream via the factory.
  *
- * Returns only the transaction hash — DripFactory::create_stream emits no
- * event carrying the assigned stream_id (see streamFi-contracts issue #39),
- * and invokeContract() doesn't currently surface the confirmed transaction's
- * actual return value either. Callers needing the new stream's ID must
- * re-query the factory (e.g. streamsBySender) after this resolves.
+ * Returns both the transaction hash and the assigned stream_id, decoded from
+ * DripFactory::create_stream's u64 return value on the confirmed transaction
+ * (see #362). `streamId` is `null` only if the confirmed transaction carried
+ * no return value — callers needing the new stream's ID in that edge case
+ * must re-query the factory (e.g. streamsBySender).
  */
 export async function createStream(
   args:   CreateStreamArgs,
   signTx: (xdr: string) => Promise<string>,
-): Promise<string> {
-  if (isMock()) return 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6';
-  return invokeContract(
+): Promise<CreateStreamResult> {
+  if (isMock()) {
+    return { hash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', streamId: null };
+  }
+  const { hash, returnValue } = await invokeContract(
     args.sender,
     FACTORY()!,
     'create_stream',
@@ -128,4 +168,6 @@ export async function createStream(
     ],
     signTx,
   );
+  const streamId = returnValue ? scValToU64(returnValue) : null;
+  return { hash, streamId };
 }

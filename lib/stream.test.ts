@@ -65,10 +65,10 @@ describe('getStreamAddress', () => {
     expect(await getStreamAddress(SENDER, 999n)).toBeNull();
   });
 
-  it('returns null (not throw) when the underlying call rejects', async () => {
+  it('lets failures propagate so callers can tell "not found" from "RPC down"', async () => {
     mockSimulateReadOnly.mockRejectedValue(new Error('rpc down'));
     const { getStreamAddress } = await import('./stream.js');
-    expect(await getStreamAddress(SENDER, 1n)).toBeNull();
+    await expect(getStreamAddress(SENDER, 1n)).rejects.toThrow('rpc down');
   });
 });
 
@@ -90,10 +90,9 @@ describe('getStreamInfo', () => {
       start_time:        u64(1_700_000_000n),
       end_time:          u64(1_700_003_600n),
       withdrawn:         i128(1_000n),
-      paused:            xdr.ScVal.scvBool(false),
       paused_at:         u64(0n),
-      clawback_enabled:  xdr.ScVal.scvBool(true),
-      cancelled:         xdr.ScVal.scvBool(false),
+      // FLAG_CLAWBACK_ENABLED only
+      flags:             xdr.ScVal.scvU32(0b010),
     }));
 
     const { getStreamInfo } = await import('./stream.js');
@@ -111,12 +110,14 @@ describe('getStreamInfo', () => {
       pausedAt:        0,
       clawbackEnabled: true,
       cancelled:       false,
+      operator:        null,
     });
   });
 
   it('throws a clear error when a field is missing rather than silently defaulting', async () => {
     mockSimulateReadOnly.mockResolvedValue(scvMap({
       sender: new Address(SENDER).toScVal(),
+      flags: xdr.ScVal.scvU32(0),
       // recipient deliberately omitted
     }));
     const { getStreamInfo } = await import('./stream.js');
@@ -138,61 +139,107 @@ describe('getStreamInfo', () => {
       start_time:        u64(1_700_000_000n),
       end_time:          u64(1_700_003_600n),
       withdrawn:         i128(1_000n),
-      paused:            xdr.ScVal.scvBool(false),
       paused_at:         u64(0n),
-      clawback_enabled:  xdr.ScVal.scvBool(true),
-      cancelled:         xdr.ScVal.scvBool(false),
+      flags:             xdr.ScVal.scvU32(0),
     }));
     const { getStreamInfo } = await import('./stream.js');
     await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/rate_per_second.*i128/i);
+  });
+
+  // The contract's StreamInfo has no `paused` / `clawback_enabled` /
+  // `cancelled` fields — they are bits in `flags`. Reading them as fields
+  // made getStreamInfo throw for every real stream (see #357).
+  it('derives paused / clawbackEnabled / cancelled from the flags bitmask', async () => {
+    const base = {
+      sender:          new Address(SENDER).toScVal(),
+      recipient:       new Address(RECIPIENT).toScVal(),
+      token:           new Address(TOKEN).toScVal(),
+      rate_per_second: i128(100n),
+      start_time:      u64(1_700_000_000n),
+      end_time:        u64(1_700_003_600n),
+      withdrawn:       i128(1_000n),
+      paused_at:       u64(1_700_000_500n),
+    };
+    const { getStreamInfo } = await import('./stream.js');
+
+    for (const [flags, expected] of [
+      [0b000, { paused: false, clawbackEnabled: false, cancelled: false }],
+      [0b001, { paused: true,  clawbackEnabled: false, cancelled: false }],
+      [0b010, { paused: false, clawbackEnabled: true,  cancelled: false }],
+      [0b100, { paused: false, clawbackEnabled: false, cancelled: true  }],
+      [0b111, { paused: true,  clawbackEnabled: true,  cancelled: true  }],
+    ] as const) {
+      mockSimulateReadOnly.mockResolvedValue(scvMap({ ...base, flags: xdr.ScVal.scvU32(flags) }));
+      const info = await getStreamInfo(SENDER, STREAM_ADDRESS);
+      expect({
+        paused: info.paused,
+        clawbackEnabled: info.clawbackEnabled,
+        cancelled: info.cancelled,
+      }).toEqual(expected);
+    }
+  });
+
+  it('throws when flags is missing rather than silently defaulting to false', async () => {
+    mockSimulateReadOnly.mockResolvedValue(scvMap({
+      sender:          new Address(SENDER).toScVal(),
+      recipient:       new Address(RECIPIENT).toScVal(),
+      token:           new Address(TOKEN).toScVal(),
+      rate_per_second: i128(100n),
+      start_time:      u64(1_700_000_000n),
+      end_time:        u64(1_700_003_600n),
+      withdrawn:       i128(1_000n),
+      paused_at:       u64(0n),
+    }));
+    const { getStreamInfo } = await import('./stream.js');
+    await expect(getStreamInfo(SENDER, STREAM_ADDRESS)).rejects.toThrow(/Missing field: flags/);
   });
 });
 
 describe('mutating calls', () => {
   it('withdraw() invokes withdraw with the i128 amount', async () => {
-    mockInvokeContract.mockResolvedValue('hash1');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash1' });
     const { withdraw } = await import('./stream.js');
     const signTx = vi.fn();
     const hash = await withdraw(SENDER, STREAM_ADDRESS, 5_000n, signTx);
     expect(hash).toBe('hash1');
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx, expect.anything(),
+      SENDER, STREAM_ADDRESS, 'withdraw', expect.any(Array), signTx, undefined,
     );
   });
 
   it('cancel() invokes cancel with no args', async () => {
-    mockInvokeContract.mockResolvedValue('hash2');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash2' });
     const { cancel } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await cancel(SENDER, STREAM_ADDRESS, signTx)).toBe('hash2');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'cancel', [], signTx, undefined);
   });
 
   it('pause()/resume() invoke their respective methods', async () => {
-    mockInvokeContract.mockResolvedValue('hash3');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash3' });
     const { pause, resume } = await import('./stream.js');
     const signTx = vi.fn();
     await pause(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'pause', [], signTx, undefined);
     await resume(SENDER, STREAM_ADDRESS, signTx);
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'resume', [], signTx, undefined);
   });
 
   it('topUp() invokes top_up with the i128 amount', async () => {
-    mockInvokeContract.mockResolvedValue('hash4');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash4' });
     const { topUp } = await import('./stream.js');
     const signTx = vi.fn();
     await topUp(SENDER, STREAM_ADDRESS, 25_000n, signTx);
     expect(mockInvokeContract).toHaveBeenCalledWith(
-      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx, expect.anything(),
+      SENDER, STREAM_ADDRESS, 'top_up', expect.any(Array), signTx, undefined,
     );
   });
 
   it('clawback() invokes clawback with no args', async () => {
-    mockInvokeContract.mockResolvedValue('hash5');
+    mockInvokeContract.mockResolvedValue({ hash: 'hash5' });
     const { clawback } = await import('./stream.js');
     const signTx = vi.fn();
     expect(await clawback(SENDER, STREAM_ADDRESS, signTx)).toBe('hash5');
-    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx, expect.anything());
+    expect(mockInvokeContract).toHaveBeenCalledWith(SENDER, STREAM_ADDRESS, 'clawback', [], signTx, undefined);
   });
 });

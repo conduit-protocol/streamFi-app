@@ -20,6 +20,7 @@
 
 import { Address, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128 } from './soroban';
+import { isValidStellarContract } from './stellar-address';
 import {
   withSafeOperation,
   withIdempotency,
@@ -33,6 +34,8 @@ import {
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 const DEFAULT_ALLOWANCE_TIMEOUT_MS = 30_000;
+/** Default expiration ledger: ~31 days at 5s/ledger (535,680 ledgers) */
+export const DEFAULT_EXPIRATION_LEDGER = 535_680;
 
 // ── Mutex (per-token) ─────────────────────────────────────────────────────────
 
@@ -147,6 +150,8 @@ export interface ApproveAllowanceArgs {
   amount: bigint;
   /** Stellar public key of the token holder */
   source: string;
+  /** Expiration ledger sequence (u32). Defaults to DEFAULT_EXPIRATION_LEDGER */
+  expirationLedger?: number;
   /** Wallet sign callback */
   signTx: (xdrBase64: string, signal?: AbortSignal) => Promise<string>;
   /** Optional abort signal */
@@ -190,7 +195,7 @@ export interface RevokeAllowanceArgs {
  */
 export class TokenAllowanceGateway {
   private _records = new Map<string, InternalRecord>();
-  private _concurrencySemaphore: { available: number; queue: Array<() => void> } = {
+  private _concurrencySemaphore: { available: number; queue: Array<{ resolve: () => void; reject: (err: Error) => void }> } = {
     available: 5,
     queue: [],
   };
@@ -205,12 +210,12 @@ export class TokenAllowanceGateway {
 
   // ── Record management ─────────────────────────────────────────────────────
 
-  private _key(token: string, spender: string): string {
-    return `${token}::${spender}`;
+  private _key(owner: string, token: string, spender: string): string {
+    return `${owner}::${token}::${spender}`;
   }
 
-  private _getOrCreate(token: string, spender: string): InternalRecord {
-    const key = this._key(token, spender);
+  private _getOrCreate(owner: string, token: string, spender: string): InternalRecord {
+    const key = this._key(owner, token, spender);
     let record = this._records.get(key);
     if (!record) {
       record = {
@@ -224,10 +229,10 @@ export class TokenAllowanceGateway {
   }
 
   /**
-   * Read-only snapshot of the current allowance record for a token+spender pair.
+   * Read-only snapshot of the current allowance record for an owner+token+spender triple.
    */
-  getAllowance(token: string, spender: string): AllowanceRecord {
-    const key = this._key(token, spender);
+  getAllowance(owner: string, token: string, spender: string): AllowanceRecord {
+    const key = this._key(owner, token, spender);
     const record = this._records.get(key);
     if (!record) {
       return { allowance: 0n, state: 'idle' };
@@ -249,15 +254,42 @@ export class TokenAllowanceGateway {
     }
 
     return new Promise<() => void>((resolve, reject) => {
-      const entry = () => {
-        resolve(() => this._releaseConcurrency());
+      let settled = false;
+      let cleanup: (() => void) | undefined;
+
+      const entry = {
+        resolve: () => {
+          if (!settled) {
+            settled = true;
+            cleanup?.();
+            resolve(() => this._releaseConcurrency());
+          }
+        },
+        reject,
       };
       this._concurrencySemaphore.queue.push(entry);
 
       if (signal?.aborted) {
         const idx = this._concurrencySemaphore.queue.indexOf(entry);
         if (idx !== -1) this._concurrencySemaphore.queue.splice(idx, 1);
-        reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+        if (!settled) {
+          settled = true;
+          reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+        }
+        return;
+      }
+
+      if (signal) {
+        const onAbort = () => {
+          const idx = this._concurrencySemaphore.queue.indexOf(entry);
+          if (idx !== -1) this._concurrencySemaphore.queue.splice(idx, 1);
+          if (!settled) {
+            settled = true;
+            reject(new OperationAbortedError('Concurrency slot acquisition aborted'));
+          }
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        cleanup = () => signal.removeEventListener('abort', onAbort);
       }
     });
   }
@@ -265,7 +297,7 @@ export class TokenAllowanceGateway {
   private _releaseConcurrency() {
     const next = this._concurrencySemaphore.queue.shift();
     if (next) {
-      next();
+      next.resolve();
     } else {
       this._concurrencySemaphore.available++;
     }
@@ -283,7 +315,7 @@ export class TokenAllowanceGateway {
    */
   async approve(args: ApproveAllowanceArgs): Promise<SafeOperationResult<string>> {
     const { token, spender, amount, source, signTx, signal } = args;
-    const record = this._getOrCreate(token, spender);
+    const record = this._getOrCreate(source, token, spender);
     const idempotencyKey = makeOperationKey(source, token, 'approve', spender, amount.toString());
 
     // Reject if a previous operation is in-flight for this pair (unless same idempotency key)
@@ -308,7 +340,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!token || !/^C[A-Z0-9]{55}$/.test(token)) {
+    if (!token || !isValidStellarContract(token)) {
       return {
         success: false,
         error: normalizeError(
@@ -318,7 +350,7 @@ export class TokenAllowanceGateway {
       };
     }
 
-    if (!spender || !/^C[A-Z0-9]{55}$/.test(spender)) {
+    if (!spender || !isValidStellarContract(spender)) {
       return {
         success: false,
         error: normalizeError(
@@ -327,12 +359,6 @@ export class TokenAllowanceGateway {
         ),
       };
     }
-
-    // Acquire per-token mutex (cancel-safe)
-    const releaseMutex = await record.mutex.acquire(signal);
-
-    // Acquire concurrency slot
-    const releaseConcurrency = await this._acquireConcurrency(signal);
 
     // Set up abort controller for this operation
     const opAbort = new AbortController();
@@ -350,7 +376,15 @@ export class TokenAllowanceGateway {
     record.state = 'pending';
     record.lastError = undefined;
 
+    let releaseMutex: (() => void) | undefined;
+    let releaseConcurrency: (() => void) | undefined;
+
     try {
+      // Acquire per-token mutex (cancel-safe)
+      releaseMutex = await record.mutex.acquire(signal);
+
+      // Acquire concurrency slot
+      releaseConcurrency = await this._acquireConcurrency(signal);
       const result = await withIdempotency(idempotencyKey, async () => {
         return withSafeOperation(async () => {
           // Check abort before RPC call
@@ -359,14 +393,21 @@ export class TokenAllowanceGateway {
           }
 
           // Build the approve() XDR arguments
-          // SEP-41 approve(address spender, i128 amount)
+          // SEP-41 approve(address from, address spender, i128 amount, u32 expiration_ledger)
+          const targetExpirationLedger =
+            args.expirationLedger !== undefined && args.expirationLedger > 0
+              ? args.expirationLedger
+              : DEFAULT_EXPIRATION_LEDGER;
+
           const argsXdr: xdr.ScVal[] = [
+            new Address(source).toScVal(),
             new Address(spender).toScVal(),
             nativeToScVal(amount, { type: 'i128' }),
+            nativeToScVal(targetExpirationLedger, { type: 'u32' }),
           ];
 
           // Execute via invokeContract which already has retry + circuit breaker
-          const txHash = await invokeContract(
+          const { hash: txHash } = await invokeContract(
             source,
             token,
             'approve',
@@ -417,8 +458,8 @@ export class TokenAllowanceGateway {
 
       record.pendingAbort = undefined;
       signalCleanup?.();
-      releaseConcurrency();
-      releaseMutex();
+      releaseConcurrency?.();
+      releaseMutex?.();
     }
   }
 
@@ -461,7 +502,7 @@ export class TokenAllowanceGateway {
       const allowance = scValToI128(result);
 
       // Update local cache
-      const record = this._getOrCreate(token, spender);
+      const record = this._getOrCreate(owner, token, spender);
       record.allowance = allowance;
       if (record.state === 'idle' || record.state === 'confirmed') {
         record.state = 'confirmed';
@@ -507,11 +548,11 @@ export class TokenAllowanceGateway {
     }
     this._records.clear();
 
-    // Drain concurrency queue
+    // Drain concurrency queue — reject waiters so they don't proceed
+    // against a disconnected wallet
     while (this._concurrencySemaphore.queue.length > 0) {
       const entry = this._concurrencySemaphore.queue.shift();
-      // Entries waiting for a slot get rejected — they'll retry on next call
-      entry?.();
+      entry?.reject(new OperationAbortedError('Gateway reset — wallet disconnected'));
     }
     this._concurrencySemaphore.available = this._maxConcurrency;
   }

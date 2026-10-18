@@ -1,9 +1,7 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
 import { BulkWithdrawButton } from '../stream/BulkWithdrawButton';
-import { withdraw } from '@/lib/stream';
 
 vi.mock('@/contexts/WalletContext', () => ({
   useWallet: vi.fn(),
@@ -14,19 +12,28 @@ vi.mock('@/lib/stream', () => ({
 }));
 
 import { useWallet } from '@/contexts/WalletContext';
+import { withdraw } from '@/lib/stream';
 
 const mockUseWallet = vi.mocked(useWallet);
 const mockWithdraw = vi.mocked(withdraw);
 
 function makeStream(id: string, withdrawable: bigint) {
-  return { id, info: { withdrawable } };
+  const address = id === '1' ? 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526' 
+                : id === 'A' ? 'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ'
+                : 'CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3';
+  return { id, address, info: { withdrawable } };
 }
+
+const confirmBtn = (container: HTMLElement) =>
+  Array.from(container.querySelectorAll('button')).find(
+    (b) => b.textContent === 'Confirm withdrawal',
+  ) as HTMLButtonElement;
 
 describe('BulkWithdrawButton', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseWallet.mockReturnValue({
-      publicKey: 'GABC123',
+      publicKey: 'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
       signTx: vi.fn().mockResolvedValue('signed_xdr'),
       connected: true,
       connecting: false,
@@ -36,15 +43,16 @@ describe('BulkWithdrawButton', () => {
       pendingOperationCount: 0,
       maxConcurrentOperations: 5,
     });
+    mockWithdraw.mockReset();
     mockWithdraw.mockResolvedValue('tx_hash');
   });
 
   it('skips streams with missing info without throwing', async () => {
     const streams = [
-      { id: undefined, info: undefined },
-      makeStream('C_STREAM_1', 100n),
-      { id: 'C_STREAM_2', info: undefined },
-    ];
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: undefined },
+      makeStream('1', 100n),
+      { id: 'C_STREAM_2', address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: undefined },
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -60,14 +68,17 @@ describe('BulkWithdrawButton', () => {
     });
 
     const button = container.querySelector('button')!;
-    await act(async () => {
+    act(() => {
       button.click();
+    });
+    await act(async () => {
+      confirmBtn(container).click();
     });
 
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
-      'GABC123',
-      'C_STREAM_1',
+      'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
+      'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526',
       100n,
       expect.any(Function),
       expect.anything(),
@@ -81,9 +92,9 @@ describe('BulkWithdrawButton', () => {
 
   it('skips streams with missing id without throwing', async () => {
     const streams = [
-      { id: undefined, info: { withdrawable: 50n } },
-      makeStream('C_STREAM_A', 200n),
-    ];
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: { withdrawable: 50n } },
+      makeStream('A', 200n),
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -96,14 +107,17 @@ describe('BulkWithdrawButton', () => {
     });
 
     const button = container.querySelector('button')!;
-    await act(async () => {
+    act(() => {
       button.click();
+    });
+    await act(async () => {
+      confirmBtn(container).click();
     });
 
     expect(mockWithdraw).toHaveBeenCalledTimes(1);
     expect(mockWithdraw).toHaveBeenCalledWith(
-      'GABC123',
-      'C_STREAM_A',
+      'GDJJ5BHD3UQCAZWKNLYRXKZWTDONPUOWQYXJCFDWQYZTQSW7ACSG6HM3',
+      'CABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAFNSZ',
       200n,
       expect.any(Function),
       expect.anything(),
@@ -133,6 +147,7 @@ describe('BulkWithdrawButton', () => {
       button.click();
     });
 
+    expect(button.disabled).toBe(true);
     expect(mockWithdraw).not.toHaveBeenCalled();
 
     act(() => {
@@ -153,9 +168,9 @@ describe('BulkWithdrawButton', () => {
 
     const onComplete = vi.fn();
     const streams = [
-      makeStream('C_STREAM_1', 100n),
-      makeStream('C_STREAM_2', 200n),
-    ];
+      makeStream('1', 100n),
+      makeStream('A', 200n),
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -168,9 +183,12 @@ describe('BulkWithdrawButton', () => {
     });
 
     const button = container.querySelector('button')!;
+    act(() => {
+      button.click();
+    });
     let clickPromise: Promise<void>;
     act(() => {
-      clickPromise = (async () => { button.click(); })();
+      clickPromise = (async () => { confirmBtn(container).click(); })();
     });
 
     act(() => {
@@ -191,9 +209,9 @@ describe('BulkWithdrawButton', () => {
 
   it('renders disabled button when no streams have withdrawable balance', () => {
     const streams = [
-      { id: 'C_A', info: { withdrawable: 0n } },
-      { id: 'C_B', info: { withdrawable: 0n } },
-    ];
+      { id: 'C_A', address: 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL', info: { withdrawable: 0n } },
+      { id: 'C_B', address: 'GABBG5LDGECWWCJN7NGP6JIVY6M2PDMZXHFIWDBMR5WKZFGF5NPOILDL', info: { withdrawable: 0n } },
+    ] as any;
 
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -206,6 +224,200 @@ describe('BulkWithdrawButton', () => {
     const button = container.querySelector('button')!;
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe('Withdraw All Available');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('reports correct per-stream results with mixed success and failure', async () => {
+    const streams = [
+      makeStream('1', 100n),
+      makeStream('A', 200n),
+      makeStream('B', 300n),
+    ];
+
+    mockWithdraw.mockResolvedValueOnce('hash_1');
+    mockWithdraw.mockRejectedValueOnce(new Error('Network timeout for stream 2'));
+    mockWithdraw.mockResolvedValueOnce('hash_3');
+
+    const onComplete = vi.fn();
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <BulkWithdrawButton
+          activeStreams={streams}
+          onComplete={onComplete}
+          maxConcurrency={1}
+        />,
+      );
+    });
+
+    const button = container.querySelector('button')!;
+
+    act(() => {
+      button.click();
+    });
+    await act(async () => {
+      confirmBtn(container).click();
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    expect(mockWithdraw).toHaveBeenCalledTimes(3);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+
+    const result = onComplete.mock.calls[0]![0]!;
+    expect(result.successCount).toBe(2);
+    expect(result.totalCount).toBe(3);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.streamId).toBe('A');
+    expect(result.errors[0]!.error).toContain('Network timeout');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('isolates failures so one stream failure does not affect others', async () => {
+    mockWithdraw.mockImplementationOnce(async () => { await new Promise(r => setTimeout(r, 5)); return 'hash_1'; });
+    mockWithdraw.mockImplementationOnce(async () => { await new Promise(r => setTimeout(r, 5)); throw new Error('Stream A failed'); });
+    mockWithdraw.mockImplementationOnce(async () => { await new Promise(r => setTimeout(r, 5)); return 'hash_3'; });
+
+    const onComplete = vi.fn();
+    const streams = [
+      makeStream('1', 100n),
+      makeStream('A', 200n),
+      makeStream('B', 300n),
+    ];
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <BulkWithdrawButton
+          activeStreams={streams}
+          onComplete={onComplete}
+          maxConcurrency={1}
+        />,
+      );
+    });
+
+    const button = container.querySelector('button')!;
+
+    act(() => {
+      button.click();
+    });
+    await act(async () => {
+      confirmBtn(container).click();
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+
+    const result = onComplete.mock.calls[0]![0]!;
+    expect(result.successCount).toBe(2);
+    expect(result.totalCount).toBe(3);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.streamId).toBe('A');
+    expect(result.errors[0]!.error).toContain('Stream A failed');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('disables button when all streams have invalid addresses', async () => {
+    const streams = [
+      { id: 'bad_1', address: 'not-a-valid-address', info: { withdrawable: 100n } },
+      { id: 'bad_2', address: 'also-invalid', info: { withdrawable: 200n } },
+    ] as any;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BulkWithdrawButton activeStreams={streams} />);
+    });
+
+    const button = container.querySelector('button')!;
+    expect(button.disabled).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('shows exclusion warning when some streams are filtered out', async () => {
+    const streams = [
+      { id: undefined, address: 'CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526', info: { withdrawable: 100n } },
+      makeStream('1', 200n),
+    ] as any;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BulkWithdrawButton activeStreams={streams} />);
+    });
+
+    expect(container.textContent).toContain('excluded');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('does not show exclusion warning when all streams are valid', async () => {
+    const streams = [
+      makeStream('1', 100n),
+      makeStream('A', 200n),
+    ];
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BulkWithdrawButton activeStreams={streams} />);
+    });
+
+    expect(container.textContent).not.toContain('excluded');
+
+    act(() => {
+      root.unmount();
+    });
+    document.body.removeChild(container);
+  });
+
+  it('button is enabled when at least one stream passes strict validation', async () => {
+    const streams = [
+      { id: undefined, address: 'bad-address', info: { withdrawable: 50n } },
+      makeStream('1', 100n),
+    ] as any;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<BulkWithdrawButton activeStreams={streams} />);
+    });
+
+    const button = container.querySelector('button')!;
+    expect(button.disabled).toBe(false);
 
     act(() => {
       root.unmount();

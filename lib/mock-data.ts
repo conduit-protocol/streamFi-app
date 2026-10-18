@@ -1,9 +1,14 @@
+import { StrKey } from '@stellar/stellar-sdk';
 import type { StreamInfo } from './stream';
 
-const SENDER    = 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN';
-const RECIPIENT = 'GBV4ZDEPVQQ4HX6Z3V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7';
-const TOKEN_XLM  = 'CAS3J7GYLGX6UWJ6V7R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6';
-const TOKEN_USDC = 'CCW67TSZV3SSYUZQ5S7Y5T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6';
+// Valid 56-character StrKey public keys (G...) generated via
+// @stellar/stellar-sdk's StrKey.encodeEd25519PublicKey (verified checksums).
+const SENDER    = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x10));
+const RECIPIENT = StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x20));
+// Valid 56-character StrKey contract addresses (C...) generated via
+// @stellar/stellar-sdk's StrKey.encodeContract (verified checksums).
+const TOKEN_XLM  = StrKey.encodeContract(Buffer.alloc(32, 0x30));
+const TOKEN_USDC = StrKey.encodeContract(Buffer.alloc(32, 0x40));
 
 export const MOCK_STREAM_IDS = [1n, 2n, 3n, 4n, 5n];
 
@@ -22,6 +27,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '2': {
     sender: RECIPIENT,
@@ -35,6 +41,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
   '3': {
     sender: SENDER,
@@ -48,6 +55,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: false,
     cancelled: false,
+    operator: null,
   },
   '4': {
     sender: RECIPIENT,
@@ -61,6 +69,7 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: NOW - 86400 * 2,
     clawbackEnabled: false,
     cancelled: true,
+    operator: null,
   },
   '5': {
     sender: SENDER,
@@ -74,15 +83,18 @@ export const MOCK_STREAMS: Record<string, StreamInfo> = {
     pausedAt: 0,
     clawbackEnabled: true,
     cancelled: false,
+    operator: null,
   },
 };
 
+// Valid 56-character StrKey contract addresses generated via
+// @stellar/stellar-sdk's StrKey.encodeContract (verified checksums).
 export const MOCK_ADDRESSES: Record<string, string> = {
-  '1': 'CCXJVGD3MZ7W5X4Y5T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6AAAA',
-  '2': 'CDR4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4BBBB',
-  '3': 'C5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2CCCC',
-  '4': 'C6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6DDDD',
-  '5': 'CZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQEEEE',
+  '1': 'CCDT45LNPDPGPJGWNMWN7F3D7QNLBE2SZN4YY7GDKMLS4YVFV7QIB7N6',
+  '2': 'CBREE3IT5EDCMQRUIAATY5ZZUOACGBQE766RXNZP5WGSNKQSNCA2DUAN',
+  '3': 'CDWX3C3Y2FNA5ROZ54PAS7W7OKDZGHW5NHBCIE2SO5R4MVI6AC3APKNF',
+  '4': 'CDTNN743Z42NSVOM6QUUOY3FN5526R3LZY6A5LHFEVWWFNFFVKY5FMO2',
+  '5': 'CC25TYP47KHLCL4ODF6JSDUHTVWF7GWT3HNL2T5FDXAKJ4KOLVL4RDQN',
 };
 
 export const SENDER_STREAM_IDS = [1n, 3n, 5n];

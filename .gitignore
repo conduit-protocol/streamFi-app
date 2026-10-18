@@ -6,3 +6,12 @@ out/
 *.tsbuildinfo
 .DS_Store
 next-env.d.ts
+
+# Test coverage reports
+/coverage/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

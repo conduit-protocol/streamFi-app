@@ -1,0 +1,43 @@
+{
+  "name": "Conduit — Streaming Payments on Stellar",
+  "short_name": "Conduit",
+  "description": "Create and manage per-second token streams on the Stellar network.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create Stream",
+      "url": "/create",
+      "description": "Create a new per-second token stream"
+    },
+    {
+      "name": "Your Streams",
+      "url": "/streams",
+      "description": "View and manage your payment streams"
+    },
+    {
+      "name": "Dashboard",
+      "url": "/dashboard",
+      "description": "Aggregate sender stats and flow rate"
+    }
+  ]
+}

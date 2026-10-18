@@ -2,22 +2,39 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, AlertCircle, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import "@/lib/i18n";
 import { useWallet } from "@/contexts/WalletContext";
 import { StreamCard } from "@/components/stream/StreamCard";
 import { StreamCardSkeleton } from "@/components/stream/StreamCardSkeleton";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BulkWithdrawButton } from "@/components/stream/BulkWithdrawButton";
+import { EndingSoonWidget } from "@/components/dashboard/EndingSoonWidget";
 import { streamsBySender, streamsByRecipient } from "@/lib/factory";
-import { getStreamAddress, getStreamInfo, getWithdrawable } from "@/lib/stream";
+import {
+  getStreamAddress,
+  getStreamInfo,
+  getWithdrawable,
+  type StreamInfo,
+} from "@/lib/stream";
 import { fromStroops } from "@/lib/format";
 import { refreshStreamData } from "@/lib/queryClient";
-import type { StreamInfo } from "@/lib/stream";
+import { useNetworkStatus } from "@/hooks/useNetworkStatus";
+import { isFulfilled } from "@/lib/safe-operations";
+import {
+  DATE_RANGE_PRESETS,
+  presetToRange,
+  streamInRange,
+  type DateRangePreset,
+} from "@/lib/date-range";
 
 type Tab = "receiving" | "sending";
 type StreamStatus = "active" | "paused" | "ended" | "cancelled";
 
 interface StreamRow {
   id: string;
+  address: string;
   info: StreamInfo;
   withdrawable: bigint;
   status: StreamStatus;
@@ -30,12 +47,17 @@ function deriveStatus(info: StreamInfo, now: number): StreamStatus {
   return "active";
 }
 
+interface LoadRowsResult {
+  rows: StreamRow[];
+  failedCount: number;
+}
+
 async function loadRows(
   publicKey: string,
   role: "sender" | "recipient",
   now: number,
   signal: AbortSignal,
-): Promise<StreamRow[]> {
+): Promise<LoadRowsResult> {
   let ids: bigint[];
   try {
     ids =
@@ -43,143 +65,315 @@ async function loadRows(
         ? await streamsBySender(publicKey, publicKey, 0, 50, { signal })
         : await streamsByRecipient(publicKey, publicKey, 0, 50, { signal });
   } catch {
-    return [];
+    return { rows: [], failedCount: 0 };
   }
 
-  if (!ids || !Array.isArray(ids)) return [];
+  if (!ids || !Array.isArray(ids)) return { rows: [], failedCount: 0 };
 
-  const rows: StreamRow[] = [];
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (signal.aborted) return [];
-    if (typeof id !== "bigint") continue;
-    const rowId = id.toString();
-    if (seen.has(rowId)) continue;
-    try {
-      const addr = await getStreamAddress(publicKey, id, { signal });
-      if (!addr || typeof addr !== "string") continue;
-      const [info, withdrawable] = await Promise.all([
-        getStreamInfo(publicKey, addr, { signal }),
-        getWithdrawable(publicKey, addr),
-      ]);
-      if (!info || typeof info !== "object") continue;
-      if (typeof info.ratePerSecond !== "bigint") continue;
-      if (signal.aborted) return [];
-      rows.push({
-        id: rowId,
-        info,
-        withdrawable,
-        status: deriveStatus(info, now),
+  const uniqueIds = [
+    ...new Set(ids.filter((id): id is bigint => typeof id === "bigint")),
+  ];
+
+  // Phase 1: resolve all stream addresses in parallel
+  const addrResults = await Promise.allSettled(
+    uniqueIds.map((id) => getStreamAddress(publicKey, id, { signal })),
+  );
+
+  const addrPairs: { id: bigint; rowId: string; addr: string }[] = [];
+  let failedCount = 0;
+  for (let i = 0; i < uniqueIds.length; i++) {
+    const r = addrResults[i];
+    if (signal.aborted) return { rows: [], failedCount: 0 };
+    if (isFulfilled(r) && r.value && typeof r.value === "string") {
+      addrPairs.push({
+        id: uniqueIds[i]!,
+        rowId: uniqueIds[i]!.toString(),
+        addr: r.value,
       });
-      seen.add(rowId);
-    } catch {
-      /* skip invalid streams */
+    } else {
+      failedCount++;
     }
   }
-  return rows;
+
+  // Phase 2: fetch info+withdrawable in bounded-parallel batches
+  const BATCH_SIZE = 5;
+  const rows: StreamRow[] = [];
+
+  for (let start = 0; start < addrPairs.length; start += BATCH_SIZE) {
+    if (signal.aborted) return { rows: [], failedCount: 0 };
+    const batch = addrPairs.slice(start, start + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(({ addr }) =>
+        Promise.all([
+          getStreamInfo(publicKey, addr, { signal }),
+          getWithdrawable(publicKey, addr, { signal }),
+        ]),
+      ),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      const pair = batch[j]!;
+      if (
+        isFulfilled(r) &&
+        r.value[0] &&
+        typeof r.value[0] === "object" &&
+        typeof r.value[0].ratePerSecond === "bigint"
+      ) {
+        rows.push({
+          id: pair.rowId,
+          address: pair.addr,
+          info: r.value[0],
+          withdrawable: r.value[1],
+          status: deriveStatus(r.value[0], now),
+        });
+      } else {
+        failedCount++;
+      }
+    }
+  }
+
+  return { rows, failedCount };
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  // Proof-of-concept for the i18n migration (#558) — see lib/i18n/index.ts.
+  const { t } = useTranslation("dashboard");
   const { publicKey, connected } = useWallet();
+  // When the RPC is unreachable, a global banner (NetworkTroubleBanner)
+  // already explains the situation — suppress the per-page error card and the
+  // partial-load bar so the user isn't told the same thing twice.
+  const { status: networkStatus } = useNetworkStatus();
+  const networkTrouble = networkStatus === "trouble";
 
   const [tab, setTab] = useState<Tab>("receiving");
   const [receiving, setReceiving] = useState<StreamRow[]>([]);
   const [sending, setSending] = useState<StreamRow[]>([]);
+  // Date-range filter for the aggregate totals (#547). Defaults to "all
+  // time" so existing behavior (no filtering) is preserved until the user
+  // opts in.
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [partialError, setPartialError] = useState<string | null>(null);
+  // #307 — loadSeqRef is the ordering guard: each fetch captures its own
+  // seq and only commits state if it's still the most recent request by the
+  // time it resolves, the same pattern app/stream/[id]/page.tsx uses.
+  // activeControllerRef tracks whichever AbortController is currently "the"
+  // in-flight fetch so every trigger (mount, visibility change, retry,
+  // bulk-withdraw completion) aborts the previous one before starting a new
+  // one, instead of each site spinning up its own untracked controller.
   const loadSeqRef = useRef(0);
+  const activeControllerRef = useRef<AbortController | null>(null);
+  const lastFetchAtRef = useRef(0);
+  // Guards the manual refresh controls: while a fetch is in flight, extra
+  // clicks are ignored rather than piling up overlapping requests.
+  const inFlightRef = useRef(false);
 
-  const fetchStreams = useCallback(async (signal: AbortSignal) => {
-    if (!publicKey) return;
-    const now = Math.floor(Date.now() / 1000);
-    setLoading(true);
-    setError(null);
-    try {
-      const [recv, sent] = await Promise.all([
-        loadRows(publicKey, "recipient", now, signal),
-        loadRows(publicKey, "sender", now, signal),
-      ]);
-      if (!signal.aborted) {
-        setReceiving(recv);
-        setSending(sent);
+  const fetchStreams = useCallback(
+    async (signal: AbortSignal) => {
+      if (!publicKey) return;
+      inFlightRef.current = true;
+      const seq = ++loadSeqRef.current;
+      const isCurrent = () => seq === loadSeqRef.current;
+      const now = Math.floor(Date.now() / 1000);
+      setLoading(true);
+      // The previous error / partial-load notices stay on screen (with their
+      // Retry control disabled) until this refresh settles, rather than blinking
+      // out and back — the `loading` flag is what signals work is in progress.
+      try {
+        const [recv, sent] = await Promise.all([
+          loadRows(publicKey, "recipient", now, signal),
+          loadRows(publicKey, "sender", now, signal),
+        ]);
+        if (!signal.aborted && isCurrent()) {
+          setReceiving(recv.rows);
+          setSending(sent.rows);
+          const totalFailed = recv.failedCount + sent.failedCount;
+          setPartialError(
+            totalFailed > 0 ? t("partialError", { count: totalFailed }) : null,
+          );
+          setError(null);
+          lastFetchAtRef.current = Date.now();
+        }
+      } catch (e) {
+        if (!signal.aborted && isCurrent()) {
+          console.error(e);
+          captureError(e, { tags: { source: "dashboard-page" } });
+          setError(t("loadError"));
+        }
+      } finally {
+        // Only the most recent fetch clears the in-flight latch — an older,
+        // superseded fetch resolving late must not re-open the gate.
+        if (isCurrent()) {
+          inFlightRef.current = false;
+          if (!signal.aborted) setLoading(false);
+        }
       }
-    } catch (e) {
-      if (!signal.aborted) {
-        console.error(e);
-        setError("Failed to load streams. Please try again.");
-      }
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [publicKey]);
+    },
+    [publicKey, t],
+  );
+
+  const refetch = useCallback(
+    (force = false) => {
+      // Ignore manual triggers while a refresh is already running. `force` is
+      // for callers that must always re-read (wallet switch, post-withdraw).
+      if (!force && inFlightRef.current) return;
+      activeControllerRef.current?.abort();
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
+      fetchStreams(controller.signal);
+    },
+    [fetchStreams],
+  );
 
   useEffect(() => {
     if (!publicKey) {
       setReceiving([]);
       setSending([]);
       setError(null);
+      setPartialError(null);
       return;
     }
-    const controller = new AbortController();
-    fetchStreams(controller.signal);
-    return () => controller.abort();
-  }, [publicKey, fetchStreams]);
+    refetch(true);
 
-  const activeCount = useMemo(
-    () =>
-      [...receiving, ...sending].filter((s) => s.status === "active").length,
-    [receiving, sending],
-  );
-  const receivingRate = useMemo(
-    () =>
-      receiving
-        .filter((s) => s.status === "active" && s.info && typeof s.info.ratePerSecond === "bigint")
-        .reduce((a, s) => a + s.info.ratePerSecond, 0n),
-    [receiving],
-  );
-  const totalWithdrawn = useMemo(
-    () =>
-      receiving
-        .filter((s) => s.info && typeof s.info.withdrawn === "bigint")
-        .reduce((a, s) => a + s.info.withdrawn, 0n),
-    [receiving],
-  );
-  const senderCount = useMemo(
-    () =>
-      new Set(
-        receiving.filter((s) => s.info?.sender).map((s) => s.info.sender),
-      ).size,
-    [receiving],
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        // Skip refetch if the last fetch was less than 5s ago
+        if (Date.now() - lastFetchAtRef.current < 5_000) return;
+        refetch();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      activeControllerRef.current?.abort();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [publicKey, refetch]);
+
+  const range = useMemo(() => {
+    if (rangePreset !== "custom") return presetToRange(rangePreset);
+    const start = customStart ? Math.floor(new Date(customStart).getTime() / 1000) : null;
+    const end = customEnd ? Math.floor(new Date(customEnd).getTime() / 1000) + 86_400 - 1 : null;
+    return {
+      start: start !== null && Number.isFinite(start) ? start : null,
+      end: end !== null && Number.isFinite(end) ? end : null,
+    };
+  }, [rangePreset, customStart, customEnd]);
+
+  const filterByRange = useCallback(
+    (rows: StreamRow[]) =>
+      range.start === null && range.end === null
+        ? rows
+        : rows.filter((r) => streamInRange(r.info.startTime, r.info.endTime, range)),
+    [range],
   );
 
-  const displayed = tab === "receiving" ? receiving : sending;
+  const filteredReceiving = useMemo(() => filterByRange(receiving), [receiving, filterByRange]);
+  const filteredSending = useMemo(() => filterByRange(sending), [sending, filterByRange]);
+
+  // A wallet can be both the sender and recipient of the same stream. Dedupe
+  // by contract address so the portfolio KPIs never count that stream twice.
+  const allStreams = useMemo(
+    () => Array.from(new Map([...filteredReceiving, ...filteredSending].map((row) => [row.address, row])).values()),
+    [filteredReceiving, filteredSending],
+  );
+  const activeStreams = useMemo(
+    () => allStreams.filter((stream) => stream.status === "active"),
+    [allStreams],
+  );
+  const activeRunRate = useMemo(
+    () => activeStreams.reduce((total, stream) => total + stream.info.ratePerSecond, 0n),
+    [activeStreams],
+  );
+  // `withdrawn` is the amount already claimed and `withdrawable` is the
+  // accrued, unclaimed balance. Together they are the value streamed so far.
+  const totalValueStreamed = useMemo(
+    () => allStreams.reduce((total, stream) => total + stream.info.withdrawn + stream.withdrawable, 0n),
+    [allStreams],
+  );
+  const expiringSoon = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const weekFromNow = now + 7 * 24 * 60 * 60;
+    return activeStreams.filter((stream) => stream.info.endTime > now && stream.info.endTime <= weekFromNow).length;
+  }, [activeStreams]);
+
+  const displayed = tab === "receiving" ? filteredReceiving : filteredSending;
 
   const STATS = [
-    { label: "Active streams", value: loading ? "…" : String(activeCount) },
     {
-      label: "Receiving /s",
-      value: loading ? "…" : fromStroops(receivingRate),
+      label: t("stats.activeStreams"),
+      value: loading ? "…" : error ? "—" : String(activeStreams.length),
     },
     {
-      label: "Total received",
-      value: loading ? "…" : fromStroops(totalWithdrawn),
+      label: t("stats.activeRunRate"),
+      value: loading ? "…" : error ? "—" : `${fromStroops(activeRunRate)} /s`,
     },
-    { label: "Senders", value: loading ? "…" : String(senderCount) },
+    {
+      label: t("stats.totalValueStreamed"),
+      value: loading ? "…" : error ? "—" : fromStroops(totalValueStreamed),
+    },
+    {
+      label: t("stats.expiringSoon"),
+      value: loading ? "…" : error ? "—" : String(expiringSoon),
+    },
   ];
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-black tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-black tracking-tight">{t("title")}</h1>
         {connected && (
           <Link href="/create" className="btn-primary text-sm">
-            <Plus className="w-4 h-4" /> New stream
+            <Plus className="w-4 h-4" /> {t("newStream")}
           </Link>
         )}
       </div>
+
+      {/* Date-range filter (#547) */}
+      {connected && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <label htmlFor="dashboard-range" className="text-xs text-gray-400 dark:text-gray-500">
+            {t("totalsFor")}
+          </label>
+          <select
+            id="dashboard-range"
+            value={rangePreset}
+            onChange={(e) => setRangePreset(e.target.value as DateRangePreset)}
+            className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+          >
+            {DATE_RANGE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          {rangePreset === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                aria-label="Range start"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+              <span className="text-xs text-gray-400">{t("rangeTo")}</span>
+              <input
+                type="date"
+                aria-label="Range end"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="border-gray-300 dark:border-gray-700 border py-1 px-2 text-sm rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Aggregate stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
@@ -202,35 +396,78 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {error && (
-        <div className="card text-center py-4 mb-6 text-sm text-red-500 dark:text-red-400">
+      {error && !networkTrouble && (
+        <div className="card text-center py-4 mb-6 text-sm text-gray-600 dark:text-gray-400">
           {error}
+        </div>
+      )}
+
+      {/* Ending soon widget */}
+      <ErrorBoundary fallback={() => null}>
+        <EndingSoonWidget
+          receiving={receiving.map((r) => ({
+            id: r.id,
+            address: r.address,
+            counterparty: r.info.sender,
+            role: "recipient" as const,
+            endTime: r.info.endTime,
+            status: r.status,
+            info: r.info,
+          }))}
+          sending={sending.map((s) => ({
+            id: s.id,
+            address: s.address,
+            counterparty: s.info.recipient,
+            role: "sender" as const,
+            endTime: s.info.endTime,
+            status: s.status,
+            info: s.info,
+          }))}
+          loading={loading}
+        />
+      </ErrorBoundary>
+
+      {partialError && !error && !networkTrouble && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="card text-center py-3 mb-6 text-sm text-gray-600 dark:text-gray-400 flex items-center justify-center gap-2"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span>{partialError} &mdash;</span>
+          <button
+            onClick={() => refetch()}
+            disabled={loading}
+            className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+          >
+            {loading ? t("retrying") : t("retryLower")}
+          </button>
         </div>
       )}
 
       {!connected ? (
         <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-          Connect your wallet to see your streams.
+          {t("connectWallet")}
         </div>
       ) : (
         <>
           {/* Tabs */}
           <div className="flex gap-1 border-b border-gray-200 dark:border-gray-800 mb-6">
-            {(["receiving", "sending"] as Tab[]).map((t) => (
+            {(["receiving", "sending"] as Tab[]).map((tabOption) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabOption}
+                onClick={() => setTab(tabOption)}
                 className={[
                   "px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors",
-                  tab === t
+                  tab === tabOption
                     ? "border-black text-black dark:border-white dark:text-white"
                     : "border-transparent text-gray-400 hover:text-black dark:hover:text-white",
                 ].join(" ")}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t(`tabs.${tabOption}`)}
                 {!loading && (
                   <span className="ml-1.5 text-xs font-normal text-gray-400 dark:text-gray-500">
-                    ({(t === "receiving" ? receiving : sending).length})
+                    ({(tabOption === "receiving" ? filteredReceiving : filteredSending).length})
                   </span>
                 )}
               </button>
@@ -245,12 +482,14 @@ export default function DashboardPage() {
                     .filter((s) => s.status === "active")
                     .map((s) => ({
                       id: s.id,
+                      address: s.address,
                       info: { withdrawable: s.withdrawable },
                     }))}
                   onComplete={async () => {
                     await refreshStreamData();
-                    const controller = new AbortController();
-                    fetchStreams(controller.signal);
+                    // Balances just changed — bypass the in-flight guard so
+                    // this refresh always lands.
+                    refetch(true);
                   }}
                 />
               </div>
@@ -263,9 +502,41 @@ export default function DashboardPage() {
                 <StreamCardSkeleton key={i} />
               ))}
             </div>
+          ) : error && !networkTrouble ? (
+            <div className="card py-8 px-6 flex flex-col items-center gap-4 text-center">
+              <AlertCircle
+                className="w-8 h-8 text-gray-400 dark:text-gray-500"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {error}
+              </p>
+              <button
+                onClick={() => refetch()}
+                className="flex items-center gap-2 text-sm font-semibold underline hover:text-black dark:hover:text-white text-gray-500 dark:text-gray-400"
+              >
+                <RefreshCw className="w-4 h-4" aria-hidden="true" />
+                {t("retryButton")}
+              </button>
+            </div>
+          ) : displayed.length === 0 && error ? (
+            <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
+              {t("connectionRestoredMessage")}
+            </div>
+          ) : displayed.length === 0 && partialError ? (
+            <div className="card text-center py-12 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mb-2">{partialError}.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={loading}
+                className="underline font-semibold hover:text-black dark:hover:text-white disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                {loading ? t("retrying") : t("retryButton")}
+              </button>
+            </div>
           ) : displayed.length === 0 ? (
             <div className="card text-center py-12 text-sm text-gray-400 dark:text-gray-500">
-              No {tab} streams yet.
+              {t("noStreamsYet", { tab })}
               {tab === "sending" && (
                 <>
                   {" "}
@@ -273,7 +544,7 @@ export default function DashboardPage() {
                     href="/create"
                     className="underline hover:text-black dark:hover:text-white"
                   >
-                    Create your first stream
+                    {t("createFirstStream")}
                   </Link>
                 </>
               )}
@@ -281,19 +552,37 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {displayed.map((row) => (
-                <StreamCard
+                <ErrorBoundary
                   key={row.id}
-                  id={row.id}
-                  counterparty={
-                    tab === "receiving" ? row.info.sender : row.info.recipient
-                  }
-                  role={tab === "receiving" ? "recipient" : "sender"}
-                  token={row.info.token}
-                  ratePerSecond={row.info.ratePerSecond}
-                  startTime={row.info.startTime}
-                  endTime={row.info.endTime}
-                  status={row.status}
-                />
+                  fallback={(_err, retry) => (
+                    <div className="p-4 border border-red-200 dark:border-red-800 rounded bg-red-50 dark:bg-red-900/20">
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        Failed to load stream {row.id}
+                      </p>
+                      <button
+                        onClick={retry}
+                        className="mt-2 text-xs underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
+                >
+                  <StreamCard
+                    id={row.id}
+                    counterparty={
+                      tab === "receiving" ? row.info.sender : row.info.recipient
+                    }
+                    role={tab === "receiving" ? "recipient" : "sender"}
+                    token={row.info.token}
+                    ratePerSecond={row.info.ratePerSecond}
+                    startTime={row.info.startTime}
+                    endTime={row.info.endTime}
+                    status={row.status}
+                    pausedAt={row.info.pausedAt}
+                    streamAddress={row.address}
+                  />
+                </ErrorBoundary>
               ))}
             </div>
           )}
@@ -302,3 +591,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+import { captureError } from "@/lib/error-tracking";

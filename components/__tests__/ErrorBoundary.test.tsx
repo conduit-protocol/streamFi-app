@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
-import { act } from 'react';
 import { ErrorBoundary } from '../ErrorBoundary';
 
 /**
@@ -93,6 +92,80 @@ describe('ErrorBoundary (issue #92 regression)', () => {
     // This is the core regression: with the bug present the breaker never trips.
     triggerErrors(MAX_ERROR_COUNT);
     expect(container.textContent).toContain('Too many errors');
+  });
+
+  it('does not schedule the breaker reset as a render side effect (#421)', () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const boundary = new ErrorBoundary({});
+
+    boundary.state = {
+      hasError: true,
+      error: new Error('boom'),
+      errorCount: MAX_ERROR_COUNT,
+    };
+
+    boundary.render();
+
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('preserves errorCount and trips the circuit breaker when retrying via a custom fallback', () => {
+    // Render custom fallback with Bomb throwing
+    act(() => {
+      root.render(
+        React.createElement(
+          ErrorBoundary,
+          {
+            fallback: (_err, retry) =>
+              React.createElement('button', { onClick: retry }, 'Custom Reload'),
+          },
+          React.createElement(Bomb, { shouldThrow: true }),
+        ),
+      );
+    });
+
+    // 1st error occurred on initial render. Click custom retry button MAX_ERROR_COUNT - 1 times.
+    for (let i = 1; i < MAX_ERROR_COUNT; i++) {
+      const button = container.querySelector('button');
+      expect(button?.textContent).toBe('Custom Reload');
+      act(() => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+    }
+
+    // After MAX_ERROR_COUNT total errors, the circuit breaker should trip instead of displaying custom fallback.
+    expect(container.textContent).toContain('Too many errors');
+  });
+
+  it('resets errorCount when custom fallback explicitly invokes reset', () => {
+    act(() => {
+      root.render(
+        React.createElement(
+          ErrorBoundary,
+          {
+            fallback: (_err, _retry, reset) =>
+              React.createElement('button', { onClick: reset }, 'Full Reset'),
+          },
+          React.createElement(Bomb, { shouldThrow: true }),
+        ),
+      );
+    });
+
+    // Clicking reset clears errorCount each time, preventing the circuit breaker from tripping.
+    for (let i = 0; i < MAX_ERROR_COUNT + 2; i++) {
+      const button = container.querySelector('button');
+      expect(button?.textContent).toBe('Full Reset');
+      act(() => {
+        button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+    }
+
+    // Should still show custom fallback, not circuit breaker
+    expect(container.textContent).toContain('Full Reset');
+    expect(container.textContent).not.toContain('Too many errors');
   });
 
   it('does not throw when an unhandled promise rejection is observed', () => {

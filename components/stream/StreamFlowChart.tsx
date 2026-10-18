@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { Download } from 'lucide-react';
 import { fromStroops, formatTimestamp } from '@/lib/format';
 
 export interface StreamFlowChartProps {
@@ -40,12 +41,36 @@ export function StreamFlowChart({
 }: StreamFlowChartProps) {
   const [hoverPoint, setHoverPoint] = useState<DataPoint | null>(null);
 
+  // Client-only wall-clock snapshot to avoid SSR hydration mismatch.
+  // Use startTime as the SSR-safe default; the real time is set in
+  // useEffect after hydration — matching the StreamTimeline pattern.
+  const [now, setNow] = useState(() => startTime);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const handleDownload = () => {
+    if (!svgRef.current) return;
+    const svgData = new XMLSerializer().serializeToString(svgRef.current);
+    const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `stream-flow.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  useEffect(() => {
+    setNow(Math.floor(Date.now() / 1000));
+  }, [startTime]);
+
   const padding = { top: 20, right: 30, bottom: 30, left: 50 };
   const graphWidth = width - padding.left - padding.right;
   const graphHeight = height - padding.top - padding.bottom;
 
   const chartData = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
     const start = startTime > 0 ? startTime : now - 86400;
     const end = endTime > 0 ? endTime : start + 86400 * 7;
     const effectiveEnd = Math.max(end, start + 3600);
@@ -92,7 +117,7 @@ export function StreamFlowChart({
     });
 
     return { points, maxAmount, start, end: effectiveEnd };
-  }, [startTime, endTime, ratePerSecond, withdrawn, withdrawable, paused, pausedAt, cancelled, graphWidth, graphHeight, padding.left, padding.top]);
+  }, [startTime, endTime, ratePerSecond, withdrawn, withdrawable, paused, pausedAt, cancelled, graphWidth, graphHeight, padding.left, padding.top, now]);
 
   const { points, maxAmount, start, end } = chartData;
 
@@ -112,27 +137,69 @@ export function StreamFlowChart({
     return `${pathD} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
   }, [pathD, points, padding.top, graphHeight]);
 
+  // A brand-new (or not-yet-started) stream has no points or only zero
+  // amounts; an empty SVG reads as broken, so explain it instead.
+  // #667 — only a stream that is actually moving money gets the animation.
+  const isFlowing = !paused && !cancelled && (endTime === 0 || now < endTime);
+
+  const hasFlowData = points.some((p) => p.amount > 0n);
+  if (!hasFlowData) {
+    return (
+      <div className="relative w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 p-4">
+        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+          Stream Flow Trajectory
+        </span>
+        <div
+          role="status"
+          data-testid="stream-flow-empty"
+          className="flex flex-col items-center justify-center text-center py-10"
+        >
+          <p className="text-sm font-semibold">No flow data yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            The chart will fill in once tokens start streaming.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full overflow-hidden rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-800 p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">
           Stream Flow Trajectory
         </span>
-        <span className="text-xs font-mono text-gray-400">
-          Max: {fromStroops(maxAmount)} {tokenSymbol}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono text-gray-400">
+            Max: {fromStroops(maxAmount)} {tokenSymbol}
+          </span>
+          <button
+            onClick={handleDownload}
+            className="text-gray-400 hover:text-black dark:hover:text-white transition-colors"
+            title="Download Chart"
+            aria-label="Download Chart"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="relative w-full">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto overflow-visible"
           onMouseLeave={() => setHoverPoint(null)}
         >
           <defs>
+            {/* #313 correction — COLOR_ACTIVE/COLOR_PAUSED were rgb(59 130 246)
+                (blue-500) / rgb(245 158 11) (amber-500): still banned hues,
+                just spelled as rgb() instead of hex. The "Paused" tooltip
+                label already conveys that state, so the chart itself stays
+                black/white per the design system regardless of status. */}
             <linearGradient id="streamFlowGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={paused ? '#f59e0b' : '#3b82f6'} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={paused ? '#f59e0b' : '#3b82f6'} stopOpacity="0.0" />
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" className="text-black dark:text-white" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0.0" className="text-black dark:text-white" />
             </linearGradient>
           </defs>
 
@@ -161,11 +228,32 @@ export function StreamFlowChart({
           <path
             d={pathD}
             fill="none"
-            stroke={paused ? '#f59e0b' : '#3b82f6'}
+            stroke="currentColor"
+            className="text-black dark:text-white"
             strokeWidth="2.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
+
+          {/* Animated pulse travelling along the flow line (#667). Decorative:
+              hidden from assistive tech and disabled for reduced-motion users
+              via the stream-flow-pulse rule in globals.css. */}
+          {isFlowing && (
+            <path
+              d={pathD}
+              data-testid="stream-flow-pulse"
+              className="stream-flow-pulse text-white dark:text-black"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 18"
+              opacity="0.7"
+              aria-hidden="true"
+              pointerEvents="none"
+            />
+          )}
 
           {/* Interactive Data Points */}
           {points.map((p, i) => (
@@ -174,10 +262,10 @@ export function StreamFlowChart({
               cx={p.x}
               cy={p.y}
               r={hoverPoint?.x === p.x ? 5 : 3}
-              fill={p.isPausedPoint ? '#f59e0b' : '#3b82f6'}
+              fill="currentColor"
               stroke="#ffffff"
               strokeWidth="1.5"
-              className="cursor-pointer transition-all duration-150"
+              className="cursor-pointer transition-all duration-150 text-black dark:text-white"
               onMouseEnter={() => setHoverPoint(p)}
             />
           ))}
@@ -218,7 +306,7 @@ export function StreamFlowChart({
               {fromStroops(hoverPoint.amount)} {tokenSymbol}
             </div>
             {hoverPoint.isPausedPoint && (
-              <div className="text-amber-400 text-[10px]">Paused</div>
+              <div className="text-gray-400 text-[10px]">Paused</div>
             )}
           </div>
         )}

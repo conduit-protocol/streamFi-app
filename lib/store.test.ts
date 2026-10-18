@@ -10,6 +10,7 @@ vi.mock('react-hot-toast', () => ({
     loading: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
+    dismiss: vi.fn(),
   },
 }));
 
@@ -79,5 +80,59 @@ describe('useTransactionStore — bounded growth', () => {
     expect(transactions['tx-a']).toBeUndefined();
     expect(transactions['tx-b']).toBeUndefined();
     expect(Object.keys(transactions).length).toBeLessThan(50);
+  });
+
+  it('triggers side effects (toast and refreshStreamData) when updateStatus is called', async () => {
+    const toast = (await import('react-hot-toast')).default;
+    const { refreshStreamData } = await import('./queryClient.js');
+    const { useTransactionStore } = await import('./store.js');
+    const { addTransaction, updateStatus } = useTransactionStore.getState();
+
+    addTransaction('tx-test', 'Send payment');
+    expect(toast.loading).toHaveBeenCalledWith('Send payment', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'broadcasting');
+    expect(toast.loading).toHaveBeenCalledWith('Broadcasting transaction...', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'confirming');
+    expect(toast.loading).toHaveBeenCalledWith('Waiting for confirmation...', { id: 'tx-test' });
+
+    updateStatus('tx-test', 'success', 'hash-123');
+    expect(toast.success).toHaveBeenCalledWith('Send payment successful!', { id: 'tx-test' });
+    expect(refreshStreamData).toHaveBeenCalled();
+
+    addTransaction('tx-fail', 'Withdraw funds');
+    updateStatus('tx-fail', 'failed', undefined, 'User declined');
+    expect(toast.error).toHaveBeenCalledWith('Failed: User declined', { id: 'tx-fail' });
+  });
+
+  it('clearTransactions dismisses active in-flight toasts on wallet disconnect (#386)', async () => {
+    const toast = (await import('react-hot-toast')).default;
+    const { useTransactionStore } = await import('./store.js');
+    const { addTransaction, clearTransactions } = useTransactionStore.getState();
+
+    addTransaction('tx-pending-1', 'Signing transaction...');
+    addTransaction('tx-pending-2', 'Waiting for signature...');
+    expect(toast.loading).toHaveBeenCalledWith('Signing transaction...', { id: 'tx-pending-1' });
+    expect(toast.loading).toHaveBeenCalledWith('Waiting for signature...', { id: 'tx-pending-2' });
+
+    clearTransactions();
+
+    expect(toast.dismiss).toHaveBeenCalledWith('tx-pending-1');
+    expect(toast.dismiss).toHaveBeenCalledWith('tx-pending-2');
+    expect(useTransactionStore.getState().transactions).toEqual({});
+  });
+
+  it('prunes and dismisses toasts for oldest terminal transactions exceeding cap (#386)', async () => {
+    const toast = (await import('react-hot-toast')).default;
+    const { useTransactionStore } = await import('./store.js');
+    const { addTransaction, updateStatus } = useTransactionStore.getState();
+
+    for (let i = 0; i < 30; i++) {
+      addTransaction(`tx-prune-${i}`, `operation ${i}`);
+      updateStatus(`tx-prune-${i}`, 'success');
+    }
+
+    expect(toast.dismiss).toHaveBeenCalledWith('tx-prune-0');
   });
 });

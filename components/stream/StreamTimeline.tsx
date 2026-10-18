@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { formatTimestamp } from "@/lib/format";
+import { estimateLedgerSequence, type LedgerAnchor } from "@/lib/ledger";
 
 interface StreamTimelineProps {
   startTime: number;
   endTime: number;
   paused: boolean;
   pausedAt: number;
+  /** Known ledger/time pair used to estimate ledger sequences for each event. */
+  ledgerAnchor?: LedgerAnchor | null;
 }
 
 /**
@@ -23,6 +26,7 @@ export function StreamTimeline({
   endTime,
   paused,
   pausedAt,
+  ledgerAnchor,
 }: StreamTimelineProps) {
   // ⚠ Hooks must be called unconditionally — before any early return.
   // Defer time-dependent computation to client-only state to prevent
@@ -55,6 +59,19 @@ export function StreamTimeline({
 
   const progressPct = Math.round(progress * 100);
 
+  const ledgerCaption = (ts: number) => {
+    const seq = estimateLedgerSequence(ts, ledgerAnchor);
+    return seq === null ? null : (
+      <span
+        data-testid="ledger-caption"
+        className="block font-mono text-2xs text-gray-400 dark:text-gray-500"
+        title="Estimated from the ~5s ledger close time"
+      >
+        Ledger ≈ {seq.toLocaleString("en-US")}
+      </span>
+    );
+  };
+
   return (
     <div>
       {/* Bar */}
@@ -85,11 +102,17 @@ export function StreamTimeline({
 
       {/* Labels */}
       <div className="flex justify-between mt-2 text-xs text-gray-400 dark:text-gray-500">
-        <span>{formatTimestamp(startTime)}</span>
+        <span>
+          {formatTimestamp(startTime)}
+          {ledgerCaption(startTime)}
+        </span>
         <span className="font-semibold text-black dark:text-white">
           {progressPct}% complete
         </span>
-        <span>{formatTimestamp(endTime)}</span>
+        <span className="text-right">
+          {formatTimestamp(endTime)}
+          {ledgerCaption(endTime)}
+        </span>
       </div>
     </div>
   );

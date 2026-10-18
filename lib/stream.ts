@@ -5,9 +5,10 @@
  * Read-only calls take a `source` address to build the simulation transaction.
  */
 
-import { xdr, Address, nativeToScVal } from '@stellar/stellar-sdk';
+import { xdr, Address, nativeToScVal, StrKey } from '@stellar/stellar-sdk';
 import { invokeContract, simulateReadOnly, scValToI128, scValToU64 } from './soroban';
 import { tryGetFactoryContractId } from './env';
+import { isMock } from './factory';
 import { MOCK_STREAMS, MOCK_ADDRESSES } from './mock-data';
 
 let _factory: string | undefined;
@@ -15,9 +16,12 @@ function FACTORY(): string | undefined {
   return _factory ??= tryGetFactoryContractId();
 }
 
-function isMock(): boolean {
-  return !FACTORY();
-}
+// ── Flags ─────────────────────────────────────────────────────────────────────
+
+/** Bit masks packed into StreamInfo.flags (see streamFi-contracts storage.rs). */
+const FLAG_PAUSED           = 1;
+const FLAG_CLAWBACK_ENABLED = 1 << 1;
+const FLAG_CANCELLED        = 1 << 2;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +37,8 @@ export interface StreamInfo {
   pausedAt:        number;
   clawbackEnabled: boolean;
   cancelled:       boolean;
+  /** Delegated operator, if the sender has set one. `null` when unset. */
+  operator:        string | null;
 }
 
 // ── Read-only ─────────────────────────────────────────────────────────────────
@@ -46,31 +52,35 @@ export async function getStreamAddress(
   options?: { signal?: AbortSignal },
 ): Promise<string | null> {
   if (isMock()) return MOCK_ADDRESSES[streamId.toString()] ?? null;
-  try {
-    const result = await simulateReadOnly(
-      source,
-      FACTORY()!,
-      'stream_address',
-      [nativeToScVal(streamId, { type: 'u64' })],
-      options,
-    );
-    if (result.switch().name === 'scvVoid') return null;
-    return Address.fromScVal(result).toString();
-  } catch {
-    return null;
-  }
+  const result = await simulateReadOnly(
+    source,
+    FACTORY()!,
+    'stream_address',
+    [nativeToScVal(streamId, { type: 'u64' })],
+    options,
+  );
+  // scvVoid is DripFactory::stream_address returning Option::None — the only
+  // case that means "this stream ID does not exist". RPC/network failures and
+  // a misconfigured factory env var must propagate so callers don't mistake
+  // an outage for a missing stream.
+  if (result.switch().name === 'scvVoid') return null;
+  return Address.fromScVal(result).toString();
 }
 
 /**
  * Get the current withdrawable balance from a stream contract.
  */
-export async function getWithdrawable(source: string, streamAddress: string): Promise<bigint> {
+export async function getWithdrawable(
+  source: string,
+  streamAddress: string,
+  options?: { signal?: AbortSignal },
+): Promise<bigint> {
   if (isMock()) {
     const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
     if (entry) return MOCK_STREAMS[entry[0]]?.withdrawn ?? 0n;
     return 10000000000000000n;
   }
-  const result = await simulateReadOnly(source, streamAddress, 'withdrawable', []);
+  const result = await simulateReadOnly(source, streamAddress, 'withdrawable', [], options);
   return scValToI128(result);
 }
 
@@ -102,9 +112,9 @@ export async function getStreamInfo(
   if (isMock()) {
     const entry = Object.entries(MOCK_ADDRESSES).find(([, addr]) => addr === streamAddress);
     const fallback: StreamInfo = {
-      sender: 'GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN',
-      recipient: 'GBV4ZDEPVQQ4HX6Z3V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7',
-      token: 'CAS3J7GYLGX6UWJ6V7R4T4V6JQZ6V7S5V2R4T4V6JQZ6V7S5V2R4T4V6',
+      sender: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x10)),
+      recipient: StrKey.encodeEd25519PublicKey(Buffer.alloc(32, 0x20)),
+      token: StrKey.encodeContract(Buffer.alloc(32, 0x30)),
       ratePerSecond: 11574074074074n,
       startTime: Math.floor(Date.now() / 1000) - 86400,
       endTime: Math.floor(Date.now() / 1000) + 86400 * 7,
@@ -113,6 +123,7 @@ export async function getStreamInfo(
       pausedAt: 0,
       clawbackEnabled: false,
       cancelled: false,
+      operator: null,
     };
     return entry ? (MOCK_STREAMS[entry[0]] ?? fallback) : fallback;
   }
@@ -140,6 +151,22 @@ export async function getStreamInfo(
     return Address.fromScVal(requireType(name, 'scvAddress', 'an address')).toString();
   }
 
+  // `operator` — best-effort: no prior wiring for a delegated operator
+  // exists in this repo (issue #473), so the exact field name/shape on the
+  // live contract is unconfirmed against streamFi-contracts. Tolerant on
+  // purpose: absent field, scvVoid (Option::None), or anything unexpected
+  // all read as "no operator set" rather than throwing, so a wrong guess
+  // here degrades to hiding the operator UI instead of breaking the page.
+  function readOptionalAddress(name: string): string | null {
+    const field = fields.find(e => e.key().sym()?.toString() === name)?.val();
+    if (!field || field.switch().name !== 'scvAddress') return null;
+    try {
+      return Address.fromScVal(field).toString();
+    } catch {
+      return null;
+    }
+  }
+
   function readI128(name: string): bigint {
     return scValToI128(requireType(name, 'scvI128', 'i128'));
   }
@@ -148,9 +175,16 @@ export async function getStreamInfo(
     return Number(scValToU64(requireType(name, 'scvU64', 'u64')));
   }
 
-  function readBool(name: string): boolean {
-    return requireType(name, 'scvBool', 'boolean').b();
+  function readU32(name: string): number {
+    return requireType(name, 'scvU32', 'u32').u32();
   }
+
+  // `paused`, `clawback_enabled` and `cancelled` are not fields on the
+  // contract's StreamInfo struct — they are bits packed into `flags`,
+  // matching StreamInfo::is_paused() / is_clawback_enabled() / is_cancelled()
+  // in streamFi-contracts. Reading them as fields threw "Missing field:
+  // paused" for every real stream (see #357).
+  const flags = readU32('flags');
 
   return {
     sender:          readAddress('sender'),
@@ -160,15 +194,39 @@ export async function getStreamInfo(
     startTime:       readU64('start_time'),
     endTime:         readU64('end_time'),
     withdrawn:       readI128('withdrawn'),
-    paused:          readBool('paused'),
+    paused:          (flags & FLAG_PAUSED) !== 0,
     pausedAt:        readU64('paused_at'),
-    clawbackEnabled: readBool('clawback_enabled'),
-    cancelled:       readBool('cancelled'),
+    clawbackEnabled: (flags & FLAG_CLAWBACK_ENABLED) !== 0,
+    cancelled:       (flags & FLAG_CANCELLED) !== 0,
+    operator:        readOptionalAddress('operator'),
   };
 }
 
 
 // ── Mutating ──────────────────────────────────────────────────────────────────
+
+/**
+ * Internal helper to invoke a contract method with optional abort signal support.
+ * Avoids code duplication across the 8 mutating wrappers.
+ */
+async function mutate(
+  sender:        string,
+  streamAddress: string,
+  method:        string,
+  args:          xdr.ScVal[],
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  const { hash } = await invokeContract(
+    sender,
+    streamAddress,
+    method,
+    args,
+    signTx,
+    signal ? { signal } : undefined,
+  );
+  return hash;
+}
 
 /**
  * Withdraw the available balance from a stream.
@@ -182,9 +240,7 @@ export async function withdraw(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_withdraw';
-  return signal
-    ? invokeContract(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx);
+  return mutate(sender, streamAddress, 'withdraw', [nativeToScVal(amount, { type: 'i128' })], signTx, signal);
 }
 
 /**
@@ -197,9 +253,7 @@ export async function cancel(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_cancel';
-  return signal
-    ? invokeContract(sender, streamAddress, 'cancel', [], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'cancel', [], signTx);
+  return mutate(sender, streamAddress, 'cancel', [], signTx, signal);
 }
 
 /**
@@ -212,9 +266,7 @@ export async function forceCancel(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_force_cancel';
-  return signal
-    ? invokeContract(sender, streamAddress, 'force_cancel', [], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'force_cancel', [], signTx);
+  return mutate(sender, streamAddress, 'force_cancel', [], signTx, signal);
 }
 
 /**
@@ -227,9 +279,7 @@ export async function pause(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_pause';
-  return signal
-    ? invokeContract(sender, streamAddress, 'pause', [], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'pause', [], signTx);
+  return mutate(sender, streamAddress, 'pause', [], signTx, signal);
 }
 
 /**
@@ -242,9 +292,7 @@ export async function resume(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_resume';
-  return signal
-    ? invokeContract(sender, streamAddress, 'resume', [], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'resume', [], signTx);
+  return mutate(sender, streamAddress, 'resume', [], signTx, signal);
 }
 
 /**
@@ -258,9 +306,7 @@ export async function topUp(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_topup';
-  return signal
-    ? invokeContract(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx);
+  return mutate(sender, streamAddress, 'top_up', [nativeToScVal(amount, { type: 'i128' })], signTx, signal);
 }
 
 /**
@@ -273,9 +319,7 @@ export async function clawback(
   signal?:       AbortSignal,
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_clawback';
-  return signal
-    ? invokeContract(sender, streamAddress, 'clawback', [], signTx, { signal })
-    : invokeContract(sender, streamAddress, 'clawback', [], signTx);
+  return mutate(sender, streamAddress, 'clawback', [], signTx, signal);
 }
 
 /**
@@ -290,7 +334,23 @@ export async function transferRecipient(
 ): Promise<string> {
   if (isMock()) return 'mock_tx_hash_transfer_recipient';
   const args = [new Address(newRecipient).toScVal()];
-  return signal
-    ? invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx, { signal })
-    : invokeContract(sender, streamAddress, 'transfer_recipient', args, signTx);
+  return mutate(sender, streamAddress, 'transfer_recipient', args, signTx, signal);
+}
+
+/**
+ * Revoke the delegated operator on a stream (sender only).
+ *
+ * NOTE: `revoke_operator` is a best-match guess for this contract method,
+ * following this file's naming convention (cancel/pause/resume all match
+ * their contract method 1:1). Not confirmed against streamFi-contracts —
+ * please verify before merging (see PR description).
+ */
+export async function revokeOperator(
+  sender:        string,
+  streamAddress: string,
+  signTx:        (xdr: string, signal?: AbortSignal) => Promise<string>,
+  signal?:       AbortSignal,
+): Promise<string> {
+  if (isMock()) return 'mock_tx_hash_revoke_operator';
+  return mutate(sender, streamAddress, 'revoke_operator', [], signTx, signal);
 }

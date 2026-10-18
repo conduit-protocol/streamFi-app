@@ -2,7 +2,7 @@
 
 The web interface for the Conduit streaming payments protocol. Create, manage, and monitor payment streams — all in a browser.
 
-Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](https://stellarwalletskit.dev), and Tailwind CSS. Design: **black and white only** — no accent colours.
+Built with [Next.js 15](https://nextjs.org) (App Router), [Freighter](https://www.freighter.app), and Tailwind CSS. Design: **black and white only** — no accent colours.
 
 ---
 
@@ -16,6 +16,8 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](
 | `/create` | Create a new stream — token, recipient, rate, duration |
 | `/stream/[id]` | Single stream view — progress, withdraw, top-up, cancel |
 | `/dashboard` | Sender overview — aggregate flow rate, total disbursed |
+| `/transactions` | Transaction history — indexed on-chain activity for the connected wallet |
+| `/profile` | Connected wallet profile — address, network, and session details |
 
 ---
 
@@ -33,7 +35,7 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](
 | Layer | Library |
 |-------|---------|
 | Framework | Next.js 15 (App Router) |
-| Wallet | Stellar Wallets Kit — **not yet integrated, see below** |
+| Wallet | `@stellar/freighter-api` (Freighter-only, see below) |
 | Blockchain reads | `@stellar/stellar-sdk` |
 | Styling | Tailwind CSS 3 |
 | Icons | Lucide React |
@@ -43,22 +45,25 @@ Built with [Next.js 15](https://nextjs.org) (App Router), [Stellar Wallets Kit](
 
 ---
 
-## ⚠️ Wallet integration is stubbed
+## Wallet integration
 
-`contexts/WalletContext.tsx` does not talk to a real wallet yet:
+`contexts/WalletContext.tsx` is a working `@stellar/freighter-api` integration, not a stub:
 
-- `connect()` sets a **hardcoded fake public key** and fake wallet name — it doesn't open
-  Stellar Wallets Kit's modal or talk to Freighter/xBull/Albedo.
-- `signTx()` doesn't sign anything — it logs the XDR and returns it **unsigned**.
-- `@stellar/wallet-kit` isn't even in `package.json` yet; the real integration is written as a
-  commented-out TODO block inside `connect()`.
+- `connect()` calls Freighter's real `requestAccess()` to obtain the user's actual public key,
+  persists the session, and watches for account/network changes via `WatchWalletChanges`.
+- `signTx()` calls Freighter's real `signTransaction()` and returns a genuinely signed XDR.
+- Mutating operations (connect, disconnect, signTx) flow through a bounded Semaphore + Mutex
+  pattern with `AbortController` integration for graceful cancellation — see the concurrency
+  notes at the top of `WalletContext.tsx` and `TODO.md` for the design history.
 
-Every mutating flow (withdraw, cancel, pause, top-up, create) will build and simulate a real
-transaction against the configured RPC, but submission will fail once the network actually
-verifies the signature — because there isn't one. Read-only flows (balances, stream lists) work
-end-to-end today. Wiring up the real wallet kit (uncommenting and completing the TODO in
-`WalletContext.tsx`) is the single biggest gap between this app and something demoable against
-testnet with a real wallet.
+This app deliberately supports **Freighter only**, not a multi-wallet kit.
+`@creit.tech/stellar-wallets-kit` was evaluated and rejected: its dependency tree unconditionally
+pulls in Ledger/Trezor/WalletConnect/a NEAR Protocol SDK — roughly 300 extra packages and
+36 vulnerabilities — for wallet support this app doesn't use. If broader wallet support becomes
+a real requirement, that tradeoff should be revisited deliberately rather than assumed.
+
+Every mutating flow (withdraw, cancel, pause, top-up, create) builds, signs, and submits a real
+transaction against the configured RPC end-to-end today.
 
 ---
 
@@ -157,7 +162,7 @@ conduit-app/
 │   │   ├── WithdrawButton.tsx  # Withdraw with pending state
 │   │   └── RateTicker.tsx      # Live per-second counter (client-side math, no contract calls)
 │   ├── Navbar.tsx              # Top navigation
-│   ├── ConnectButton.tsx       # Stellar Wallets Kit connect trigger
+│   ├── ConnectButton.tsx       # Freighter connect trigger (via WalletContext)
 │   └── Providers.tsx           # Context providers tree
 ├── lib/
 │   ├── soroban.ts              # Low-level Soroban RPC: invokeContract, simulateReadOnly, ScVal decoding

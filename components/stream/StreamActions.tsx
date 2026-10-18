@@ -1,14 +1,19 @@
 'use client';
+import type { StreamInfo } from '@/lib/stream';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, X, Plus, RotateCcw } from 'lucide-react';
 import { WithdrawButton }    from './WithdrawButton';
 import { Modal }             from '@/components/ui/Modal';
 import { useWallet }         from '@/contexts/WalletContext';
 import { Input }             from '@/components/ui/Input';
 import * as streamLib        from '@/lib/stream';
-import { toStroops }         from '@/lib/format';
+import { safeToStroops }     from '@/lib/safe-operations';
+import { fromStroops }       from '@/lib/format';
 import { queryClient }       from '@/lib/queryClient';
+import { queueTransaction } from '@/lib/offline-transactions';
+import { invalidateStreamMutation, invalidateProfileAndAllowance } from '@/lib/query-keys';
+import { optimisticStreamStatusUpdate, rollbackStreamStatus } from '@/lib/optimistic-updates';
 
 type StreamStatus = 'active' | 'paused' | 'ended' | 'cancelled';
 
@@ -19,6 +24,10 @@ interface StreamActionsProps {
   isSender:        boolean;
   isRecipient:     boolean;
   withdrawable:    bigint;
+  /** Total amount originally deposited into the stream, in stroops. */
+  totalDeposited?: bigint;
+  /** Amount already withdrawn by the recipient, in stroops. */
+  withdrawn?:      bigint;
   token:           string;
   onSuccess?:      () => void;
 }
@@ -29,7 +38,7 @@ interface StreamActionsProps {
  */
 export function StreamActions({
   streamAddress, status, clawbackEnabled,
-  isSender, isRecipient, withdrawable, token, onSuccess,
+  isSender, isRecipient, withdrawable, totalDeposited = withdrawable, withdrawn = 0n, token, onSuccess,
 }: StreamActionsProps) {
   const { publicKey, signTx } = useWallet();
   const mounted = useRef(true);
@@ -39,6 +48,15 @@ export function StreamActions({
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmt, setTopUpAmt]   = useState('');
   const [topUpErr, setTopUpErr]   = useState('');
+  const [cancelOpen, setCancelOpen] = useState(false);
+
+  const senderRefund = totalDeposited - withdrawn - withdrawable;
+
+  const closeTopUp = useCallback(() => {
+    setTopUpOpen(false);
+    setTopUpAmt('');
+    setTopUpErr('');
+  }, []);
 
   useEffect(() => {
     return () => { mounted.current = false; };
@@ -50,38 +68,77 @@ export function StreamActions({
   const isPaused = status === 'paused';
   const canAct   = isActive || isPaused;
 
-  async function run(name: string, fn: () => Promise<unknown>) {
+  async function run(name: string, fn: () => Promise<unknown>, optimisticStatus?: string): Promise<boolean> {
     setPending(name);
     setActionError(null);
+    if (!navigator.onLine && (name === 'cancel' || name === 'topup')) {
+      if (name === 'cancel') {
+        queueTransaction({ kind: 'cancel', publicKey: publicKey!, streamAddress });
+      } else {
+        const amount = safeToStroops(topUpAmt.trim());
+        if (amount !== null && amount > 0n) {
+          queueTransaction({ kind: 'topup', publicKey: publicKey!, streamAddress, amount: amount.toString() });
+        }
+      }
+      setActionError('Queued while offline. It will be submitted automatically when you reconnect.');
+      setPending(null);
+      return true;
+    }
+
+    // Apply optimistic update before the mutation (#454)
+    let snapshot: StreamInfo | undefined;
+    if (optimisticStatus) {
+      snapshot = optimisticStreamStatusUpdate(queryClient, streamAddress, optimisticStatus);
+    }
+
     try {
       await fn();
-      if (!mounted.current) return;
-      // The stream's on-chain state just changed — invalidate any cached
-      // reads (e.g. a Profile Page's balance/status query) so they don't
-      // keep showing pre-action data (fixes #193).
-      await queryClient.invalidateQueries();
+      if (!mounted.current) return false;
+      await invalidateStreamMutation(queryClient, streamAddress);
+      await invalidateProfileAndAllowance(queryClient, publicKey);
       onSuccess?.();
+      return true;
     } catch (e) {
-      if (!mounted.current) return;
+      if (!mounted.current) return false;
+      // Roll back the optimistic update on error
+      if (optimisticStatus && snapshot !== undefined) {
+        rollbackStreamStatus(queryClient, streamAddress, snapshot);
+      }
       console.error(`[${name}] error:`, e);
       setActionError(e instanceof Error ? e.message : `Failed to ${name}.`);
+      return false;
     } finally {
       if (mounted.current) setPending(null);
     }
   }
 
+  async function confirmCancel() {
+    const succeeded = await run(
+      'cancel',
+      () => streamLib.cancel(publicKey, streamAddress, signTx),
+      'cancelled',
+    );
+    if (succeeded && mounted.current) setCancelOpen(false);
+  }
+
   const submitTopUp = async () => {
-    const parsed = parseFloat(topUpAmt);
-    if (!topUpAmt || isNaN(parsed) || parsed <= 0) {
+    if (!topUpAmt || topUpAmt.trim() === '') {
       setTopUpErr('Enter a valid amount greater than 0.');
       return;
     }
+    const amount = safeToStroops(topUpAmt.trim());
+    if (amount === null || amount <= 0n) {
+      setTopUpErr('Enter a valid amount greater than 0.');
+      return;
+    }
+    if (amount > BigInt('170141183460469231731687303715884105727')) {
+      setTopUpErr('Amount exceeds maximum allowed.');
+      return;
+    }
     setTopUpErr('');
-    const amount = toStroops(parsed.toString());
     await run('topup', () => streamLib.topUp(publicKey, streamAddress, amount, signTx));
     if (!mounted.current) return;
-    setTopUpOpen(false);
-    setTopUpAmt('');
+    closeTopUp();
   };
 
   return (
@@ -105,7 +162,7 @@ export function StreamActions({
         {isSender && isActive && (
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => run('pause', () => streamLib.pause(publicKey, streamAddress, signTx))}
+              onClick={() => run('pause', () => streamLib.pause(publicKey, streamAddress, signTx), 'paused')}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -113,7 +170,7 @@ export function StreamActions({
               {pending === 'pause' ? 'Pausing…' : 'Pause'}
             </button>
             <button
-              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx))}
+              onClick={() => setCancelOpen(true)}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -127,7 +184,7 @@ export function StreamActions({
         {isSender && isPaused && (
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => run('resume', () => streamLib.resume(publicKey, streamAddress, signTx))}
+              onClick={() => run('resume', () => streamLib.resume(publicKey, streamAddress, signTx), 'active')}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -135,7 +192,7 @@ export function StreamActions({
               {pending === 'resume' ? 'Resuming…' : 'Resume'}
             </button>
             <button
-              onClick={() => run('cancel', () => streamLib.cancel(publicKey, streamAddress, signTx))}
+              onClick={() => setCancelOpen(true)}
               disabled={pending !== null}
               className="btn-secondary"
             >
@@ -170,9 +227,54 @@ export function StreamActions({
         )}
       </div>
 
+      {/* Cancel confirmation modal */}
+      {cancelOpen && (
+        <Modal title="Cancel stream?" onClose={() => pending === null && setCancelOpen(false)}>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Cancellation is irreversible. The stream will settle immediately using the breakdown below.
+            </p>
+            <div className="rounded border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800 text-sm">
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <span className="text-gray-500">Already paid to recipient</span>
+                <span className="font-mono">{fromStroops(withdrawn)} {token}</span>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <span className="text-gray-500">Recipient payout</span>
+                <span className="font-mono">{fromStroops(withdrawable)} {token}</span>
+              </div>
+              <div className="flex justify-between gap-4 px-3 py-2">
+                <span className="text-gray-500">Sender refund</span>
+                <span className="font-mono">{fromStroops(senderRefund)} {token}</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Total deposited: {fromStroops(totalDeposited)} {token}
+            </p>
+            {actionError && <p className="text-xs text-red-600">{actionError}</p>}
+            <div className="flex gap-2">
+              <button
+                className="btn-primary flex-1"
+                onClick={confirmCancel}
+                disabled={pending === 'cancel'}
+              >
+                {pending === 'cancel' ? 'Signing…' : 'Confirm cancellation'}
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setCancelOpen(false)}
+                disabled={pending !== null}
+              >
+                Keep stream
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Top-up modal */}
       {topUpOpen && (
-        <Modal title="Top up stream" onClose={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}>
+        <Modal title="Top up stream" onClose={closeTopUp}>
           <div className="space-y-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Add more {token} to extend the stream&apos;s lifetime at the current rate.
@@ -201,7 +303,7 @@ export function StreamActions({
               </button>
               <button
                 className="btn-secondary"
-                onClick={() => { setTopUpOpen(false); setTopUpAmt(''); setTopUpErr(''); }}
+                onClick={closeTopUp}
               >
                 Cancel
               </button>

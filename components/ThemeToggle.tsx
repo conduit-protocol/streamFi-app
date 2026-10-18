@@ -1,28 +1,85 @@
 'use client';
 
 import { useTheme } from 'next-themes';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Monitor } from 'lucide-react';
 import { useEffect, useState } from 'react';
+
+type ThemeChoice = 'light' | 'dark' | 'system';
+
+export function getNextTheme(theme?: string): ThemeChoice {
+  if (theme === 'light') return 'dark';
+  if (theme === 'dark') return 'system';
+  return 'light';
+}
+
+export const THEME_STORAGE_KEY = 'streamfi-theme';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  // #306 — theme (from next-themes) never changes when the OS switches
+  // color scheme while theme === 'system', so this component's own icon/
+  // label would otherwise go stale until some unrelated re-render happened.
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('theme');
+      if (stored && (stored === 'light' || stored === 'dark' || stored === 'system') && stored !== theme) {
+        setTheme(stored);
+      }
+    } catch {
+      // Storage unavailable in private browsing
+    }
+  }, []);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    setSystemPrefersDark(mql.matches);
+
+    const handleChange = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
+  }, []);
 
   if (!mounted) {
     return <div className="w-9 h-9" />;
   }
 
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const isDark = theme === 'dark' || (theme === 'system' && systemPrefersDark);
+  const nextTheme = getNextTheme(theme);
+  const label =
+    nextTheme === 'system'
+      ? 'Match system theme'
+      : nextTheme === 'dark'
+        ? 'Switch to dark mode'
+        : 'Switch to light mode';
+
+  const handleToggle = () => {
+    setTheme(nextTheme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+      localStorage.setItem('theme', nextTheme);
+    } catch {
+      // Storage unavailable in private browsing
+    }
+  };
 
   return (
     <button
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      onClick={handleToggle}
       className="inline-flex items-center justify-center w-9 h-9 rounded text-gray-500 hover:text-black hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={label}
+      title={label}
     >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      {theme === 'system' ? (
+        <Monitor className="w-4 h-4" />
+      ) : isDark ? (
+        <Sun className="w-4 h-4" />
+      ) : (
+        <Moon className="w-4 h-4" />
+      )}
     </button>
   );
 }

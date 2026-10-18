@@ -12,19 +12,52 @@ vi.mock('@tanstack/react-query', () => ({
   },
 }));
 
-import { queryClient, refreshStreamData } from './queryClient';
+import {
+  queryClient,
+  refreshStreamData,
+  makeQueryClient,
+  getQueryClient,
+} from './queryClient';
 
-describe('refreshStreamData', () => {
+describe('QueryClient isolation and helpers (#345)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvalidateQueries.mockResolvedValue(undefined);
     mockRefetchQueries.mockResolvedValue(undefined);
   });
 
-  it('invalidates and refetches active queries after a stream mutation succeeds', async () => {
+  it('makeQueryClient creates a new QueryClient instance', () => {
+    const client1 = makeQueryClient();
+    const client2 = makeQueryClient();
+    expect(client1).toBeDefined();
+    expect(client2).toBeDefined();
+    expect(client1).not.toBe(client2);
+  });
+
+  it('getQueryClient reuses the browser singleton when window is defined', () => {
+    const client1 = getQueryClient();
+    const client2 = getQueryClient();
+    expect(client1).toBe(client2);
+  });
+
+  it('invalidates only the stream-related trees (active) after a stream mutation', async () => {
     await refreshStreamData();
 
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ refetchType: 'active' });
-    expect(queryClient.refetchQueries).toHaveBeenCalledWith({ type: 'active', refetchType: 'active' });
+    // Scoped to the stream / dashboard / transactions trees — never a blanket
+    // app-wide invalidation (#215 / #354 / #431).
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(3);
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['stream'],
+      refetchType: 'active',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['dashboard'],
+      refetchType: 'active',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['transactions'],
+      refetchType: 'active',
+    });
+    expect(mockRefetchQueries).not.toHaveBeenCalled();
   });
 });

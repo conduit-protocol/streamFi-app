@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { act } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
-import { act } from 'react';
 
 // - Mocks -
 vi.mock('@/contexts/WalletContext', () => ({
@@ -60,6 +59,9 @@ function makeInfo(overrides: Record<string, unknown> = {}) {
     withdrawn: 0n,
     cancelled: false,
     paused: false,
+    pausedAt: 0,
+    clawbackEnabled: false,
+    operator: null,
     ...overrides,
   };
 }

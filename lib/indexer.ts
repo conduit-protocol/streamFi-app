@@ -1,5 +1,5 @@
-import { getStreamAddress, getStreamInfo } from './stream';
-import { streamsBySender, streamsByRecipient } from './factory';
+import { getStreamAddress, getStreamInfo, type StreamInfo } from './stream';
+import { streamsBySender, streamsByRecipient, isMock } from './factory';
 
 export interface TransactionRow {
   type:   string;
@@ -14,72 +14,277 @@ export interface TransactionRow {
 const BASE_NOW = 1784630000; // Static timestamp to prevent SSR hydration mismatch
 
 const DEMO_TXS: TransactionRow[] = [
-  { type: 'Stream Created', amount: '1,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 3600,   hash: 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0' },
-  { type: 'Withdrawn',      amount: '50.42',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 7200,   hash: 'b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1' },
-  { type: 'Withdrawn',      amount: '25.00',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 14400,  hash: 'c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2' },
-  { type: 'Stream Created', amount: '500.00',   token: 'USDC',  status: 'Pending',  date: BASE_NOW - 600,    hash: 'd4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3' },
-  { type: 'Cancelled',      amount: '200.00',   token: 'XLM',   status: 'Failed',   date: BASE_NOW - 86400,  hash: 'e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4' },
-  { type: 'Withdrawn',      amount: '10.00',    token: 'USDC',  status: 'Failed',   date: BASE_NOW - 1800,   hash: 'f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5' },
-  { type: 'Stream Created', amount: '3,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 172800, hash: 'g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6' },
-  { type: 'Withdrawn',      amount: '100.00',   token: 'XLM',   status: 'Success',  date: BASE_NOW - 36000,  hash: 'h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7' },
+  { type: 'Stream Created', amount: '1,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 3600,   hash: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2' },
+  { type: 'Withdrawn',      amount: '50.42',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 7200,   hash: 'b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3' },
+  { type: 'Withdrawn',      amount: '25.00',    token: 'XLM',   status: 'Success',  date: BASE_NOW - 14400,  hash: 'c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4' },
+  { type: 'Stream Created', amount: '500.00',   token: 'USDC',  status: 'Pending',  date: BASE_NOW - 600,    hash: 'd4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5' },
+  { type: 'Cancelled',      amount: '200.00',   token: 'XLM',   status: 'Failed',   date: BASE_NOW - 86400,  hash: 'e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6' },
+  { type: 'Withdrawn',      amount: '10.00',    token: 'USDC',  status: 'Failed',   date: BASE_NOW - 1800,   hash: 'f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7' },
+  { type: 'Stream Created', amount: '3,000.00', token: 'XLM',   status: 'Success',  date: BASE_NOW - 172800, hash: 'a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8' },
+  { type: 'Withdrawn',      amount: '100.00',   token: 'XLM',   status: 'Success',  date: BASE_NOW - 36000,  hash: 'b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9' },
 ];
 
 /** How long to wait for the subgraph before treating it as unavailable. */
 const SUBGRAPH_TIMEOUT_MS = 10_000;
 
+export class IndexerNotConfiguredError extends Error {
+  constructor() {
+    super('Transaction history is unavailable — the subgraph/indexer is not configured yet.');
+    this.name = 'IndexerNotConfiguredError';
+  }
+}
+
+export function isIndexerNotConfiguredError(error: unknown): error is IndexerNotConfiguredError {
+  return error instanceof IndexerNotConfiguredError;
+}
+
+/** GraphQL query for an account's transaction history, newest first. */
+export const TX_HISTORY_QUERY = `query TransactionHistory($address: String!) {
+  transactions(where: { account: $address }, orderBy: timestamp, orderDirection: desc) {
+    type
+    amount
+    token
+    status
+    timestamp
+    hash
+  }
+}`;
+
+/** Subgraph/indexer GraphQL endpoint, or `undefined` when none is configured. */
+export function subgraphUrl(): string | undefined {
+  const url = process.env.NEXT_PUBLIC_SUBGRAPH_URL?.trim();
+  return url ? url : undefined;
+}
+
+interface SubgraphTransaction {
+  type:      string;
+  amount:    string;
+  token:     string;
+  status:    string;
+  /** Unix seconds (subgraphs commonly serialise BigInt as a string). */
+  timestamp: string | number;
+  hash:      string;
+}
+
+const TX_STATUSES: ReadonlyArray<TransactionRow['status']> = ['Success', 'Pending', 'Failed'];
+
+function toTransactionRow(tx: SubgraphTransaction): TransactionRow {
+  const status = TX_STATUSES.find((s) => s.toLowerCase() === String(tx.status).toLowerCase());
+  return {
+    type:   tx.type,
+    amount: tx.amount,
+    token:  tx.token,
+    status: status ?? 'Pending',
+    date:   Number(tx.timestamp),
+    hash:   tx.hash,
+  };
+}
+
+/** POST the transaction-history query to the subgraph and map the result. */
+async function querySubgraph(
+  url: string,
+  publicKey: string,
+  signal?: AbortSignal,
+): Promise<TransactionRow[]> {
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { 'content-type': 'application/json' },
+    body:    JSON.stringify({ query: TX_HISTORY_QUERY, variables: { address: publicKey } }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
+
+  const body = (await res.json()) as {
+    data?:   { transactions?: SubgraphTransaction[] | null };
+    errors?: Array<{ message?: string }>;
+  };
+  if (body.errors?.length) {
+    throw new Error(`Subgraph query failed: ${body.errors[0]?.message ?? 'unknown error'}`);
+  }
+  if (!Array.isArray(body.data?.transactions)) {
+    throw new Error('Subgraph returned an unexpected response shape.');
+  }
+  return body.data.transactions.map(toTransactionRow);
+}
+
 /**
  * Fetch transaction history from the subgraph/indexer.
  *
- * In a real implementation this issues a GraphQL request. It is written to
- * **reject** (rather than hang) when the subgraph is unreachable so the UI can
- * render an error state instead of an infinite loading spinner (issue #144).
- * The `signal` lets callers abort — the page combines it with a timeout so a
- * hung subgraph also surfaces as an error rather than spinning forever.
+ * The `signal` allows callers to abort a hung request. If the signal fires
+ * while the network call is in-flight, the promise rejects with an
+ * AbortError so the UI shows an error state instead of an infinite spinner.
+ *
+ * - Demo mode (`isMock()`, i.e. `NEXT_PUBLIC_DEMO_MODE=true`) returns demo
+ *   data and never touches the network.
+ * - Otherwise, when `NEXT_PUBLIC_SUBGRAPH_URL` is set, the account's history
+ *   is queried from that GraphQL endpoint.
+ * - A configured deploy without a subgraph URL rejects with
+ *   {@link IndexerNotConfiguredError} rather than serving fabricated
+ *   transactions to real users (#341), matching `lib/factory.ts`'s
+ *   `isMock()` contract from #279.
+ *
+ * @param publicKey - The wallet's public key to fetch transactions for.
+ * @param signal    - AbortSignal for cancellation
  */
-export async function fetchTransactionHistory(signal?: AbortSignal): Promise<TransactionRow[]> {
+export async function fetchTransactionHistory(
+  publicKey?: string | null,
+  signal?: AbortSignal,
+): Promise<TransactionRow[]> {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-  // Placeholder for the real GraphQL call, e.g.
-  //   const res = await fetch('/api/graphql', { method: 'POST', signal, body: ... });
-  //   if (!res.ok) throw new Error(`Subgraph returned ${res.status}`);
-  //   return (await res.json()).data.transactions;
-  return DEMO_TXS;
+  // Demo mode only — never serve fabricated history to a configured deploy.
+  if (isMock()) return publicKey ? [] : DEMO_TXS;
+
+  const url = subgraphUrl();
+  if (!url) throw new IndexerNotConfiguredError();
+  // No connected account means there is no history to look up.
+  if (!publicKey) return [];
+
+  return querySubgraph(url, publicKey, signal);
 }
 
 /**
  * Run `fetchTransactionHistory` with a hard timeout so a hung/unresponsive
  * subgraph rejects instead of leaving the caller loading indefinitely.
+ *
+ * Rejects with a descriptive Error on timeout so the UI can display a
+ * user-friendly message and React Query can transition out of 'pending'.
+ *
+ * @param publicKey - The wallet's public key to fetch transactions for
+ * @param timeoutMs - Timeout in milliseconds (default: 10s)
  */
 export async function fetchTransactionHistoryWithTimeout(
+  publicKey?: string | null,
   timeoutMs: number = SUBGRAPH_TIMEOUT_MS,
 ): Promise<TransactionRow[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetchTransactionHistory(controller.signal);
+    return await fetchTransactionHistory(publicKey, controller.signal);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error(`Transaction history timed out after ${timeoutMs / 1000}s — the network may be slow or unavailable.`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Mock GraphQL / Indexer fetcher
-export async function fetchStreamsFromIndexer(publicKey: string, role: 'sender' | 'recipient') {
-  // In a real implementation, this would be a single fetch() call to a GraphQL endpoint
-  // returning all streams instantly.
-  // e.g., const response = await fetch('/api/graphql', { method: 'POST', body: ... })
-  
-  const ids = role === 'sender'
-    ? await streamsBySender(publicKey, publicKey, 0, 100)
-    : await streamsByRecipient(publicKey, publicKey, 0, 100);
+/** Page size for the factory's paginated stream-id lookups. */
+const INDEXER_PAGE_SIZE = 100;
+/** Hard cap so a misbehaving factory that never returns a short page can't
+ *  spin this loop forever. */
+const INDEXER_MAX_STREAMS = 5_000;
 
-  const rows = [];
-  for (const id of ids) {
-    try {
-      const addr = await getStreamAddress(publicKey, id);
-      if (!addr) continue;
-      const info = await getStreamInfo(publicKey, addr);
-      rows.push({ id: id.toString(), info });
-    } catch { /* skip */ }
+/** Walk every page of a `streams_by_*` lookup until a short (final) page. */
+async function fetchAllStreamIds(
+  fn: (source: string, addr: string, offset: number, limit: number, options?: { signal?: AbortSignal }) => Promise<bigint[]>,
+  publicKey: string,
+  options?: { signal?: AbortSignal },
+): Promise<bigint[]> {
+  const ids: bigint[] = [];
+  for (let offset = 0; offset < INDEXER_MAX_STREAMS; offset += INDEXER_PAGE_SIZE) {
+    if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const page = await fn(publicKey, publicKey, offset, INDEXER_PAGE_SIZE, options);
+    ids.push(...page);
+    if (page.length < INDEXER_PAGE_SIZE) return ids;
   }
-  return rows;
+  console.warn(
+    `fetchStreamsFromIndexer: stopped at ${INDEXER_MAX_STREAMS} streams — some may be missing`,
+  );
+  return ids;
+}
+
+export interface IndexedStreamRow {
+  id: string;
+  address?: string;
+  info: StreamInfo;
+}
+
+export interface FetchStreamsResult {
+  streams: IndexedStreamRow[];
+  failedIds: string[];
+  errors: Array<{ id: string; error: Error }>;
+}
+
+export interface FetchStreamsOptions {
+  signal?: AbortSignal;
+  maxConcurrency?: number;
+  onPartialFailure?: (failedIds: string[], errors: Array<{ id: string; error: Error }>) => void;
+}
+
+/**
+ * Fetch all streams for a given wallet address and role.
+ *
+ * Uses bounded concurrency instead of sequential N+1 roundtrips (#342) and
+ * surfaces partial failure via structured result, callback, and console warning.
+ */
+export async function fetchStreamsFromIndexer(
+  publicKey: string,
+  role: 'sender' | 'recipient',
+  options?: FetchStreamsOptions,
+): Promise<IndexedStreamRow[] & FetchStreamsResult> {
+  const signal = options?.signal;
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+  const ids = await fetchAllStreamIds(
+    role === 'sender' ? streamsBySender : streamsByRecipient,
+    publicKey,
+    options,
+  );
+
+  const maxConcurrency = options?.maxConcurrency ?? 10;
+  const streams: IndexedStreamRow[] = [];
+  const failedIds: string[] = [];
+  const errors: Array<{ id: string; error: Error }> = [];
+
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < ids.length) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      const idx = nextIndex++;
+      const id = ids[idx];
+      if (id === undefined) break;
+
+      const strId = id.toString();
+      try {
+        const addr = await getStreamAddress(publicKey, id, { signal });
+        if (!addr) {
+          throw new Error(`Stream address not found for stream ${strId}`);
+        }
+        const info = await getStreamInfo(publicKey, addr, { signal });
+        if (!info) {
+          throw new Error(`Stream info not found for stream ${strId} at ${addr}`);
+        }
+        streams.push({ id: strId, address: addr, info });
+      } catch (err: unknown) {
+        const errorObj = err instanceof Error ? err : new Error(String(err));
+        if (signal?.aborted || errorObj.name === 'AbortError') {
+          throw errorObj;
+        }
+        failedIds.push(strId);
+        errors.push({ id: strId, error: errorObj });
+      }
+    }
+  };
+
+  const poolSize = Math.min(ids.length, Math.max(1, maxConcurrency));
+  const workers = Array.from({ length: poolSize }, () => worker());
+  await Promise.all(workers);
+
+  if (failedIds.length > 0) {
+    console.warn(
+      `fetchStreamsFromIndexer: ${failedIds.length} stream(s) failed to load: ${failedIds.join(', ')}`,
+    );
+    options?.onPartialFailure?.(failedIds, errors);
+  }
+
+  const result = Object.assign(streams, {
+    streams,
+    failedIds,
+    errors,
+  });
+
+  return result as IndexedStreamRow[] & FetchStreamsResult;
 }

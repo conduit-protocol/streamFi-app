@@ -10,7 +10,7 @@ Primitive design system components for conduit-app. All components are black-and
 import { Button } from '@/components/ui/Button';
 
 <Button variant="primary" onClick={...}>Create stream</Button>
-<Button variant="secondary" href="/streams">View streams</Button>
+<Button variant="secondary" onClick={...}>View streams</Button>
 <Button variant="ghost" loading={isPending}>Withdraw</Button>
 <Button variant="primary" disabled>Not available</Button>
 ```
@@ -20,11 +20,12 @@ import { Button } from '@/components/ui/Button';
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `variant` | `'primary' \| 'secondary' \| 'ghost'` | `'primary'` | Visual style |
-| `size` | `'sm' \| 'md' \| 'lg'` | `'md'` | Padding and font size |
 | `loading` | `boolean` | `false` | Show spinner, disable interaction |
 | `disabled` | `boolean` | `false` | Greyed out, non-interactive |
-| `href` | `string` | — | Renders as `<Link>` instead of `<button>` |
-| `fullWidth` | `boolean` | `false` | `w-full` |
+
+All other props (e.g., `onClick`, `type`) are forwarded to the underlying `<button>` element.
+
+**Note:** Button does not support `href`, `size`, or `fullWidth` props. For link-style buttons, wrap Button in a Next.js `<Link>` component.
 
 ### Variants
 
@@ -131,8 +132,8 @@ Badges use `border` and `text-gray-*` shades only — no colour.
 import { ProgressBar } from '@/components/ui/ProgressBar';
 
 <ProgressBar value={0.42} />           // 42% filled
-<ProgressBar value={1} />              // fully drained
-<ProgressBar value={0} label="0%" />   // with label override
+<ProgressBar value={1} />              // 100% filled
+<ProgressBar value={0} label="Starting stream" />   // with aria-label override
 ```
 
 ### Props
@@ -140,9 +141,9 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `value` | `number` | required | `0`–`1` fraction elapsed |
-| `label` | `string` | auto | Override the percentage label |
+| `label` | `string` | auto | Override the aria-label for screen readers |
 
-Renders as a `bg-gray-100` track with a `bg-black` fill. At 100%, fill turns `bg-gray-300` to indicate the stream is fully drained.
+Renders as a `bg-gray-100` track with a `bg-black` fill that transitions smoothly. The fill color remains consistent at all progress levels (no special styling at 100%).
 
 ---
 
@@ -151,26 +152,32 @@ Renders as a `bg-gray-100` track with a `bg-black` fill. At 100%, fill turns `bg
 ```tsx
 import { Modal } from '@/components/ui/Modal';
 
-<Modal open={isOpen} onClose={() => setIsOpen(false)} title="Top up stream">
-  <p>Enter an amount to add to the stream.</p>
-  <Input label="Amount" ... />
-  <div className="flex gap-2 mt-4">
-    <Button variant="primary" onClick={handleTopUp}>Confirm</Button>
-    <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-  </div>
-</Modal>
+const [isOpen, setIsOpen] = useState(false);
+
+{isOpen && (
+  <Modal onClose={() => setIsOpen(false)} title="Top up stream">
+    <p>Enter an amount to add to the stream.</p>
+    <Input label="Amount" ... />
+    <div className="flex gap-2 mt-4">
+      <Button variant="primary" onClick={handleTopUp}>Confirm</Button>
+      <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
+    </div>
+  </Modal>
+)}
 ```
 
 ### Props
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `open` | `boolean` | Controls visibility |
-| `onClose` | `() => void` | Called on backdrop click or Escape key |
 | `title` | `string` | Modal heading |
+| `onClose` | `() => void` | Called on backdrop click or Escape key |
 | `children` | `ReactNode` | Modal body |
+| `size` | `string` | Max width class; default `'max-w-md'` |
 
-The modal is a portal rendered into `document.body`. It traps focus while open and restores focus on close.
+**Important:** Modal does **not** have an `open` prop. Control visibility by conditionally rendering the Modal component itself (e.g., `{isOpen && <Modal ...>}`).
+
+The modal is a portal-style overlay rendered into the DOM root. It traps focus while mounted and restores focus on unmount.
 
 ---
 
@@ -183,4 +190,5 @@ Before adding a new primitive component:
 3. Use only black/white/gray colour utilities.
 4. Export it as a named export from the component file (not default export).
 5. Document it in this README following the same format.
-6. Add it to `components/ui/index.ts` for barrel imports.
+
+**Note:** There is no `components/ui/index.ts` barrel export file. Import components directly from their individual files (e.g., `from '@/components/ui/Button'`).

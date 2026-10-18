@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import React from "react";
+import React, { act } from 'react';
 import { createRoot } from "react-dom/client";
-import { act } from "react";
 
 // ── Mutable wallet state (changed per test) ──────────────────────────────────
 
@@ -12,6 +11,17 @@ vi.mock("@/contexts/WalletContext", () => ({
     publicKey: currentPublicKey,
     connected: currentPublicKey !== null,
   }),
+}));
+
+// ── next/navigation (URL sync for tab/status/token/sort, #548) ──────────────
+
+const mockRouterReplace = vi.fn();
+let currentSearchParams = new URLSearchParams();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
+  usePathname: () => "/streams",
+  useSearchParams: () => currentSearchParams,
 }));
 
 // ── Mock factory / stream functions ──────────────────────────────────────────
@@ -42,9 +52,7 @@ vi.mock("next/link", () => ({
     React.createElement("a", props, children),
 }));
 
-vi.mock("lucide-react", () => ({
-  Plus: () => React.createElement("span", null, "+"),
-}));
+vi.mock("lucide-react");
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
@@ -79,6 +87,7 @@ describe("StreamsPage — RPC deserialization failure handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentPublicKey = "GTESTKEY1234567890ABCDEF";
+    currentSearchParams = new URLSearchParams();
     mockStreamsBySender.mockResolvedValue([]);
     mockStreamsByRecipient.mockResolvedValue([]);
   });
@@ -152,6 +161,79 @@ describe("StreamsPage — RPC deserialization failure handling", () => {
     });
 
     expect(container.querySelector('[role="alert"]')).toBeNull();
+    cleanup(root, container);
+  });
+});
+
+describe("StreamsPage — multi-select for comparison", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    currentPublicKey = "GTESTKEY1234567890ABCDEF";
+    currentSearchParams = new URLSearchParams();
+    const stream = await import("@/lib/stream");
+    vi.mocked(stream.getStreamAddress).mockImplementation(async (_pk, id) => `CADDR${id}`);
+    vi.mocked(stream.getStreamInfo).mockResolvedValue({
+      sender: "GSENDER",
+      recipient: "GTESTKEY1234567890ABCDEF",
+      token: "CTOKEN",
+      ratePerSecond: 1n,
+      startTime: 0,
+      endTime: 0,
+      withdrawn: 0n,
+      paused: false,
+      pausedAt: 0,
+      clawbackEnabled: false,
+      cancelled: false,
+      operator: null,
+    });
+    mockStreamsByRecipient.mockResolvedValue([1n, 2n, 3n, 4n, 5n]);
+    mockStreamsBySender.mockResolvedValue([]);
+  });
+
+  async function load() {
+    const r = renderStreamsPage();
+    await act(async () => {
+      await new Promise((res) => setTimeout(res, 20));
+    });
+    return r;
+  }
+
+  const boxes = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+
+  it("links to the compare view once two streams are selected", async () => {
+    const { container, root } = await load();
+    expect(boxes(container)).toHaveLength(5);
+    expect(container.querySelector('a[href^="/streams/compare"]')).toBeNull();
+
+    act(() => boxes(container)[0]!.click());
+    expect(container.textContent).toContain("pick at least 2");
+    expect(container.querySelector('a[href^="/streams/compare"]')).toBeNull();
+
+    act(() => boxes(container)[2]!.click());
+    const link = container.querySelector('a[href^="/streams/compare"]');
+    expect(link?.getAttribute("href")).toBe("/streams/compare?ids=1,3");
+    cleanup(root, container);
+  });
+
+  it("disables further checkboxes at the selection limit", async () => {
+    const { container, root } = await load();
+    for (const i of [0, 1, 2, 3]) act(() => boxes(container)[i]!.click());
+    expect(boxes(container)[4]!.disabled).toBe(true);
+    expect(container.querySelector('a[href^="/streams/compare"]')?.getAttribute("href"))
+      .toBe("/streams/compare?ids=1,2,3,4");
+    cleanup(root, container);
+  });
+
+  it("clears the selection when switching tabs", async () => {
+    const { container, root } = await load();
+    act(() => boxes(container)[0]!.click());
+    expect(container.textContent).toContain("1 selected");
+    const sendingTab = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent === "Sending",
+    )!;
+    act(() => sendingTab.click());
+    expect(container.textContent).not.toContain("selected");
     cleanup(root, container);
   });
 });

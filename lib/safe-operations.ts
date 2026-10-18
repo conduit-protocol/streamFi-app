@@ -8,37 +8,24 @@
 
 // ── Custom Error Types ───────────────────────────────────────────────────────
 
-export class OperationAbortedError extends Error {
-  readonly code = 'OPERATION_ABORTED';
-  constructor(message = 'Operation aborted') {
-    super(message);
-    this.name = 'OperationAbortedError';
-  }
-}
+// The error classes live in ./errors so that lib/with-timeout.ts can throw
+// them without importing this module (which pulls in the Stellar SDK) — see
+// #393. They are re-exported here so every existing
+// `from '@/lib/safe-operations'` import keeps working unchanged.
+import {
+  OperationAbortedError,
+  OperationTimeoutError,
+  ConcurrencyLimitError,
+  IdempotencyConflictError,
+} from './errors';
+import { withTimeout } from './with-timeout';
 
-export class OperationTimeoutError extends Error {
-  readonly code = 'OPERATION_TIMEOUT';
-  constructor(message = 'Operation timed out') {
-    super(message);
-    this.name = 'OperationTimeoutError';
-  }
-}
-
-export class ConcurrencyLimitError extends Error {
-  readonly code = 'CONCURRENCY_LIMIT';
-  constructor(message = 'Too many concurrent operations') {
-    super(message);
-    this.name = 'ConcurrencyLimitError';
-  }
-}
-
-export class IdempotencyConflictError extends Error {
-  readonly code = 'IDEMPOTENCY_CONFLICT';
-  constructor(message = 'Operation with the same idempotency key is already in-flight') {
-    super(message);
-    this.name = 'IdempotencyConflictError';
-  }
-}
+export {
+  OperationAbortedError,
+  OperationTimeoutError,
+  ConcurrencyLimitError,
+  IdempotencyConflictError,
+};
 
 // ── Normalized Operation Result ──────────────────────────────────────────────
 
@@ -61,36 +48,32 @@ export interface NormalizedError {
  */
 export function normalizeError(err: unknown, context?: string): NormalizedError {
   const message = err instanceof Error ? err.message : String(err ?? 'Unknown error');
+  const msg = message.toLowerCase();
 
   // Determine error source category
   let source: NormalizedError['source'] = 'unknown';
   let retryable = false;
   const errObj = err as { name?: string; code?: string } | null | undefined;
 
-  if (err instanceof OperationAbortedError || errObj?.name === 'AbortError' || message.includes('abort')) {
+  if (err instanceof OperationAbortedError || errObj?.name === 'AbortError' || /\babort(ed|ing)?\b/i.test(message)) {
     source = 'wallet';
     retryable = true;
-  } else if (err instanceof OperationTimeoutError || message.includes('timeout') || message.includes('timed out')) {
+  } else if (err instanceof OperationTimeoutError || /\btimeout\b|\btimed?\s*out\b/i.test(message)) {
     source = 'rpc';
     retryable = true;
   } else if (err instanceof ConcurrencyLimitError || err instanceof IdempotencyConflictError) {
     source = 'wallet';
     retryable = true;
-  } else if (message.includes('Freighter') || message.includes('wallet') || message.includes('signing')) {
+  } else if (/\bFreighter\b|\bwallet\b|\bsign(ing|ed)\b/i.test(message)) {
     source = 'wallet';
     retryable = false;
-  } else if (message.includes('network') || message.includes('fetch') || message.includes('ECONNREFUSED')) {
+  } else if (/\bnetwork\b|\bfetch\b|\bECONNREFUSED\b/i.test(message)) {
     source = 'network';
     retryable = true;
-  } else if (
-    message.includes('Simulation') ||
-    message.includes('simulation') ||
-    message.includes('No result returned') ||
-    message.includes('HostError')
-  ) {
+  } else if (/\bsimulation\b|\bHostError\b|\bno\s+result\s+returned\b/i.test(message)) {
     source = 'rpc';
     retryable = false;
-  } else if (message.includes('Invalid') || message.includes('Missing') || message.includes('Malformed')) {
+  } else if (/\bInvalid\b|\bMissing\b|\bMalformed\b/i.test(message)) {
     source = 'validation';
     retryable = false;
   }
@@ -161,11 +144,22 @@ export async function withBoundedParallel<T>(
   const results: SafeOperationResult<any>[] = [];
   let index = 0;
 
+  // When the caller doesn't pass an outer signal, fall back to a single
+  // AbortController created once for the whole batch — not one per item.
+  // A fresh AbortController allocated per item is discarded the instant
+  // it's created; nothing ever holds a reference to it, so `.abort()` can
+  // never be called and every handler's signal reads `aborted: false`
+  // forever, silently defeating per-item cancellation (#221). Sharing one
+  // controller across the batch at least makes the signal a coherent,
+  // referenceable object — the same one every item receives — instead of
+  // a dead one manufactured and thrown away per item.
+  const fallbackSignal = options?.signal ?? new AbortController().signal;
+
   const worker = async () => {
     while (index < items.length && !options?.signal?.aborted) {
       const i = index++;
       try {
-        const result = await handler(items[i]!, i, options?.signal ?? new AbortController().signal);
+        const result = await handler(items[i]!, i, fallbackSignal);
         results[i] = result;
       } catch (err) {
         results[i] = {
@@ -182,31 +176,24 @@ export async function withBoundedParallel<T>(
   const workers = Array.from({ length: maxConcurrency }, () => worker());
   await Promise.all(workers);
 
+  // Fill any un-started slots (e.g. when signal aborted mid-run) with an
+  // aborted result so callers never hit undefined holes.
+  const abortedResult: SafeOperationResult<any> = {
+    success: false,
+    error: normalizeError(new OperationAbortedError('Batch aborted before item started')),
+  };
+  for (let i = 0; i < items.length; i++) {
+    if (results[i] === undefined) results[i] = abortedResult;
+  }
+
   return results;
 }
 
 // ── Timeout Helper ───────────────────────────────────────────────────────────
 
-async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  context?: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new OperationTimeoutError(
-        context ? `${context} timed out after ${ms}ms` : `Operation timed out after ${ms}ms`,
-      ));
-    }, ms);
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+// The local copy of `withTimeout` was one of four near-identical
+// implementations across the app; it now comes from lib/with-timeout.ts,
+// which produces the same OperationTimeoutError message (#393).
 
 // ── Precision Helpers ────────────────────────────────────────────────────────
 
@@ -222,12 +209,13 @@ export function safeRateToString(ratePerSecond: bigint, decimals = 7): string {
   if (ratePerSecond === 0n) return '0';
   const sign = ratePerSecond < 0n ? '-' : '';
   const abs = ratePerSecond < 0n ? -ratePerSecond : ratePerSecond;
-  const factor = BigInt(10 ** decimals);
+  const factor = 10n ** BigInt(decimals);
   const whole = abs / factor;
-  const frac = (abs % factor).toString().padStart(decimals, '0');
-  // Trim trailing zeros but keep at least 2 decimal places
-  const trimmed = frac.replace(/0+$/, '').padEnd(2, '0');
-  return `${sign}${whole}.${trimmed}`;
+  const frac = decimals > 0 ? (abs % factor).toString().padStart(decimals, '0') : '';
+  // Trim trailing zeros but keep at least 2 decimal places (if decimals >= 2)
+  const minDecimals = Math.min(2, decimals);
+  const trimmed = frac.replace(/0+$/, '').padEnd(minDecimals, '0');
+  return decimals > 0 ? `${sign}${whole}.${trimmed}` : `${sign}${whole}`;
 }
 
 /**
@@ -239,21 +227,43 @@ export function safeToStroops(amount: string, decimals = 7): bigint | null {
   const trimmed = amount.trim();
   if (!trimmed) return null;
 
-  // Allow scientific notation for very small/large numbers
-  const scientificMatch = trimmed.match(/^(-?\d+(?:\.\d+)?)[eE](\d+)$/);
-  if (scientificMatch) {
-    const base = scientificMatch[1]!;
-    const exp = parseInt(scientificMatch[2]!, 10);
-    return safeToStroops(base, decimals - exp) ?? safeToStroops(base, decimals);
+  // Regex validation: optional sign, digits before and/or after decimal, optional non-negative scientific exponent
+  const match = trimmed.match(/^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]\+?(\d+))?$/);
+  if (!match) return null;
+
+  const sign = match[1] || '';
+  const isNegative = sign === '-';
+  const intPart = match[2] ?? (match[4] ? '0' : '0');
+  const fracPart = match[3] ?? match[4] ?? '';
+  const expStr = match[5];
+
+  let whole = intPart;
+  let frac = fracPart;
+
+  if (expStr !== undefined) {
+    const exp = parseInt(expStr, 10);
+    // Prevent astronomically large values from causing DOS/OOM issues
+    if (exp > 100) return null;
+
+    const cleanW = whole.replace(/^0+/, '') || '0';
+    if (frac.length <= exp) {
+      const combined = (cleanW === '0' ? '' : cleanW) + frac + '0'.repeat(exp - frac.length);
+      whole = combined.replace(/^0+/, '') || '0';
+      frac = '';
+    } else {
+      const shifted = frac.slice(0, exp);
+      const combined = (cleanW === '0' ? '' : cleanW) + shifted;
+      whole = combined.replace(/^0+/, '') || '0';
+      frac = frac.slice(exp);
+    }
   }
 
-  const [whole = '0', frac = ''] = trimmed.split('.');
-  // Validate characters
-  if (!/^-?\d+$/.test(whole) || (frac && !/^\d+$/.test(frac))) return null;
-
-  const fracPadded = frac.slice(0, decimals).padEnd(decimals, '0');
   try {
-    return BigInt(whole) * BigInt(10 ** decimals) + BigInt(fracPadded);
+    const factor = 10n ** BigInt(decimals);
+    const fracTruncated = decimals > 0 ? frac.slice(0, decimals) : '';
+    const fracPadded = fracTruncated.padEnd(decimals, '0');
+    const result = BigInt(whole) * factor + (fracPadded ? BigInt(fracPadded) : 0n);
+    return isNegative && result !== 0n ? -result : result;
   } catch {
     return null;
   }
@@ -267,11 +277,7 @@ export function safePercent(current: number, start: number, end: number): number
   if (end <= start) return 0;
   if (current <= start) return 0;
   if (current >= end) return 100;
-  // Compute as (current - start) / (end - start) * 100 using high-precision
-  const elapsed = current - start;
-  const total = end - start;
-  // Use 64-bit integer arithmetic to avoid float rounding
-  return Number((BigInt(Math.round(elapsed * 1_000_000)) * 100n) / BigInt(Math.round(total * 1_000_000))) / 100;
+  return ((current - start) / (end - start)) * 100;
 }
 
 // ── Request ID / Idempotency Key ─────────────────────────────────────────────
@@ -323,3 +329,17 @@ export function clearIdempotencyKeys(): void {
   activeIdempotencyKeys.clear();
 }
 
+
+// ── Promise.allSettled Helpers ───────────────────────────────────────────────
+
+/**
+ * Type guard for a fulfilled Promise.allSettled result.
+ *
+ * Use this instead of inline `r && r.status === 'fulfilled'` so
+ * TypeScript narrows the value correctly under `noUncheckedIndexedAccess`.
+ */
+export function isFulfilled<T>(
+  result: PromiseSettledResult<T> | undefined,
+): result is PromiseFulfilledResult<T> {
+  return result !== undefined && result.status === 'fulfilled';
+}

@@ -12,6 +12,9 @@
  * static /about page) if they end up transitively importing this module.
  */
 
+import { loadSelectedNetwork } from './network-storage';
+import { CUSTOM_RPC_STORAGE_KEY, isValidRpcUrl } from './custom-rpc';
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -22,12 +25,35 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Return the RPC URL for the currently selected network.
+ *
+ * Precedence: an explicit custom override saved from Settings (#691) wins,
+ * then NEXT_PUBLIC_SOROBAN_RPC_URL, then the selected preset's well-known URL.
+ */
 export function getRpcUrl(): string {
-  return required('NEXT_PUBLIC_SOROBAN_RPC_URL');
+  try {
+    if (typeof window !== 'undefined') {
+      const custom = window.localStorage.getItem(CUSTOM_RPC_STORAGE_KEY);
+      if (custom && isValidRpcUrl(custom)) return custom.trim();
+    }
+  } catch {
+    /* storage unavailable — fall through to presets */
+  }
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_SOROBAN_RPC_URL'] || selected.rpcUrl;
 }
 
+/**
+ * Return the Stellar network passphrase for the currently selected network.
+ *
+ * The user's last-selected network (persisted in localStorage) takes
+ * precedence; this lets the app rehydrate the same network after a refresh.
+ * A NEXT_PUBLIC_NETWORK_PASSPHRASE env var can still override it.
+ */
 export function getNetworkPassphrase(): string {
-  return required('NEXT_PUBLIC_NETWORK_PASSPHRASE');
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_NETWORK_PASSPHRASE'] || selected.passphrase;
 }
 
 export function getFactoryContractId(): string {
@@ -45,5 +71,53 @@ export function getGovernorContractId(): string | undefined {
 
 /** Optional — only used for classic-account balance lookups, not required for Soroban calls. */
 export function getHorizonUrl(): string | undefined {
-  return process.env['NEXT_PUBLIC_HORIZON_URL'] || undefined;
+  const selected = loadSelectedNetwork();
+  return process.env['NEXT_PUBLIC_HORIZON_URL'] || selected.horizonUrl;
+}
+
+const DEFAULT_FEE_MULTIPLIER = 2;
+
+/**
+ * A fee multiplier outside this range is almost certainly a typo — e.g. `200`
+ * typed for `2.00` — and would overbid the inclusion fee on every transaction,
+ * bounded only by MAX_INCLUSION_FEE (0.1 XLM) in lib/soroban.ts. Values outside
+ * it are rejected in favour of the default. See #428.
+ */
+const MIN_FEE_MULTIPLIER = 1;
+const MAX_FEE_MULTIPLIER = 10;
+
+/**
+ * Multiplier applied over the network's observed inclusion fee (and over
+ * BASE_FEE as a floor) when building contract transactions.
+ *
+ * A bid of exactly BASE_FEE (100 stroops) is the network minimum and is not
+ * selected under any inclusion-fee pressure, which surfaced to users as a
+ * misleading "transaction timed out" instead of "fee too low" (see #360).
+ * Defaults to 2×. A non-numeric, non-positive, or out-of-[1, 10]-range value
+ * is rejected with a `console.warn` and the default is used instead — the same
+ * defensive posture the rest of this module takes (#428).
+ */
+export function getFeeMultiplier(): number {
+  const raw = process.env['NEXT_PUBLIC_SOROBAN_FEE_MULTIPLIER'];
+  if (!raw) return DEFAULT_FEE_MULTIPLIER;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `Ignoring NEXT_PUBLIC_SOROBAN_FEE_MULTIPLIER="${raw}" — not a positive number. ` +
+        `Using the default ${DEFAULT_FEE_MULTIPLIER}x.`,
+    );
+    return DEFAULT_FEE_MULTIPLIER;
+  }
+
+  if (parsed < MIN_FEE_MULTIPLIER || parsed > MAX_FEE_MULTIPLIER) {
+    console.warn(
+      `Ignoring NEXT_PUBLIC_SOROBAN_FEE_MULTIPLIER=${parsed} — outside the supported ` +
+        `[${MIN_FEE_MULTIPLIER}, ${MAX_FEE_MULTIPLIER}] range. A value like 200 (meant as ` +
+        `2.00) would overbid every transaction. Using the default ${DEFAULT_FEE_MULTIPLIER}x.`,
+    );
+    return DEFAULT_FEE_MULTIPLIER;
+  }
+
+  return parsed;
 }

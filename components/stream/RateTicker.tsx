@@ -1,29 +1,25 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { fromStroops } from '@/lib/format';
 
 interface RateTickerProps {
   /** Rate in stroops per second */
   ratePerSecond: bigint;
   /** Current withdrawable balance in stroops (fetched from contract) */
   startBalance: bigint;
+  /** Unix timestamp when the stream ends (0 = open-ended). Ticker freezes past this (#398). */
+  endTime: number;
   /** Decimal places to display (default: 7 for XLM) */
   decimals?: number;
-}
-
-/** Converts stroops to display amount string */
-function fromStroops(stroops: bigint, decimals: number): string {
-  const factor = BigInt(10 ** decimals);
-  const whole  = stroops / factor;
-  const frac   = stroops % factor;
-  return `${whole}.${frac.toString().padStart(decimals, '0')}`;
 }
 
 /**
  * Live-updating balance counter.
  * Increments every 100ms based on ratePerSecond without any contract calls.
+ * Freezes at endTime so the ticker doesn't overshoot the contract balance (#398).
  */
-export function RateTicker({ ratePerSecond, startBalance, decimals = 7 }: RateTickerProps) {
+export function RateTicker({ ratePerSecond, startBalance, endTime, decimals = 7 }: RateTickerProps) {
   const startRef  = useRef<{ ts: number; balance: bigint }>({
     ts:      Date.now(),
     balance: startBalance,
@@ -36,16 +32,50 @@ export function RateTicker({ ratePerSecond, startBalance, decimals = 7 }: RateTi
   }, [startBalance]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      const elapsed = BigInt(Math.floor((Date.now() - startRef.current.ts) / 1000));
+    const update = () => {
+      const now = endTime > 0 ? Math.min(Date.now(), endTime * 1000) : Date.now();
+      const elapsed = BigInt(Math.max(0, Math.floor((now - startRef.current.ts) / 1000)));
       const current = startRef.current.balance + elapsed * ratePerSecond;
       setDisplay(fromStroops(current, decimals));
-    }, 100);
-    return () => clearInterval(id);
-  }, [ratePerSecond, decimals]);
+    };
+
+    update();
+    if (endTime > 0 && Date.now() >= endTime * 1000) return;
+
+    let id: ReturnType<typeof setInterval> | undefined;
+    const stop = () => {
+      if (id !== undefined) {
+        clearInterval(id);
+        id = undefined;
+      }
+    };
+    const start = () => {
+      if (id !== undefined) return;
+      id = setInterval(() => {
+        update();
+        if (endTime > 0 && Date.now() >= endTime * 1000) stop();
+      }, 100);
+    };
+    // Pause while the tab is hidden; resync immediately on becoming visible (#596).
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        update();
+        if (!(endTime > 0 && Date.now() >= endTime * 1000)) start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [ratePerSecond, endTime, decimals]);
 
   return (
-    <span className="amount" aria-live="polite" aria-atomic="true">
+    <span className="amount" suppressHydrationWarning>
       {display}
     </span>
   );

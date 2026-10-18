@@ -22,7 +22,15 @@
  * For paused / ended / cancelled streams the bar is static (no animation).
  */
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
+
+export interface StreamMilestone {  /** Unix timestamp (seconds) of the milestone (e.g. cliff unlock, cancellation window). */
+  timestamp: number;
+  /** Tooltip / accessible label for the marker. Defaults to a formatted time. */
+  label?: string;
+  /** Visual variant — cliff and cancellation markers get distinct titles. */
+  kind?: 'cliff' | 'cancellation' | 'custom';
+}
 
 interface StreamProgressBarProps {
   /** Unix timestamp (seconds) when the stream started */
@@ -31,25 +39,52 @@ interface StreamProgressBarProps {
   endTime: number;
   /** Current stream status */
   status: 'active' | 'paused' | 'ended' | 'cancelled';
+  /** Unix timestamp (seconds) when the stream was paused — required to freeze the bar correctly while status === 'paused' */
+  pausedAt?: number;
   /** aria-label for screen readers */
   label?: string;
+  /** Unix timestamp (seconds) when the cliff unlocks — rendered as a tick marker (#652) */
+  cliffTimestamp?: number;
+  /** Explicit milestone markers (cliffs, cancellation windows) rendered as ticks (#652) */
+  milestones?: StreamMilestone[];
 }
 
 export function StreamProgressBar({
   startTime,
   endTime,
   status,
+  pausedAt,
   label,
+  cliffTimestamp,
+  milestones = [],
 }: StreamProgressBarProps) {
   const fillRef = useRef<HTMLDivElement>(null);
 
-  // Derive a stable snapshot of the bar's position at mount time.
-  // We never call setState — the DOM ref carries the animation forward.
+  // Client-only wall-clock snapshot to avoid SSR hydration mismatch.
+  // Use startTime (safe SSR value) as the default; the real time is set in
+  // useEffect after hydration — matching the StreamTimeline pattern.
+  const [referenceSec, setReferenceSec] = useState(() =>
+    status === 'paused' && pausedAt ? pausedAt : startTime,
+  );
+
+  const mountTimeRef = useRef<number | null>(null);
+
   useEffect(() => {
+    if (mountTimeRef.current === null) {
+      mountTimeRef.current = Date.now();
+    }
+
+    // Update to real wall-clock time after hydration
+    if (status === 'cancelled') {
+      const mountSec = Math.floor((mountTimeRef.current ?? Date.now()) / 1_000);
+      setReferenceSec(endTime > 0 ? Math.min(mountSec, endTime) : mountSec);
+    } else if (status !== 'paused') {
+      setReferenceSec(Math.floor(Date.now() / 1_000));
+    }
+
     const el = fillRef.current;
     if (!el) return;
 
-    const nowMs       = Date.now();
     const startMs     = startTime * 1_000;
     const endMs       = endTime   * 1_000;
 
@@ -63,7 +98,19 @@ export function StreamProgressBar({
     }
 
     const totalDurationMs = endMs - startMs;
-    const elapsedMs       = Math.max(0, nowMs - startMs);
+    // Paused streams freeze at pausedAt, not the wall-clock time this
+    // effect happens to run at — otherwise reloading (or just re-rendering)
+    // a paused stream makes the "frozen" bar keep creeping forward.
+    // Cancelled streams freeze at min(now, endTime) captured once at mount
+    // since we don't have a cancelledAt timestamp.
+    let referenceMs = Date.now();
+    if (status === 'paused' && pausedAt) {
+      referenceMs = pausedAt * 1_000;
+    } else if (status === 'cancelled') {
+      const now = mountTimeRef.current ?? Date.now();
+      referenceMs = endMs > 0 ? Math.min(now, endMs) : now;
+    }
+    const elapsedMs   = Math.max(0, referenceMs - startMs);
 
     // Clamp for ended streams — show full bar, static
     if (status === 'ended' || status === 'cancelled') {
@@ -72,7 +119,7 @@ export function StreamProgressBar({
       return;
     }
 
-    // Paused — freeze at current position, no animation
+    // Paused — freeze at the pause position, no animation
     if (status === 'paused') {
       const frozenPct = Math.min(100, (elapsedMs / totalDurationMs) * 100);
       el.style.width     = `${frozenPct.toFixed(2)}%`;
@@ -90,28 +137,41 @@ export function StreamProgressBar({
     el.style.animationFillMode  = 'forwards';
     el.style.animationPlayState = 'running';
     el.style.animationIterationCount = '1';
-  }, [startTime, endTime, status]);
+  }, [startTime, endTime, status, pausedAt]);
 
-  // Derive aria value for accessibility (computed once on render, not on tick)
-  const nowSec     = Math.floor(Date.now() / 1_000);
-  const totalSec   = endTime > 0 ? endTime - startTime : 0;
-  const elapsedSec = totalSec > 0 ? Math.max(0, nowSec - startTime) : 0;
-  const ariaNow    = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
+  // Derive aria value for accessibility (computed from referenceSec state,
+  // which is SSR-safe and updated to wall-clock time after hydration)
+  const totalSec    = endTime > 0 ? endTime - startTime : 0;
+  const elapsedSec  = totalSec > 0 ? Math.max(0, referenceSec - startTime) : 0;
+  const ariaNow     = totalSec > 0 ? Math.min(100, Math.round((elapsedSec / totalSec) * 100)) : 0;
+
+  // ── Milestone markers (#652) ────────────────────────────────────────────
+  // Merge the cliffTimestamp shorthand with the explicit milestones array,
+  // then convert each in-range timestamp to a % offset along the bar.
+  // Out-of-range timestamps and open-ended streams render no markers.
+  const totalMs = endTime > 0 ? endTime * 1_000 - startTime * 1_000 : 0;
+  const allMilestones: StreamMilestone[] = [
+    ...(typeof cliffTimestamp === 'number'
+      ? [{ timestamp: cliffTimestamp, kind: 'cliff' as const }]
+      : []),
+    ...milestones,
+  ];
+  const markers = totalMs > 0
+    ? allMilestones
+        .map((m, i) => {
+          const pct = ((m.timestamp - startTime) / (endTime - startTime)) * 100;
+          if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+          const kindLabel = m.kind === 'cancellation' ? 'Cancellation window'
+            : m.kind === 'cliff' ? 'Cliff unlock'
+            : 'Milestone';
+          const markerLabel = m.label ?? `${kindLabel} at ${new Date(m.timestamp * 1_000).toLocaleString()}`;
+          return { ...m, pct, key: `${m.timestamp}-${i}`, markerLabel };
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+    : [];
 
   return (
     <>
-      {/*
-        The keyframe is injected once as a global style tag.
-        It lives in the <head> only while this component is mounted.
-        The animation simply widens from 0% → 100%.
-      */}
-      <style>{`
-        @keyframes stream-progress-fill {
-          from { width: 0%; }
-          to   { width: 100%; }
-        }
-      `}</style>
-
       <div
         role="progressbar"
         aria-valuenow={ariaNow}
@@ -123,15 +183,29 @@ export function StreamProgressBar({
         <div
           ref={fillRef}
           className="absolute inset-y-0 left-0 bg-black dark:bg-white rounded-full will-change-[width]"
-          /* Initial inline style prevents a flash of 0% before useEffect fires */
+          /* Initial inline style uses SSR-safe referenceSec (startTime on
+             mount, updated to wall-clock in useEffect). Prevents a flash
+             of 0% before the CSS animation kicks in without causing a
+             hydration mismatch. */
           style={{
             width: (() => {
               if (endTime === 0) return '0%';
-              const t = (Date.now() / 1_000 - startTime) / (endTime - startTime);
+              const t = (referenceSec - startTime) / (endTime - startTime);
               return `${Math.min(100, Math.max(0, t * 100)).toFixed(2)}%`;
             })(),
           }}
         />
+        {markers.map(m => (
+          <div
+            key={m.key}
+            title={m.markerLabel}
+            aria-label={m.markerLabel}
+            role="img"
+            data-milestone={m.kind ?? 'custom'}
+            className="absolute top-0 bottom-0 w-[2px] -translate-x-1/2 bg-white border-x border-black/60 dark:bg-black dark:border-white/70 pointer-events-auto"
+            style={{ left: `${m.pct.toFixed(2)}%` }}
+          />
+        ))}
       </div>
     </>
   );

@@ -5,6 +5,8 @@ const config: Config = {
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
+    './hooks/**/*.{ts,tsx}',
+    './contexts/**/*.{ts,tsx}',
     './lib/**/*.{ts,tsx}',
   ],
 

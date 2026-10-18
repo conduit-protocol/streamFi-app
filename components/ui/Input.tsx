@@ -76,7 +76,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <p id={`${inputId}-hint`} className="text-xs text-gray-400 dark:text-gray-500">{hint}</p>
         )}
         {error && (
-          <p id={`${inputId}-error`} className="text-xs text-red-600" role="alert">{error}</p>
+          <p id={`${inputId}-error`} className="text-xs font-semibold text-black dark:text-white" role="alert">{error}</p>
         )}
       </div>
     );

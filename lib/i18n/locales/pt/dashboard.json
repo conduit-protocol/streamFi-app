@@ -1,0 +1,26 @@
+{
+  "title": "Painel",
+  "newStream": "Novo fluxo",
+  "totalsFor": "Totais para",
+  "rangeTo": "até",
+  "stats": {
+    "activeStreams": "Fluxos ativos",
+    "receivingPerSecond": "Recebendo /s",
+    "totalReceived": "Total recebido",
+    "senders": "Remetentes"
+  },
+  "connectWallet": "Conecte sua carteira para ver seus fluxos.",
+  "loadError": "Não foi possível carregar os fluxos. Tente novamente.",
+  "partialError_one": "Não foi possível carregar {{count}} fluxo",
+  "partialError_other": "Não foi possível carregar {{count}} fluxos",
+  "retryLower": "tentar novamente",
+  "retrying": "Tentando novamente…",
+  "retryButton": "Tentar novamente",
+  "tabs": {
+    "receiving": "Recebendo",
+    "sending": "Enviando"
+  },
+  "noStreamsYet": "Ainda não há fluxos {{tab}}.",
+  "createFirstStream": "Crie seu primeiro fluxo",
+  "connectionRestoredMessage": "Seus fluxos aparecerão aqui quando a conexão for restabelecida."
+}

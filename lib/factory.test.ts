@@ -45,11 +45,11 @@ describe('streamCount', () => {
     expect(mockSimulateReadOnly).toHaveBeenCalledWith(SENDER, FACTORY_ID, 'stream_count', []);
   });
 
-  it('gracefully falls back to mock data when factory contract ID is not set', async () => {
+  it('throws a clear error when the factory contract ID is not set and demo mode is off (#279)', async () => {
     vi.resetModules();
     mockGetFactoryContractId.mockReturnValue(undefined);
     const { streamCount } = await import('./factory.js');
-    await expect(streamCount(SENDER)).resolves.toBe(5n); // MOCK_STREAM_IDS.length
+    await expect(streamCount(SENDER)).rejects.toThrow(/NEXT_PUBLIC_FACTORY_CONTRACT_ID is not set/);
   });
 });
 
@@ -83,6 +83,36 @@ describe('streamsBySender / streamsByRecipient', () => {
     expect(mockSimulateReadOnly).toHaveBeenCalledWith(
       SENDER, FACTORY_ID, 'streams_by_recipient',
       expect.arrayContaining([expect.anything(), expect.anything(), expect.anything()]),
+      undefined,
+    );
+  });
+
+  // Regression test for issue #209: options.signal was accepted in the
+  // signature but silently dropped before reaching simulateReadOnly, so
+  // aborting never actually cancelled the in-flight call.
+  it.each([
+    ['streamsBySender', SENDER] as const,
+    ['streamsByRecipient', RECIPIENT] as const,
+  ])('%s forwards options.signal to simulateReadOnly so aborting cancels the call', async (fnName, addr) => {
+    const controller = new AbortController();
+    mockSimulateReadOnly.mockImplementation((...args: unknown[]) => {
+      const options = args[4] as { signal?: AbortSignal } | undefined;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      });
+    });
+
+    const factory = await import('./factory.js');
+    const fn = factory[fnName] as (
+      source: string, addr: string, offset: number, limit: number, options?: { signal?: AbortSignal },
+    ) => Promise<bigint[]>;
+
+    const promise = fn(SENDER, addr, 0, 20, { signal: controller.signal });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow(/aborted/i);
+    expect(mockSimulateReadOnly).toHaveBeenCalledWith(
+      SENDER, FACTORY_ID, expect.any(String), expect.any(Array), { signal: controller.signal },
     );
   });
 
@@ -98,12 +128,12 @@ describe('streamsBySender / streamsByRecipient', () => {
 });
 
 describe('createStream', () => {
-  it('invokes create_stream on the factory contract with all args', async () => {
-    mockInvokeContract.mockResolvedValue('deadbeef');
+  it('invokes create_stream on the factory contract with all args and decodes the stream_id', async () => {
+    mockInvokeContract.mockResolvedValue({ hash: 'deadbeef', returnValue: u64(7n) });
     const { createStream } = await import('./factory.js');
     const signTx = vi.fn();
 
-    const hash = await createStream({
+    const result = await createStream({
       sender:     SENDER,
       recipient:  RECIPIENT,
       token:      TOKEN,
@@ -114,11 +144,34 @@ describe('createStream', () => {
       clawback:   false,
     }, signTx);
 
-    expect(hash).toBe('deadbeef');
+    expect(result.hash).toBe('deadbeef');
+    expect(result.streamId).toBe(7n);
     expect(mockInvokeContract).toHaveBeenCalledWith(
       SENDER, FACTORY_ID, 'create_stream', expect.any(Array), signTx,
     );
     // sender, recipient, token, deposit, rate, start, end, clawback
     expect(mockInvokeContract.mock.calls[0]?.[3]).toHaveLength(8);
+  });
+
+  // Regression test for #362: older nodes / RPC responses may confirm the
+  // transaction without reporting a return value at all.
+  it('resolves streamId to null when the confirmed transaction has no returnValue', async () => {
+    mockInvokeContract.mockResolvedValue({ hash: 'deadbeef', returnValue: undefined });
+    const { createStream } = await import('./factory.js');
+    const signTx = vi.fn();
+
+    const result = await createStream({
+      sender:     SENDER,
+      recipient:  RECIPIENT,
+      token:      TOKEN,
+      deposit:    1_000_000n,
+      ratePerSec: 100n,
+      startTime:  1_700_000_000,
+      endTime:    1_700_003_600,
+      clawback:   false,
+    }, signTx);
+
+    expect(result.hash).toBe('deadbeef');
+    expect(result.streamId).toBeNull();
   });
 });

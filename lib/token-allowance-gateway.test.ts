@@ -157,7 +157,7 @@ describe('TokenAllowanceGateway', () => {
       mockInvokeContract.mockResolvedValue('tx_hash_success');
 
       // Initial state
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).state).toBe('idle');
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).state).toBe('idle');
 
       const promise = gateway.approve({
         token: VALID_TOKEN,
@@ -172,8 +172,8 @@ describe('TokenAllowanceGateway', () => {
       const result = await promise;
 
       expect(result.success).toBe(true);
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).state).toBe('confirmed');
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).allowance).toBe(5000n);
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).state).toBe('confirmed');
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).allowance).toBe(5000n);
     });
 
     it('transitions idle → pending → failed on RPC error', async () => {
@@ -189,7 +189,7 @@ describe('TokenAllowanceGateway', () => {
 
       expect(result.success).toBe(false);
       expect(result.error?.message).toContain('Network timeout');
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).state).toBe('failed');
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).state).toBe('failed');
     });
 
     it('records lastError on failure', async () => {
@@ -203,7 +203,7 @@ describe('TokenAllowanceGateway', () => {
         signTx: mockSignTx(),
       });
 
-      const record = gateway.getAllowance(VALID_TOKEN, VALID_SPENDER);
+      const record = gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER);
       expect(record.state).toBe('failed');
       expect(record.lastError).toBeDefined();
       expect(record.lastError?.message).toContain('Simulation failed');
@@ -221,7 +221,7 @@ describe('TokenAllowanceGateway', () => {
         signTx: mockSignTx(),
       });
 
-      const record = gateway.getAllowance(VALID_TOKEN, VALID_SPENDER);
+      const record = gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER);
       expect(record.lastConfirmedAt).toBeGreaterThanOrEqual(before);
     });
   });
@@ -469,7 +469,7 @@ describe('TokenAllowanceGateway', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).allowance).toBe(0n);
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).allowance).toBe(0n);
     });
   });
 
@@ -494,7 +494,7 @@ describe('TokenAllowanceGateway', () => {
 
       expect(result.success).toBe(true);
       expect(result.data).toBe(42000n);
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).allowance).toBe(42000n);
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).allowance).toBe(42000n);
     });
   });
 
@@ -517,8 +517,8 @@ describe('TokenAllowanceGateway', () => {
       gateway.reset();
 
       expect(gateway.size).toBe(0);
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).state).toBe('idle');
-      expect(gateway.getAllowance(VALID_TOKEN, VALID_SPENDER).allowance).toBe(0n);
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).state).toBe('idle');
+      expect(gateway.getAllowance(VALID_SOURCE, VALID_TOKEN, VALID_SPENDER).allowance).toBe(0n);
     });
 
     it('aborts in-flight operations', async () => {

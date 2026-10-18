@@ -60,12 +60,185 @@
   }
 
   .badge-active    { @apply badge bg-black text-white dark:bg-white dark:text-black; }
-  .badge-paused    { @apply badge bg-yellow-50 text-yellow-800 border border-yellow-200/60 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-700; }
+  /* #311: paused/cancelled were bg-yellow/bg-red (prohibited hues, not the
+     documented delta-only exception, and unlabeled). Now border+gray only,
+     matching the Badge component README spec. */
+  .badge-paused    { @apply badge border border-gray-400 text-gray-400 dark:border-gray-500 dark:text-gray-500; }
   .badge-ended     { @apply badge bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400; }
-  .badge-cancelled { @apply badge bg-red-50 text-red-700 border border-red-200/60 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700; }
+  .badge-cancelled { @apply badge border border-gray-200 text-gray-300 line-through dark:border-gray-700 dark:text-gray-600; }
+
+  /* Active-network indicator (#559) — dashed border keeps it visually
+     distinct from stream-status badges while staying black/white/gray. */
+  .badge-network   { @apply badge border border-dashed border-black text-black uppercase tracking-wide dark:border-white dark:text-white; }
 
   /* Amount display */
   .amount {
     @apply font-mono tabular-nums slashed-zero;
+  }
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────────── */
+@keyframes stream-progress-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+/* Skeleton shimmer (#693) — linear-gradient sweep for loading placeholders.
+ * Applied alongside `animate-pulse` so skeletons shimmer instead of looking
+ * like flat, broken gray boxes. */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+  }
+}
+
+/* ── Stream flow pulse (#667) ─────────────────────────────────────────────── */
+/* Dashes slide along the flow line; one dash period is 6 + 18 = 24 units. */
+@keyframes stream-flow-pulse {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.stream-flow-pulse {
+  animation: stream-flow-pulse 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-flow-pulse {
+    animation: none;
+  }
+}
+
+/* ── Print stylesheet (#555, #571) ────────────────────────────────────────── */
+/*
+ * Applied via .print-receipt on /transactions and /stream/[id].
+ * Hides all UI chrome (navbar, action buttons, export controls) and presents
+ * a clean, receipt-style layout for printing or saving as PDF.
+ */
+@media print {
+  /* Hide global chrome */
+  nav,
+  header,
+  footer,
+  aside {
+    display: none !important;
+  }
+
+  /* Hide interactive controls that make no sense on paper */
+  .print\:hidden,
+  [aria-label="Download PDF summary"],
+  [aria-label="Print transaction history"] {
+    display: none !important;
+  }
+
+  /* Reset page geometry */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+    margin: 0;
+  }
+
+  /* Receipt-style container: full width, no padding waste */
+  .print-receipt {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1.5cm 2cm !important;
+  }
+
+  /* Print header — show the page title prominently */
+  .print-receipt h1 {
+    font-size: 18pt;
+    font-weight: 900;
+    border-bottom: 2pt solid black;
+    padding-bottom: 0.4cm;
+    margin-bottom: 0.6cm;
+  }
+
+  /* Cards: drop shadow and background, keep border */
+  .card,
+  .print-receipt [class~="card"] {
+    box-shadow: none !important;
+    background: white !important;
+    border: 1pt solid #999 !important;
+    border-radius: 0 !important;
+  }
+
+  /* Table borders for readability on paper */
+  .print-receipt table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9pt;
+  }
+
+  .print-receipt th,
+  .print-receipt td {
+    border-bottom: 0.5pt solid #ccc;
+    padding: 4pt 6pt;
+  }
+
+  .print-receipt thead th {
+    border-bottom: 1pt solid black;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 0.05em;
+  }
+
+  /* Stream detail: show both mobile and desktop layouts as single column */
+  .sm\:hidden {
+    display: block !important;
+  }
+  .hidden.sm\:block {
+    display: none !important;
+  }
+
+  /* Preserve monospace for addresses and amounts */
+  .font-mono,
+  .tabular-nums {
+    font-family: ui-monospace, monospace;
+  }
+
+  /* Ensure status badges print legibly without colour */
+  .badge-active,
+  .badge-paused,
+  .badge-ended,
+  .badge-cancelled {
+    background: white !important;
+    color: black !important;
+    border: 1pt solid black !important;
+  }
+
+  /* Page break utilities */
+  .print-receipt > * + * {
+    page-break-inside: avoid;
+  }
+
+  /* Print footer with URL and date */
+  .print-receipt::after {
+    content: "Conduit — " attr(data-stream-id) "  |  Printed " attr(data-print-date);
+    display: block;
+    margin-top: 1cm;
+    padding-top: 0.3cm;
+    border-top: 0.5pt solid #ccc;
+    font-size: 8pt;
+    color: #666;
   }
 }

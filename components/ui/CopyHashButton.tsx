@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Copy, Check } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
 
@@ -18,14 +18,37 @@ interface CopyHashButtonProps {
  */
 export function CopyHashButton({ hash, className = '' }: CopyHashButtonProps) {
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      // Clear timeout on unmount to prevent state update on unmounted component
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleCopy() {
     // copyToClipboard falls back to execCommand when navigator.clipboard is
     // unavailable (e.g. served over plain HTTP), so this works locally too.
     const ok = await copyToClipboard(hash);
     if (ok) {
+      // Clear any existing timeout to prevent stacking
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      timeoutRef.current = setTimeout(() => {
+        if (mounted.current) {
+          setCopied(false);
+        }
+        timeoutRef.current = null;
+      }, 2000);
     }
   }
 
