@@ -21,29 +21,45 @@ function endValue(endTime: number): number {
   return endTime === 0 ? Infinity : endTime;
 }
 
+// Memoized comparator cache for multi-key stream sorting (#751)
+const comparatorCache = new Map<SortKey, <T extends { info: Pick<StreamInfo, "ratePerSecond" | "endTime"> }>(a: T, b: T) => number>();
+
+function getComparator<T extends { info: Pick<StreamInfo, "ratePerSecond" | "endTime"> }>(
+  sort: SortKey,
+): (a: T, b: T) => number {
+  const cached = comparatorCache.get(sort);
+  if (cached) return cached;
+
+  let comparator: (a: T, b: T) => number;
+  switch (sort) {
+    case "amount-asc":
+      comparator = (a, b) =>
+        a.info.ratePerSecond < b.info.ratePerSecond ? -1 : a.info.ratePerSecond > b.info.ratePerSecond ? 1 : 0;
+      break;
+    case "amount-desc":
+      comparator = (a, b) =>
+        a.info.ratePerSecond > b.info.ratePerSecond ? -1 : a.info.ratePerSecond < b.info.ratePerSecond ? 1 : 0;
+      break;
+    case "end-asc":
+      comparator = (a, b) => endValue(a.info.endTime) - endValue(b.info.endTime);
+      break;
+    case "end-desc":
+      comparator = (a, b) => endValue(b.info.endTime) - endValue(a.info.endTime);
+      break;
+    default:
+      comparator = () => 0;
+      break;
+  }
+
+  comparatorCache.set(sort, comparator as any);
+  return comparator;
+}
+
 export function sortStreams<T extends { info: Pick<StreamInfo, "ratePerSecond" | "endTime"> }>(
   rows: T[],
   sort: SortKey,
 ): T[] {
-  if (sort === "default") return rows;
-  const sorted = [...rows];
-  switch (sort) {
-    case "amount-asc":
-      sorted.sort((a, b) =>
-        a.info.ratePerSecond < b.info.ratePerSecond ? -1 : a.info.ratePerSecond > b.info.ratePerSecond ? 1 : 0,
-      );
-      break;
-    case "amount-desc":
-      sorted.sort((a, b) =>
-        a.info.ratePerSecond > b.info.ratePerSecond ? -1 : a.info.ratePerSecond < b.info.ratePerSecond ? 1 : 0,
-      );
-      break;
-    case "end-asc":
-      sorted.sort((a, b) => endValue(a.info.endTime) - endValue(b.info.endTime));
-      break;
-    case "end-desc":
-      sorted.sort((a, b) => endValue(b.info.endTime) - endValue(a.info.endTime));
-      break;
-  }
-  return sorted;
+  if (sort === "default" || rows.length <= 1) return rows;
+  const comparator = getComparator<T>(sort);
+  return [...rows].sort(comparator);
 }

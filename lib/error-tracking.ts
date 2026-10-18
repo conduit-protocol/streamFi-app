@@ -38,6 +38,35 @@ export function addBreadcrumb(crumb: ErrorBreadcrumb): void {
   }
 }
 
+// ── PII & Key Scrubber (#752) ────────────────────────────────────────────────
+
+const STELLAR_PUBLIC_KEY_REGEX = /\bG[A-Z2-7]{55}\b/g;
+const STELLAR_SECRET_KEY_REGEX = /\bS[A-Z2-7]{55}\b/g;
+
+/**
+ * Scrub sensitive Stellar public and secret keys from strings before telemetry dispatch (#752).
+ */
+export function scrubSensitiveData(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(STELLAR_SECRET_KEY_REGEX, '[REDACTED_SECRET_KEY]')
+    .replace(STELLAR_PUBLIC_KEY_REGEX, '[REDACTED_PUBLIC_KEY]');
+}
+
+export function scrubObject<T>(obj: T): T {
+  if (!obj || typeof obj !== 'object') {
+    return typeof obj === 'string' ? (scrubSensitiveData(obj) as unknown as T) : obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(scrubObject) as unknown as T;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = scrubObject(value);
+  }
+  return result as T;
+}
+
 /**
  * Capture an error with optional context and breadcrumbs.
  * When Sentry is not configured, this is a no-op that just logs to console.
@@ -49,21 +78,28 @@ export function captureError(
     extra?: Record<string, unknown>
   },
 ): void {
-  const err = error instanceof Error ? error : new Error(String(error))
+  const rawErr = error instanceof Error ? error : new Error(String(error))
+  const cleanMessage = scrubSensitiveData(rawErr.message)
+  const err = rawErr.message === cleanMessage ? rawErr : new Error(cleanMessage)
+  if (rawErr.stack) {
+    err.stack = scrubSensitiveData(rawErr.stack)
+  }
+
+  const cleanContext = context ? scrubObject(context) : context
 
   if (!SENTRY_DSN) {
-    console.error('[error-tracking]', err.message, { context, breadcrumbs: breadcrumbs.slice(-5) })
+    console.error('[error-tracking]', err.message, { context: cleanContext, breadcrumbs: breadcrumbs.slice(-5) })
     return
   }
 
   Sentry.withScope(scope => {
-    if (context?.tags) {
-      Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, v))
+    if (cleanContext?.tags) {
+      Object.entries(cleanContext.tags).forEach(([k, v]) => scope.setTag(k, v))
     }
-    if (context?.extra) {
-      Object.entries(context.extra).forEach(([k, v]) => scope.setExtra(k, v))
+    if (cleanContext?.extra) {
+      Object.entries(cleanContext.extra).forEach(([k, v]) => scope.setExtra(k, v))
     }
-    breadcrumbs.forEach(c => scope.addBreadcrumb(c))
+    breadcrumbs.forEach(c => scope.addBreadcrumb({ ...c, message: scrubSensitiveData(c.message) }))
     Sentry.captureException(err)
   })
   breadcrumbs = []
