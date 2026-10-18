@@ -12,7 +12,8 @@ import { TOKENS_TESTNET, tokenLogoUrl } from '@/lib/tokens';
 import { CopyHashButton }   from '@/components/ui/CopyHashButton';
 import { checkRecipientExists } from '@/lib/soroban';
 import { checkContractHasWithdraw } from '@/lib/contract-recipient-probe';
-import { refreshStreamData } from '@/lib/queryClient';
+import { queryClient, refreshStreamData } from '@/lib/queryClient';
+import { invalidateTokenBalance } from '@/hooks/useTokenBalance';
 import { getFactoryContractId } from '@/lib/env';
 import { getTokenAllowanceGateway } from '@/lib/token-allowance-gateway';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -407,6 +408,8 @@ export default function CreatePage() {
       // Invalidate and refetch active stream data so the streams/dashboard
       // pages reflect the newly created stream immediately (fixes #162).
       await refreshStreamData();
+      // #756 — the deposit left the wallet; refresh the displayed token balance.
+      await invalidateTokenBalance(queryClient, publicKey, tokenAddr);
 
       setTxHash(hash);
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* storage is optional */ }
