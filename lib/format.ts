@@ -237,3 +237,34 @@ export function formatAmount(
 
   return new Intl.NumberFormat(locale, nfOptions).format(value);
 }
+
+/**
+ * Format currency using compact notation (issue #806).
+ * Converts large numbers to readable format: 1.2K, 3.4M, 5.6B, etc.
+ * 
+ * @param amount Value to format
+ * @param options Intl.NumberFormat options
+ * @returns Formatted string with compact notation (e.g., '1.2K' for 1200)
+ */
+export function formatCompactCurrency(
+  amount: number | bigint,
+  options: Intl.NumberFormatOptions = {}
+): string {
+  const numAmount = typeof amount === 'bigint' ? Number(amount) : amount;
+  
+  // Use Intl.NumberFormat with 'compact' notation for KPI card display
+  if (Intl.NumberFormat.prototype.constructor.name === 'NumberFormat') {
+    try {
+      return new Intl.NumberFormat('en-US', {
+        notation: 'compact',
+        compactDisplay: 'short',
+        maximumFractionDigits: 1,
+        ...options,
+      }).format(numAmount);
+    } catch {
+      return numAmount.toLocaleString('en-US', { maximumFractionDigits: 1 });
+    }
+  }
+  
+  return numAmount.toLocaleString('en-US', { maximumFractionDigits: 1 });
+}
