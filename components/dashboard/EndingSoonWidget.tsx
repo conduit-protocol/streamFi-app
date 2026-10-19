@@ -59,7 +59,7 @@ export function EndingSoonWidget({
     (s) => s.status === 'active' && isEndingSoon(s.endTime, now)
   );
 
-  const allEndingSoon = [...endingSoonReceiving, ...endingSoonSending];
+  const allEndingSoon = [...endingSoonReceiving, ...endingSoonSending].sort((a, b) => a.endTime - b.endTime);
 
   if (loading || allEndingSoon.length === 0) {
     return null;
