@@ -42,3 +42,48 @@ export async function resolveFederationAddress(federationAddress: string, option
   if (!payload.account_id || !isValidStellarPublicKey(payload.account_id)) throw new Error('Federation response did not contain a valid account');
   return payload.account_id;
 }
+
+/** True for a valid multiplexed Soroban address (M...) — used by centralized exchanges. */
+export function isValidStellarMuxedAddress(address: string): boolean {
+  return StrKey.isValidMuxedAccount(address);
+}
+
+/**
+ * Extract sub-account ID from a multiplexed (M-) address (issue #804).
+ * Multiplexed addresses are used by centralized exchanges to route customer deposits
+ * to different accounts using a single main account with sub-account identifiers.
+ */
+export interface ParsedMuxedAddress {
+  publicKey: string;
+  subAccountId: string;
+}
+
+export function parseMuxedAddress(muxAddress: string): ParsedMuxedAddress {
+  if (!isValidStellarMuxedAddress(muxAddress)) {
+    throw new Error('Invalid multiplexed address: must be a valid M-address');
+  }
+
+  try {
+    const muxedAccount = StrKey.decodeMuxedAccount(muxAddress);
+    
+    return {
+      publicKey: muxedAccount.accountID,
+      subAccountId: muxedAccount.id.toString(),
+    };
+  } catch (error) {
+    throw new Error(
+      error instanceof Error
+        ? `Failed to parse multiplexed address: ${error.message}`
+        : 'Failed to parse multiplexed address'
+    );
+  }
+}
+
+/** True for either a public key (G...), contract address (C...), or multiplexed address (M...). */
+export function isValidStellarAddressAny(address: string): boolean {
+  return (
+    isValidStellarPublicKey(address) ||
+    isValidStellarContract(address) ||
+    isValidStellarMuxedAddress(address)
+  );
+}
