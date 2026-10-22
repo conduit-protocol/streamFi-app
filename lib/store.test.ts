@@ -136,3 +136,65 @@ describe('useTransactionStore — bounded growth', () => {
     expect(toast.dismiss).toHaveBeenCalledWith('tx-prune-0');
   });
 });
+
+// The Navbar wallet button shows how many submitted transactions are still
+// awaiting a ledger verdict (#791). The count must always return to zero,
+// however the submission settles, or the badge would spin forever.
+describe('trackPendingSubmission', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('counts a submission while it is in flight and releases it on success', async () => {
+    const { useTransactionStore, trackPendingSubmission } = await import('./store.js');
+
+    let resolve!: (value: string) => void;
+    const pending = trackPendingSubmission(
+      () => new Promise<string>((r) => { resolve = r; }),
+    );
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(1);
+
+    resolve('hash-1');
+    await expect(pending).resolves.toBe('hash-1');
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(0);
+  });
+
+  it('releases the count when the submission rejects', async () => {
+    const { useTransactionStore, trackPendingSubmission } = await import('./store.js');
+
+    await expect(
+      trackPendingSubmission(() => Promise.reject(new Error('Submission failed'))),
+    ).rejects.toThrow('Submission failed');
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(0);
+  });
+
+  it('tracks concurrent submissions independently', async () => {
+    const { useTransactionStore, trackPendingSubmission } = await import('./store.js');
+
+    let resolveFirst!: (value: void) => void;
+    let resolveSecond!: (value: void) => void;
+    const first = trackPendingSubmission(() => new Promise<void>((r) => { resolveFirst = r; }));
+    const second = trackPendingSubmission(() => new Promise<void>((r) => { resolveSecond = r; }));
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(2);
+
+    resolveFirst();
+    await first;
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(1);
+
+    resolveSecond();
+    await second;
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(0);
+  });
+
+  it('never drops below zero and survives clearTransactions', async () => {
+    const { useTransactionStore } = await import('./store.js');
+    const { beginSubmission, endSubmission, clearTransactions } = useTransactionStore.getState();
+
+    endSubmission();
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(0);
+
+    beginSubmission();
+    clearTransactions();
+    expect(useTransactionStore.getState().pendingSubmissions).toBe(1);
+  });
+});

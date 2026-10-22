@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
 import { Navbar } from '../Navbar';
+import { useTransactionStore } from '@/lib/store';
 
 /**
  * Test coverage for Navbar.tsx (issue #326).
@@ -293,5 +294,73 @@ describe('Navbar', () => {
     });
 
     expect(container.querySelector('.badge-network')).toBeTruthy();
+  });
+
+  describe('pending transaction badge (#791)', () => {
+    const badge = () => container.querySelector('[data-testid="pending-tx-badge"]');
+    const status = () => container.querySelector('[data-testid="pending-tx-status"]');
+
+    afterEach(() => {
+      act(() => {
+        useTransactionStore.setState({ pendingSubmissions: 0 });
+      });
+    });
+
+    it('renders no badge and an empty polite status region when nothing is pending', () => {
+      act(() => {
+        root.render(React.createElement(Navbar));
+      });
+
+      expect(badge()).toBeNull();
+      expect(status()?.getAttribute('role')).toBe('status');
+      expect(status()?.getAttribute('aria-live')).toBe('polite');
+      expect(status()?.textContent).toBe('');
+    });
+
+    it('shows a spinning ring with the pending count over the wallet button', () => {
+      act(() => {
+        root.render(React.createElement(Navbar));
+      });
+      act(() => {
+        useTransactionStore.getState().beginSubmission();
+        useTransactionStore.getState().beginSubmission();
+      });
+
+      expect(badge()?.textContent).toBe('2');
+      expect(badge()?.getAttribute('aria-hidden')).toBe('true');
+      expect(badge()?.querySelector('.motion-safe\\:animate-spin')).toBeTruthy();
+      expect(status()?.textContent).toBe('2 transactions pending');
+    });
+
+    it('uses the singular label and caps the visible count at 9+', () => {
+      act(() => {
+        root.render(React.createElement(Navbar));
+      });
+      act(() => {
+        useTransactionStore.setState({ pendingSubmissions: 1 });
+      });
+      expect(status()?.textContent).toBe('1 transaction pending');
+
+      act(() => {
+        useTransactionStore.setState({ pendingSubmissions: 12 });
+      });
+      expect(badge()?.textContent).toBe('9+');
+      expect(status()?.textContent).toBe('12 transactions pending');
+    });
+
+    it('removes the badge once the last submission settles', () => {
+      act(() => {
+        root.render(React.createElement(Navbar));
+      });
+      act(() => {
+        useTransactionStore.getState().beginSubmission();
+      });
+      expect(badge()).toBeTruthy();
+
+      act(() => {
+        useTransactionStore.getState().endSubmission();
+      });
+      expect(badge()).toBeNull();
+    });
   });
 });
