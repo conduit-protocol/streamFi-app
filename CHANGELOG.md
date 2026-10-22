@@ -5,6 +5,10 @@ All notable changes are documented here. Format based on [Keep a Changelog](http
 ## [Unreleased]
 
 ### Added
+- Navbar — the wallet button shows an animated ring with the number of submitted
+  transactions still awaiting a ledger verdict, so a pending submit stays visible after
+  navigating away; counted around submit + confirmation in `invokeContract` via
+  `trackPendingSubmission` in `lib/store.ts` and announced through a polite live region (#791)
 - `/stream/[id]` — **Export History** downloads a CSV or JSON snapshot of the loaded stream
   details and balances for record-keeping (#780)
 - `/streams` — **Claim All** submits individual withdrawals for every receiving stream with a
