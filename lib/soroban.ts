@@ -36,6 +36,7 @@ import {
 import { withTimeout } from './with-timeout';
 import { isValidStellarContract, isValidStellarPublicKey } from './stellar-address';
 import { reportRpcFailure, reportRpcSuccess } from './network-status';
+import { trackPendingSubmission } from './store';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -513,26 +514,30 @@ export async function invokeContract(
 
     const signedTx = TransactionBuilder.fromXDR(signedXdr, passphrase);
 
-    // Submit — exactly once. Past this line the transaction may already be
-    // on-chain, so no failure may cause a rebuild or a resubmit.
-    const sendResult = await withTimeout(
-      getServer().sendTransaction(signedTx),
-      timeoutMs,
-      'sendTransaction',
-      signal,
-    );
-    if (signal?.aborted) throw new OperationAbortedError();
+    // Submit + confirm is counted as a pending submission for the Navbar
+    // badge (#791); the tracker releases the count however this settles.
+    return trackPendingSubmission(async () => {
+      // Submit — exactly once. Past this line the transaction may already be
+      // on-chain, so no failure may cause a rebuild or a resubmit.
+      const sendResult = await withTimeout(
+        getServer().sendTransaction(signedTx),
+        timeoutMs,
+        'sendTransaction',
+        signal,
+      );
+      if (signal?.aborted) throw new OperationAbortedError();
 
-    if (sendResult.status === 'ERROR') {
-      throw new Error(`Submission failed: ${JSON.stringify(sendResult.errorResult)}`);
-    }
+      if (sendResult.status === 'ERROR') {
+        throw new Error(`Submission failed: ${JSON.stringify(sendResult.errorResult)}`);
+      }
 
-    const hash = sendResult.hash;
-    if (typeof hash !== 'string' || !hash) {
-      throw new Error('Submission returned no transaction hash');
-    }
+      const hash = sendResult.hash;
+      if (typeof hash !== 'string' || !hash) {
+        throw new Error('Submission returned no transaction hash');
+      }
 
-    return pollForConfirmation(hash, timeoutMs, signal);
+      return pollForConfirmation(hash, timeoutMs, signal);
+    });
   };
 
   if (idempotencyKey) {

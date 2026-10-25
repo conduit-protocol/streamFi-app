@@ -56,6 +56,18 @@ interface TransactionStore {
   updateStatus: (id: string, status: TransactionStatus, hash?: string, error?: string) => void;
   /** Remove all tracked transactions and dismiss toasts — called on wallet disconnect (fixes #81, #386). */
   clearTransactions: () => void;
+  /**
+   * Number of signed transactions currently submitted to the network and
+   * awaiting a verdict. Drives the pending badge on the Navbar wallet
+   * button so users who navigate away still see that a submit is in flight
+   * (#791). Deliberately not reset by `clearTransactions`: disconnecting the
+   * wallet does not cancel a transaction that is already on its way to a
+   * ledger.
+   */
+  pendingSubmissions: number;
+  beginSubmission: () => void;
+  /** Clamped at zero so an unbalanced call can never show a negative count. */
+  endSubmission: () => void;
 }
 
 export const useTransactionStore = create<TransactionStore>((set, get) => ({
@@ -117,4 +129,29 @@ export const useTransactionStore = create<TransactionStore>((set, get) => ({
     });
     set({ transactions: {}, order: [] });
   },
+
+  pendingSubmissions: 0,
+
+  beginSubmission: () => {
+    set((state) => ({ pendingSubmissions: state.pendingSubmissions + 1 }));
+  },
+
+  endSubmission: () => {
+    set((state) => ({ pendingSubmissions: Math.max(0, state.pendingSubmissions - 1) }));
+  },
 }));
+
+/**
+ * Run `submit` while counting it as a pending submission. The count is
+ * released in `finally`, so a confirmed, reverted, aborted or timed-out
+ * submission always clears its badge entry (#791).
+ */
+export async function trackPendingSubmission<T>(submit: () => Promise<T>): Promise<T> {
+  const { beginSubmission, endSubmission } = useTransactionStore.getState();
+  beginSubmission();
+  try {
+    return await submit();
+  } finally {
+    endSubmission();
+  }
+}

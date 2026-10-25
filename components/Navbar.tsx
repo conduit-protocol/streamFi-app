@@ -12,6 +12,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { NetworkLatencyIndicator } from '@/components/NetworkLatencyIndicator';
 import { useSelectedNetwork } from '@/hooks/useSelectedNetwork';
 import { useSettings } from '@/hooks/useSettings';
+import { useTransactionStore } from '@/lib/store';
 
 const BASE_NAV = [
   { href: '/streams',      label: 'Streams'    },
@@ -28,6 +29,12 @@ export function Navbar() {
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const network = useSelectedNetwork();
   const { advancedMode } = useSettings();
+  // Submitted-but-unconfirmed transactions, so a pending ledger submit stays
+  // visible after the user navigates away from the page that sent it (#791).
+  const pendingCount = useTransactionStore((s) => s.pendingSubmissions);
+  const pendingLabel = pendingCount > 0
+    ? `${pendingCount} ${pendingCount === 1 ? 'transaction' : 'transactions'} pending`
+    : '';
 
   // The side-by-side compare view is an advanced/power-user tool, so it is
   // only linked in the nav when advanced mode is enabled (#586). The route
@@ -131,7 +138,23 @@ export function Navbar() {
           >
             <NotificationBell />
             <ThemeToggle />
-            <ConnectButton />
+            <div className="relative">
+              <ConnectButton />
+              {/* Always mounted so screen readers announce count changes. */}
+              <span role="status" aria-live="polite" data-testid="pending-tx-status" className="sr-only">
+                {pendingLabel}
+              </span>
+              {pendingCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  data-testid="pending-tx-badge"
+                  className="pointer-events-none absolute -top-2 -right-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-white text-black dark:bg-gray-950 dark:text-white text-2xs font-bold font-mono tabular-nums"
+                >
+                  <span className="absolute inset-0 rounded-full border-2 border-gray-200 border-t-black dark:border-gray-700 dark:border-t-white motion-safe:animate-spin" />
+                  {pendingCount > 9 ? '9+' : pendingCount}
+                </span>
+              )}
+            </div>
           </ErrorBoundary>
 
           {/* Mobile hamburger */}
