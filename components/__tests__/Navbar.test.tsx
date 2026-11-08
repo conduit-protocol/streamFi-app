@@ -294,4 +294,13 @@ describe('Navbar', () => {
 
     expect(container.querySelector('.badge-network')).toBeTruthy();
   });
+
+  it('renders quick stream search input in global navbar (#790)', () => {
+    act(() => {
+      root.render(React.createElement(Navbar));
+    });
+
+    expect(container.querySelector('[data-testid="stream-quick-search-form"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="stream-quick-search-input"]')).toBeTruthy();
+  });
 });

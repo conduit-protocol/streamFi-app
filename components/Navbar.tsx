@@ -10,6 +10,7 @@ import { ErrorBoundary }    from '@/components/ErrorBoundary';
 import { NetworkBadge }     from '@/components/NetworkBadge';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NetworkLatencyIndicator } from '@/components/NetworkLatencyIndicator';
+import { StreamQuickSearch } from '@/components/StreamQuickSearch';
 import { useSelectedNetwork } from '@/hooks/useSelectedNetwork';
 import { useSettings } from '@/hooks/useSettings';
 
@@ -113,6 +114,11 @@ export function Navbar() {
           ))}
         </nav>
 
+        {/* Global stream quick search (issue #790) */}
+        <div className="hidden sm:flex items-center">
+          <StreamQuickSearch />
+        </div>
+
         {/* Right side */}
         <div className="ml-auto flex items-center gap-2">
           {/* Isolate wallet/network-adjacent widgets: a crash here (e.g. an
@@ -175,7 +181,10 @@ export function Navbar() {
           role="dialog"
           className={`md:hidden fixed inset-y-0 right-0 z-50 w-80 max-w-[85vw] border-l border-gray-200 bg-white pt-20 shadow-2xl transition-all duration-300 ease-out dark:border-gray-800 dark:bg-gray-950 ${menuOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}
         >
-          <div className="px-4 py-2 flex flex-col gap-1">
+          <div className="px-4 py-2 flex flex-col gap-2">
+            <div className="sm:hidden pb-2 mb-1 border-b border-gray-100 dark:border-gray-800">
+              <StreamQuickSearch compact={false} onNavigate={() => setMenuOpen(false)} />
+            </div>
             {NAV.map(n => (
               <Link
                 key={n.href}
